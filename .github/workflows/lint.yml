@@ -14,13 +14,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: shellcheck every tracked shell script
         run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
+      - name: No generated output, private keys or firmware stores in git
+        run: "! git ls-files | grep -E '(^|/)ci/out/|[.]key$|[.]fd$'"
 
   debian-package:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install packaging tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends debhelper dpkg-dev lintian
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential debhelper dpkg-dev lintian
       - name: Build binary packages
         run: dpkg-buildpackage -us -uc -b
       - name: lintian
