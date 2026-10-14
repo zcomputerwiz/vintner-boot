@@ -1,0 +1,20 @@
+name	kind	location	ref	commit	spdx	role
+systemd	git	https://github.com/systemd/systemd.git	v257.13	70b5d110be7702afc4dbce012f60d49506d513da	LGPL-2.1-or-later	adopt
+grub	git	https://git.savannah.gnu.org/git/grub.git	grub-2.12	5ca9db22e8ed0dbebb2aec53722972de0680a463	GPL-3.0-or-later	adopt
+shim	git	https://github.com/rhboot/shim.git	16.1	afc49558b34548644c1cd0ad1b6526a9470182ed	BSD-2-Clause	adopt
+limine	git	https://github.com/limine-bootloader/limine.git	v12.9.3	e3aa138d383ca4fe061f05931b5a54497cd502f2	BSD-2-Clause	evaluate
+rauc	git	https://github.com/rauc/rauc.git	v1.12	b514944a42b3b4b3572f69027c6d3940fdaf29a4	LGPL-2.1-only	evaluate
+dracut	git	https://github.com/dracut-ng/dracut-ng.git	106	956c08774074ddc45b2f975e13d5c13d1fc36eff	GPL-2.0-or-later	evaluate
+plymouth	git	https://gitlab.freedesktop.org/plymouth/plymouth.git	24.004.60	d6e6366d622962dce02d8c7e4ab814f54a202509	GPL-2.0-or-later	adopt
+u-root	git	https://github.com/u-root/u-root.git	v0.14.0	eadd8c6fee2e915e8f331b1c532be4ac98ba2a05	BSD-3-Clause	evaluate
+u-boot	git	https://github.com/u-boot/u-boot.git	v2026.04	88dc2788777babfd6322fa655df549a019aa1e69	GPL-2.0-or-later	reference
+heads	git	https://github.com/linuxboot/heads.git	master	b48e3f6fc9e08579192542b23133690aa1e0b4e6	GPL-2.0-only	branch snapshot
+petitboot	git	https://github.com/open-power/petitboot.git	master	96063aa2d2d8795389024d05967c3f4bcbbf9aab	GPL-2.0-only	branch snapshot
+reactos	git	https://github.com/reactos/reactos.git	master	c63ed8b88c2876f87aa7f227b4ac22c0556c174b	GPL-2.0-or-later	branch snapshot
+systemd	debian	systemd	257.13-1~deb13u1	-	LGPL-2.1-or-later	adopt
+shim-signed	debian	shim-signed	1.51~1+deb13u1	-	BSD-2-Clause	adopt
+grub2	debian	grub2	2.12-9+deb13u2	-	GPL-3.0-or-later	adopt
+initramfs-tools	debian	initramfs-tools	0.148.4	-	GPL-2.0-or-later	adopt
+plymouth	debian	plymouth	24.004.60-5	-	GPL-2.0-or-later	adopt
+ovmf	debian	edk2	2025.02-8+deb13u1	-	BSD-2-Clause-Patent	reference
+linux	debian	linux	6.12.107-1	-	GPL-2.0-only	reference
