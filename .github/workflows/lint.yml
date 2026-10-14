@@ -25,3 +25,20 @@ jobs:
         run: dpkg-buildpackage -us -uc -b
       - name: lintian
         run: lintian --fail-on error ../*.changes
+
+  go:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Static build
+        run: CGO_ENABLED=0 go build -o /dev/null ./cmd/vintner
