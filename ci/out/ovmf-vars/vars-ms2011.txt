@@ -1,0 +1,43 @@
+image=ci/out/ovmf-vars/vars-ms2011.fd
+  volume=guid:NvData offset=0x0 size=0x84000 hlen=0x48 xoff=0x0 rev=2 blocks=132*4096 used=48.5%
+    nvdata=guid:AuthVars size=0x3ffb8 format=0x5a state=0xfe
+      variable=guid:EfiCustomModeEnable nsize=0x16 dsize=0x1 attr=0x3 name=CustomMode (ok)
+        bool: off
+      variable=guid:EfiGlobalVariable nsize=0x8 dsize=0x618 attr=0x27 name=KEK (ok)
+        blob: 1560 bytes
+      variable=guid:EfiGlobalVariable nsize=0x6 dsize=0x355 attr=0x27 name=PK (ok)
+        blob: 853 bytes
+      variable=guid:EfiSecureBootEnableDisable nsize=0x22 dsize=0x1 attr=0x3 name=SecureBootEnable (ok)
+        bool: ON
+      variable=guid:EfiImageSecurityDatabase nsize=0x6 dsize=0xc47 attr=0x27 name=db (ok)
+        blob: 3143 bytes
+      variable=guid:EfiImageSecurityDatabase nsize=0x8 dsize=0x4c attr=0x27 name=dbx (ok)
+        blob: 76 bytes
+      end of variable list at offset 0x17c4
+name=CustomMode guid=guid:EfiCustomModeEnable size=1
+  bool: off
+
+name=KEK guid=guid:EfiGlobalVariable size=1560 time=2011-06-24 20:41:29
+  siglist type=guid:EfiCertX509 count=1
+    subject CN=Microsoft Corporation KEK CA 2011
+    issuer CN=Microsoft Corporation Third Party Marketplace Root
+
+name=PK guid=guid:EfiGlobalVariable size=853 time=2026-10-14 21:13:05
+  siglist type=guid:EfiCertX509 count=1
+    subject CN=vintner-boot CI test PK
+    issuer CN=vintner-boot CI test PK
+
+name=SecureBootEnable guid=guid:EfiSecureBootEnableDisable size=1
+  bool: ON
+
+name=db guid=guid:EfiImageSecurityDatabase size=3143 time=2011-10-19 18:41:42
+  siglist type=guid:EfiCertX509 count=1
+    subject CN=Microsoft Windows Production PCA 2011
+    issuer CN=Microsoft Root Certificate Authority 2010
+  siglist type=guid:EfiCertX509 count=1
+    subject CN=Microsoft Corporation UEFI CA 2011
+    issuer CN=Microsoft Corporation Third Party Marketplace Root
+
+name=dbx guid=guid:EfiImageSecurityDatabase size=76 time=2010-01-01 00:00:00
+  siglist type=guid:EfiCertSha256 count=1
+    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

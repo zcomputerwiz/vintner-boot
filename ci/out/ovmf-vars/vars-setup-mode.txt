@@ -1,0 +1,4 @@
+image=ci/out/ovmf-vars/vars-setup-mode.fd
+  volume=guid:NvData offset=0x0 size=0x84000 hlen=0x48 xoff=0x0 rev=2 blocks=132*4096 used=48.5%
+    nvdata=guid:AuthVars size=0x3ffb8 format=0x5a state=0xfe
+      end of variable list at offset 0x0
