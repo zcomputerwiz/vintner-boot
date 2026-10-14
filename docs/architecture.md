@@ -101,7 +101,7 @@ UEFI firmware ---------------------- BIOS firmware
 systemd-boot has no project-private entry directory: it always scans the shared `/loader/entries/` and `/EFI/Linux/` directories on the ESP and XBOOTLDR. Any UKI or Type #1 entry written there by another tool or operating system becomes bootable and may sort above ours. Selection is therefore pinned by configuration and verified at runtime:
 
 - `loader.conf`: `default vintner-*`, `timeout 0` (never `menu-disabled`, which also blocks the key-press menu), `editor no`, `auto-entries no`.
-- Upstream orders entries that have reached zero tries ("bad") after all non-bad entries. Entry IDs and the UKI `.osrel` fields (ID, version, sort key) are chosen so that every non-bad ordinary entry sorts above recovery A, and recovery A above recovery B, while all of them match `default`. When every ordinary entry is bad, recovery is the first match and boots without user input. Upstream does not document the all-bad case, so this behaviour is a CI acceptance test (§10), not an assumption. The exact field values are fixed in WP-002.
+- Upstream orders entries that have reached zero tries ("bad") after all non-bad entries. Entry IDs and the UKI `.osrel` fields (ID, version, sort key) are chosen so that every non-bad ordinary entry sorts above recovery A, and recovery A above recovery B, while all of them match `default`. When every ordinary entry is bad, recovery is the first match and boots without user input. Upstream does not document the all-bad case. The systemd 257 source defines it: bad entries sort last and `default` takes the first match ([ADR-0003](adr/0003-uefi-entry-naming-and-boot-counting.md)). It remains a CI acceptance test (§10), not an assumption. The exact names and field values are in ADR-0003.
 - A choice made with the menu's default key is persisted in the `LoaderEntryDefault` EFI variable and overrides `loader.conf`. The health service reports a set `LoaderEntryDefault` and any foreign entry in the shared directories; it does not delete foreign files.
 - One-shot recovery (`set_recovery_next_boot`) uses `LoaderEntryOneShot`.
 
@@ -367,6 +367,7 @@ The project's first release should be judged on unattended installation, autonom
 |---|---|---|---|
 | ADR-0002 | Implementation language for `src/` (CLI, publisher, health, platform updater, recovery tooling) | Before any code under `src/` | One statically linked binary shared by the installed system and the recovery image (Go or Rust), with thin POSIX `sh` shims for the Debian hook directories |
 | — | GPL-2.0-only or GPL-2.0-or-later for project code | Before the first source file with a license header | Decide together with ADR-0002 |
+| ADR-0003 | Boot counting of GOOD images: upstream semantics (counter removed when blessed) or re-arm (every ordinary image stays counted) | Before WP-003 and WP-004 | Re-arm, so that a GOOD image that later fails still falls back and R05 holds |
 
 ## 17. Change log
 
