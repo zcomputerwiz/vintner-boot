@@ -62,7 +62,7 @@ func clearImmutable(path string) error {
 	}
 	defer f.Close()
 
-	var flags int
+	var flags int32
 	// We use uintptr(unsafe.Pointer(&flags))
 	_, _, sysErr := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(fsIocGetFlags), uintptr(unsafe.Pointer(&flags)))
 	if sysErr != 0 {
@@ -96,7 +96,17 @@ func Set(dir, name string, guid GUID, attrs uint32, data []byte) error {
 	binary.LittleEndian.PutUint32(content[:4], attrs)
 	copy(content[4:], data)
 
-	return os.WriteFile(path, content, 0644)
+	// efivarfs wants the whole variable in one write and no O_TRUNC, as systemd does.
+	// shortcut: on an ordinary directory a shorter overwrite keeps stale trailing bytes; efivarfs replaces the variable. Upgrade if tests ever overwrite.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Delete removes an EFI variable.
