@@ -1,6 +1,6 @@
 # ADR-0003: UEFI entry naming, sort keys and boot counting
 
-- **Status:** Proposed. The entry names and fields below are ready to use; the boot counting model (option A or B) needs a decision.
+- **Status:** Accepted (option B, re-arm)
 - **Date:** 2026-10-14
 - **Details:** [`docs/architecture.md`](../architecture.md) §4.1 and §6; WP-002 (§13)
 
@@ -48,15 +48,17 @@ All vintner UKIs live in `/EFI/Linux/` on the boot storage (XBOOTLDR) partition.
 - **Foreign entries** keep their own sort keys and do not match `vintner-*` unless their file names start with `vintner-`. The health service reports any `vintner-*` file that the manifest does not list, any foreign entry, a set `LoaderEntryDefault` and a set `LoaderConfigTimeout`. It deletes nothing.
 - **`loader.conf`** is in [`firmware/uefi/loader.conf`](../../firmware/uefi/loader.conf). Because of finding 7, Windows does not appear in the systemd-boot menu; on dual-boot machines it is reached from the firmware boot menu. Finding 5 also has to be covered by CI: when a vintner image fails to load, the firmware may boot the next `Boot####` option instead of rebooting.
 
-## Open decision: how ordinary entries are counted
+## Decision: how ordinary entries are counted
+
+**Option B (re-arm) is accepted.** Option A is recorded as the rejected alternative.
 
 Finding 6 conflicts with §6 step 7 ("repeated failure of all ordinary entries selects recovery") and with R05 ("a missing or broken root can boot recovery").
 
 **Option A: upstream semantics.** Only candidate images carry a counter, and `systemd-bless-boot` removes it once the boot is good. A GOOD image is then never counted again. If it breaks later, it keeps being selected. Typical causes are a changed module tree (§6.1), a missing root, or a damaged file (finding 5). Recovery is reached only when the running system marks the image bad, or when the operator uses the menu. R05 and §6 step 7 hold only for candidates.
 
-**Option B: re-arm (recommended).** Every ordinary image and recovery A keeps a counter for life:
+**Option B: re-arm (accepted).** Every ordinary image and recovery A keeps a counter for life:
 
-- After `boot-complete.target`, a vintner bless service renames the booted entry back to `+<N>-0`, where N is the configured number of tries. It also records GOOD in the manifest. The GOOD and TRYING states live in the manifest, not in the file name.
+- After `boot-complete.target`, a vintner bless service renames the booted entry back to `+<N>-0`, where N is the configured number of tries. It finds the entry through the `LoaderBootCountPath` EFI variable that systemd-boot sets for counted entries. It also records GOOD in the manifest. The GOOD and TRYING states live in the manifest, not in the file name.
 - Upstream `systemd-bless-boot.service` is masked.
 - The recovery image re-arms recovery A once its own early checks pass.
 - Any ordinary image that fails N consecutive boots becomes bad and sorts below recovery. When every ordinary image has failed, recovery A boots without user input, as R05 and §6 step 7 require.
@@ -72,4 +74,4 @@ The costs of option B:
 
 - The names and fields above are fixed for WP-003 and for the publisher (WP-005). Changing them later needs a migration, because counters and IDs are part of the file names.
 - The selection-policy CI test (§10) checks findings 1 to 8 and the resulting order on the pinned systemd-boot payload, and runs again on every loader payload update.
-- Choosing option B changes §5 (the bless service and the `systemd-boot` relation) and §6 steps 5 to 7. Those edits are made when this ADR is accepted.
+- Architecture §4, §5 and §6 are updated to option B (revision 1.2).

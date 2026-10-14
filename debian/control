@@ -12,7 +12,7 @@ Description: vintner boot platform - core tools, publisher and health checks
  Common boot metadata schema, manifest validation, state model, CLI and
  API. Contains the publisher (kernel and initramfs hooks, image build,
  verification and signing, atomic staging and garbage collection), the
- health checks and the BIOS blessing service.
+ health checks and the bless service for both firmware backends.
 
 Package: vintner-platform
 Architecture: all

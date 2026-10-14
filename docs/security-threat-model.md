@@ -1,6 +1,6 @@
 # vintner-boot security threat model
 
-- **Status:** Draft 0.1, for review. Covers v1 (phases 0 to 5 in architecture §9).
+- **Status:** Draft 0.2. Decisions D1 to D3 accepted. Covers v1 (phases 0 to 5 in architecture §9).
 - **Date:** 2026-10-14
 - **Related:** [architecture](architecture.md) §4, §5, §8 and §12; [ADR-0003](adr/0003-uefi-entry-naming-and-boot-counting.md); WP-008 (§13)
 
@@ -65,7 +65,7 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
   - The manifest lists the allowed images, and the health service reports any `vintner-*` entry that the manifest does not list (ADR-0003).
   - Loader-level revocation uses SBAT through shim and systemd-boot.
 - **Residual risk:** v1 has no per-image anti-rollback. An old signed UKI placed on boot storage boots once every newer entry is bad. Making them bad only takes renaming them to `+0`, because boot counters live in unsigned file names. With a shared fleet key (T3), an image from any machine in the fleet qualifies.
-- **Decision requested (D3):** accept no anti-rollback in v1 and document it (recommended), or add a minimum generation recorded outside the attacker's reach. There is no such place in v1 without a TPM.
+- **Decision (D3):** no anti-rollback in v1 beyond SBAT, documented. A minimum generation would need a place outside the attacker's reach, and v1 has none without a TPM.
 
 ### T3: theft of the local signing key
 
@@ -79,7 +79,7 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
   - The key is readable only by root (mode 0600). It is never on the ESP, boot storage or recovery media (R11).
   - Enrolled keys are per machine: one MOK or `db` entry per machine, generated at installation. That limits the damage from one compromised root to that machine.
 - **Residual risk:** On the compromised machine itself the attacker can sign persistent boot code. This is inherent to local signing. The fix is offline or hardware-backed signing, which is a later choice (architecture §8).
-- **Decision requested (D2):** tier A uses per-machine keys only (recommended), or a shared site key with the fleet-wide blast radius documented.
+- **Decision (D2):** tier A uses per-machine keys only. No shared site signing key is placed on machines.
 
 ### T4: command line or initramfs changed through unsigned configuration
 
@@ -145,7 +145,7 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
   - Without disk encryption, a physical attacker can already boot their own media and read the disk. An unauthenticated recovery shell gives them nothing new.
   - With LUKS, the recovery image unlocks the root only with an explicit passphrase (architecture §8, "Encryption").
 - **Residual risk:** The reasoning above holds only while nothing unlocks the disk automatically. TPM auto-unlock is a v1 non-goal. Adding it later makes the recovery shell a bypass and forces this decision to be revisited.
-- **Decision requested (D1):** the recovery console needs no authentication in v1, documented with the condition above (recommended), or it requires a password. A password would have to come from somewhere the recovery image can trust without the root filesystem, and v1 has no such place.
+- **Decision (D1):** the recovery console needs no authentication in v1, documented with the condition above. A password would have to come from somewhere the recovery image can trust without the root filesystem, and v1 has no such place.
 
 ### T10: interrupted writes leave no bootable path
 
@@ -188,9 +188,11 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
 
 TPM measurements, sealing and auto-unlock; dm-verity; root filesystem authentication; network boot or network repair; firmware attacks (SMM, implants, DMA); an evil maid on BIOS machines; and a compromised Debian archive.
 
-## 7. Decisions requested
+## 7. Decisions
 
-| ID | Question | Recommendation |
+All three were accepted as recommended on 2026-10-14.
+
+| ID | Question | Decision |
 |---|---|---|
 | D1 | Recovery console authentication (T9) | None in v1, documented, valid only while no auto-unlock exists |
 | D2 | Tier A key model (T3) | Per-machine keys; no shared site signing key on machines |

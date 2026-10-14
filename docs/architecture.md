@@ -1,6 +1,6 @@
 # vintner-boot — Debian Boot Platform Implementation Plan
 
-**Status:** Architecture baseline, revision 1.1 (amended after review, October 14, 2026; see §17 for the change log)  
+**Status:** Architecture baseline, revision 1.2 (October 14, 2026; see §17 for the change log)  
 **Target:** Debian 13 (Trixie) onward, x86-64 UEFI and legacy BIOS  
 **Primary objective:** Windows-like installation/boot/recovery reliability without coupling the machine's boot platform to routine Debian package upgrades.  
 **Naming:** the project is `vintner-boot`; Debian packages, boot entries, ESP directories and NVRAM labels use the `vintner` prefix.
@@ -88,7 +88,7 @@ UEFI firmware ---------------------- BIOS firmware
 
 **BIOS:** conventional `bzImage` and initramfs in versioned slots, with GRUB 2 in a stable location, a minimal non-generative config, and a tested `grubenv`-driven trial/fallback policy (RAUC supplies working reference patterns). BIOS/GPT requires a BIOS Boot Partition, or BIOS/MBR a suitable boot-embedding strategy. The BIOS disk layout should not rely on UEFI-only UKIs. Keep recovery kernel and initramfs in a separate boot-storage location accessible without Debian root. **The slots, recovery images and `grubenv` live on the plain, unencrypted boot storage partition, never on the Debian root:** GRUB writes its environment block only on a plain disk (no LVM or RAID), on a non-checksumming filesystem (no Btrfs or ZFS) and without encryption, so a `grubenv` on a LUKS, LVM or Btrfs root would silently disable BIOS boot counting.
 
-**Health and blessing:** health checks are systemd units ordered `Before=boot-complete.target` and pulled in by it (`RequiredBy=`/`WantedBy=` per check). On UEFI, upstream `systemd-bless-boot.service` marks the entry good after `boot-complete.target` is reached. On BIOS, a `vintner` twin service with the same ordering clears the trial state in `grubenv`. Both backends therefore share one definition of "successful boot".
+**Health and blessing:** health checks are systemd units ordered `Before=boot-complete.target` and pulled in by it (`RequiredBy=`/`WantedBy=` per check). Once `boot-complete.target` is reached, a `vintner` bless service records the boot as good in the manifest and re-arms the booted image's boot counter. On UEFI it renames the entry file back to `+N-0`, finding it through the `LoaderBootCountPath` EFI variable. On BIOS it resets the slot's counter in `grubenv`. Every ordinary image therefore stays counted for life, and an image that fails N consecutive boots falls back even if it was GOOD before ([ADR-0003](adr/0003-uefi-entry-naming-and-boot-counting.md)). Upstream `systemd-bless-boot.service` is masked, because it removes the counter. Both backends share one definition of "successful boot".
 
 **Normal early userspace:** reuse Debian kernel and ordinary initramfs plumbing. Only add a small root-selector and health/identity metadata reader if necessary. No separate Linux kernel or `kexec` in the common path.
 
@@ -127,7 +127,7 @@ Installer choice: **Debian Installer preseed with late commands and custom insta
 
 Debian package boundaries (v1):
 
-- `vintner-core`: common boot metadata schema, manifest validation, state model, CLI and API; the publisher (kernel/initramfs hooks, image build/verify/sign, atomic staging and garbage collection); health checks and the BIOS blessing service.
+- `vintner-core`: common boot metadata schema, manifest validation, state model, CLI and API; the publisher (kernel/initramfs hooks, image build/verify/sign, atomic staging and garbage collection); health checks and the bless service for both firmware backends.
 - `vintner-platform`: **inert** platform payloads (systemd-boot and shim binaries, GRUB core image and modules, recovery images) installed under `/usr/lib/vintner/payloads/`. Installing or upgrading this package never touches the ESP, boot storage or NVRAM; only an explicit, signed `vintner platform-update` deploys a payload. This is the ownership mechanism: APT delivers, the operator deploys.
 - `vintner-installer`: guided/automated installation integration, partition setup, firmware probe, boot entry registration; later also a udeb.
 - The recovery image is a separately versioned **build target** in this repository, shipped inside `vintner-platform`, not a runtime package of its own.
@@ -141,7 +141,7 @@ Package manager interactions: avoid competing GRUB EFI/systemd-boot/shim maintai
 | `systemd-boot-efi`, `systemd-boot-efi-amd64-signed` | Payload source at build time (`vintner-platform`) | Loader and `systemd-stub` binaries only, no maintainer-script installation; a Debian-signed build exists in Trixie (257.13-1~deb13u1) |
 | `systemd-ukify` | `Depends` (`vintner-core`) | UKI generation |
 | `grub-pc-bin` | Payload source at build time (`vintner-platform`) | GRUB BIOS modules and tools without the auto-install scripts of `grub-pc` |
-| `systemd-boot` | `Depends` (`vintner-core`), with `systemd-boot-update.service` masked | Ships `systemd-bless-boot`, which the UEFI backend uses; it also ships `systemd-boot-update.service` (updates systemd-boot copies on the ESP from `/usr`) and the hooks `/etc/kernel/postinst.d/zz-systemd-boot`, `/etc/kernel/postrm.d/zz-systemd-boot` and `/etc/initramfs/post-update.d/systemd-boot`. The lifecycle test must show those hooks write nothing to the ESP or boot storage while the loader lives in `\EFI\vintner\`; if it cannot, switch to `Conflicts` and ship a `vintner` bless service |
+| `systemd-boot` | Not needed by `vintner-core`; `Conflicts` (`vintner-platform`) unless the lifecycle test shows its hooks are harmless. If it is installed, `systemd-boot-update.service` and `systemd-bless-boot.service` are masked | The re-arm model (ADR-0003) uses the `vintner` bless service, not `systemd-bless-boot`. The package also ships `systemd-boot-update.service` (updates systemd-boot copies on the ESP from `/usr`) and the hooks `/etc/kernel/postinst.d/zz-systemd-boot`, `/etc/kernel/postrm.d/zz-systemd-boot` and `/etc/initramfs/post-update.d/systemd-boot`. If the lifecycle test shows those hooks write to the ESP or boot storage while the loader lives in `\EFI\vintner\`, the relation is `Conflicts` |
 | `grub-pc`, `grub-efi-amd64` | `Conflicts` (`vintner-platform`) | Maintainer scripts run `grub-install` and the kernel hooks run `update-grub` |
 | `shim-signed` | `Conflicts` (`vintner-platform`); shim binary taken from the pinned `.deb` at payload build time | Its post-install script runs `grub-install` on EFI-booted systems |
 | kernel-install | `vintner-core` sets `layout=other` | Keeps kernel-install's built-in loader-entry and UKI plugins from writing to `$BOOT`; verified by the lifecycle test |
@@ -157,8 +157,8 @@ States (semantic, shared across firmware): `GOOD`, `STAGED`, `TRYING`, `FAILED`,
 3. Create an immutable, versioned UKI (UEFI) or complete kernel+initramfs slot (BIOS). Write to a staging location, check signature or hashes, size, dependency metadata, and on-disk readback as appropriate.
 4. Flush files and directory metadata in a documented order. Publish by a same-filesystem atomic rename or a state-record commit; validate behavior under FAT filesystem limitations and abrupt power loss.
 5. Set candidate as trial with a finite number of attempts (initial default: 3, configurable). Existing good entry and independent recovery are unaffected.
-6. Boot manager consumes one attempt on each trial boot. When `boot-complete.target` is reached (all health checks passed, §4), the backend's blessing service marks it `GOOD`.
-7. Exhausted attempts select previous `GOOD`; repeated failure of all ordinary entries selects recovery (or a visible recovery choice if hardware cannot reliably reboot unattended). On UEFI this follows from the sort order in §4.1; on BIOS from the static GRUB config reading `grubenv`.
+6. Boot manager consumes one attempt on every boot of a counted image, which is every ordinary image and recovery A. When `boot-complete.target` is reached (all health checks passed, §4), the bless service marks the image `GOOD` in the manifest and re-arms its counter.
+7. Exhausted attempts, on a candidate or on a previously `GOOD` image, select the next newest image that is not bad; repeated failure of all ordinary entries selects recovery (or a visible recovery choice if hardware cannot reliably reboot unattended). On UEFI this follows from the sort order in §4.1; on BIOS from the static GRUB config reading `grubenv`.
 8. Garbage-collect old images only after at least one independently boot-tested good image remains; never garbage-collect recovery in the OS image publisher. The kernel packages of every retained image are protected from `apt autoremove` (written to an `APT::NeverAutoRemove` list) and released when the image is collected.
 
 Kernel rollback here is **not full Debian root rollback**. A broken `/usr`, critical package migration, or incompatible `/lib/modules` state could remain broken after selecting an old kernel. Release notes and test results must make this explicit. For true whole-OS rollback, expand to A/B root slots or an atomic snapshot/update system, always pairing root image and kernel ABI.
@@ -203,7 +203,7 @@ v1 rule: the manifest records a module-tree identity for each image (the kernel 
 | **Plymouth** | Kernel/userspace animated splash and unlock UI | **Adopt**, favor supported BGRT-style theme over custom bootloader animation |
 | **dm-verity** | Kernel block-integrity verification for read-only root filesystem | **Optional v2** with signed root hash and read-only system images; not directly compatible with unrestricted writable root |
 
-**Licensing:** this repository is licensed under the GPL-2.0 (`LICENSE`); whether that is GPL-2.0-only or GPL-2.0-or-later is an open decision (§16). Limine is BSD-2-Clause, ReactOS/FreeLoader is GPL-2.0 family, GRUB is GPL-3.0-or-later, systemd is mostly LGPL-2.1-or-later, and other dependencies carry distinct licenses. Platform payloads built from upstream sources (for example a GRUB core image) are shipped with that upstream's license and corresponding-source obligations. GPL-3.0 code cannot be copied into GPL-2.0-only files. Reference algorithms/designs freely where permitted; if code is copied, comply with copyright and license obligations and record it in the `third_party/` inventory.
+**Licensing:** this repository is licensed under the GPL-2.0 (`LICENSE`); project code is GPL-2.0-or-later (ADR-0002). Limine is BSD-2-Clause, ReactOS/FreeLoader is GPL-2.0 family, GRUB is GPL-3.0-or-later, systemd is mostly LGPL-2.1-or-later, and other dependencies carry distinct licenses. Platform payloads built from upstream sources (for example a GRUB core image) are shipped with that upstream's license and corresponding-source obligations. Copying GPL-3.0 code into a project file makes that file GPL-3.0-or-later. Reference algorithms/designs freely where permitted; if code is copied, comply with copyright and license obligations and record it in the `third_party/` inventory.
 
 ## 8. Security architecture and explicit constraints
 
@@ -361,16 +361,22 @@ Backend interface (semantics, not final API signatures): `list_images`, `publish
 
 The project's first release should be judged on unattended installation, autonomous recovery, image publication, and resistance to routine Debian updates—not whether it uses a single bootloader for both firmware families or perfectly imitates the Windows dots. **Go** if phases 0–5 satisfy the acceptance gates. **No-go** if kernel updates can invalidate recovery, if Secure Boot trust is unverified, if boot counting is only simulated in userspace, or if an interrupted update can erase the last good boot path.
 
-## 16. Open decisions
+## 16. Decisions
 
-| ID | Decision | Needed by | Recommendation |
-|---|---|---|---|
-| ADR-0002 | Implementation language for `src/` (CLI, publisher, health, platform updater, recovery tooling) | Before any code under `src/` | One statically linked binary shared by the installed system and the recovery image (Go or Rust), with thin POSIX `sh` shims for the Debian hook directories |
-| — | GPL-2.0-only or GPL-2.0-or-later for project code | Before the first source file with a license header | Decide together with ADR-0002 |
-| ADR-0003 | Boot counting of GOOD images: upstream semantics (counter removed when blessed) or re-arm (every ordinary image stays counted) | Before WP-003 and WP-004 | Re-arm, so that a GOOD image that later fails still falls back and R05 holds |
-| D1–D3 | Recovery console authentication, tier A key model, image anti-rollback ([threat model](security-threat-model.md) §7) | Before WP-005 and WP-006 | See the threat model |
+| ID | Decision | Outcome |
+|---|---|---|
+| ADR-0002 | Implementation language and license | Go, standard library only, one static `vintner` binary shared with the recovery image; POSIX `sh` hook shims; GPL-2.0-or-later ([ADR-0002](adr/0002-implementation-language.md)) |
+| ADR-0003 | Entry naming and boot counting | Names and `.osrel` fields fixed; every ordinary image stays counted and is re-armed after each good boot ([ADR-0003](adr/0003-uefi-entry-naming-and-boot-counting.md)) |
+| D1 | Recovery console authentication | None in v1, valid only while nothing unlocks the disk automatically ([threat model](security-threat-model.md) T9) |
+| D2 | Tier A key model | Per-machine signing keys; no shared site signing key on machines (threat model T3) |
+| D3 | Image anti-rollback | None in v1 beyond SBAT; documented (threat model T2) |
 
 ## 17. Change log
+
+**Revision 1.2 (October 14, 2026)** — decisions recorded:
+
+- Accepted ADR-0002 (Go, GPL-2.0-or-later) and ADR-0003 (entry naming; re-arm boot counting). Updated §4 "Health and blessing", the `systemd-boot` row in §5 and §6 steps 6 and 7 to the re-arm model.
+- Recorded threat model decisions D1 to D3 and replaced the open decisions table with the decisions taken (§16).
 
 **Revision 1.1 (October 14, 2026)** — amendments from the plan review:
 
