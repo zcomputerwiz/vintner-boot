@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zcomputerwiz/vintner-boot/schema/manifest.schema.json",
+  "title": "vintner-boot installation manifest, format 1",
+  "description": "See manifest.md for storage and meaning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "seq", "installation_id", "machine_id", "firmware", "secure_boot_tier", "root", "boot_storage", "tries", "retain", "next_generation", "images", "recovery"],
+  "properties": {
+    "format": {"const": 1},
+    "seq": {"type": "integer", "minimum": 1},
+    "installation_id": {"$ref": "#/$defs/uuid"},
+    "machine_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "firmware": {"enum": ["uefi", "bios", "both"]},
+    "secure_boot_tier": {"enum": ["A", "B", "C", "none"]},
+    "root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["partuuid", "uuid"],
+      "properties": {
+        "partuuid": {"$ref": "#/$defs/uuid"},
+        "uuid": {"type": "string", "minLength": 1}
+      }
+    },
+    "boot_storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["partuuid"],
+      "properties": {"partuuid": {"$ref": "#/$defs/uuid"}}
+    },
+    "tries": {"type": "integer", "minimum": 1, "maximum": 9},
+    "retain": {"type": "integer", "minimum": 2},
+    "next_generation": {"type": "integer", "minimum": 1},
+    "images": {"type": "array", "items": {"$ref": "#/$defs/image"}},
+    "recovery": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/recovery"}
+    }
+  },
+  "$defs": {
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "time": {"type": "string", "format": "date-time"},
+    "uefi_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry", "sha256", "size"],
+      "properties": {
+        "entry": {"type": "string", "pattern": "^vintner-(os-[1-9][0-9]*|recovery-[ab])$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size": {"type": "integer", "minimum": 1}
+      }
+    },
+    "bios_files": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dir", "files"],
+      "properties": {
+        "dir": {"type": "string", "pattern": "^/vintner/bios/(os-[1-9][0-9]*|recovery-[ab])$"},
+        "files": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["vmlinuz", "initrd.img", "slot.cfg"],
+          "properties": {
+            "vmlinuz": {"$ref": "#/$defs/sha256"},
+            "initrd.img": {"$ref": "#/$defs/sha256"},
+            "slot.cfg": {"$ref": "#/$defs/sha256"}
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "state", "stale", "kernel", "module_tree", "cmdline", "created", "first_good", "last_good"],
+      "properties": {
+        "generation": {"type": "integer", "minimum": 1},
+        "state": {"enum": ["STAGED", "TRYING", "GOOD", "FAILED"]},
+        "stale": {"type": "boolean"},
+        "kernel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["abi", "package", "version"],
+          "properties": {
+            "abi": {"type": "string", "minLength": 1},
+            "package": {"type": ["string", "null"]},
+            "version": {"type": ["string", "null"]}
+          }
+        },
+        "module_tree": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kernel_sha256", "modules_dep_sha256", "dkms_sha256"],
+              "properties": {
+                "kernel_sha256": {"$ref": "#/$defs/sha256"},
+                "modules_dep_sha256": {"$ref": "#/$defs/sha256"},
+                "dkms_sha256": {"$ref": "#/$defs/sha256"}
+              }
+            }
+          ]
+        },
+        "cmdline": {"type": "string"},
+        "uefi": {"$ref": "#/$defs/uefi_file"},
+        "bios": {"$ref": "#/$defs/bios_files"},
+        "created": {"$ref": "#/$defs/time"},
+        "first_good": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/time"}]},
+        "last_good": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/time"}]}
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "version"],
+      "properties": {
+        "slot": {"enum": ["a", "b"]},
+        "version": {"type": "string", "minLength": 1},
+        "uefi": {"$ref": "#/$defs/uefi_file"},
+        "bios": {"$ref": "#/$defs/bios_files"}
+      }
+    }
+  }
+}
