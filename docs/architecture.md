@@ -368,6 +368,7 @@ The project's first release should be judged on unattended installation, autonom
 | ADR-0002 | Implementation language for `src/` (CLI, publisher, health, platform updater, recovery tooling) | Before any code under `src/` | One statically linked binary shared by the installed system and the recovery image (Go or Rust), with thin POSIX `sh` shims for the Debian hook directories |
 | — | GPL-2.0-only or GPL-2.0-or-later for project code | Before the first source file with a license header | Decide together with ADR-0002 |
 | ADR-0003 | Boot counting of GOOD images: upstream semantics (counter removed when blessed) or re-arm (every ordinary image stays counted) | Before WP-003 and WP-004 | Re-arm, so that a GOOD image that later fails still falls back and R05 holds |
+| D1–D3 | Recovery console authentication, tier A key model, image anti-rollback ([threat model](security-threat-model.md) §7) | Before WP-005 and WP-006 | See the threat model |
 
 ## 17. Change log
 
