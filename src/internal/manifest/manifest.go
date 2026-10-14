@@ -220,7 +220,14 @@ func Save(stateDir string, m *Manifest) error {
 		targetCopy = "a"
 	}
 
-	newSeq := m.Seq + 1
+	// Never write a seq at or below a valid copy's, or Load would keep the older one.
+	newSeq := m.Seq
+	for _, c := range []*Manifest{mA, mB} {
+		if c != nil && c.Seq > newSeq {
+			newSeq = c.Seq
+		}
+	}
+	newSeq++
 	// Create a shallow copy just to correctly marshal it with the new Seq
 	mForSave := *m
 	mForSave.Seq = newSeq

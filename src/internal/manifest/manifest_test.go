@@ -109,6 +109,9 @@ func TestLoadSave(t *testing.T) {
 }
 
 func TestIOError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions, so a mode-0000 file is still readable")
+	}
 	tmpDir := t.TempDir()
 
 	// create file with unreadable permissions
@@ -295,4 +298,40 @@ func TestUnknownFields(t *testing.T) {
 	} else if !stringContains(err.Error(), "unknown field") {
 		t.Errorf("expected unknown field error, got %v", err)
 	}
+}
+
+func TestSaveStaleSeqStillWins(t *testing.T) {
+	dir := t.TempDir()
+	m := loadExample(t)
+	if err := Save(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	stale := loadExample(t) // seq from the example file, below what is on disk
+	stale.Retain = 5
+	if err := Save(dir, stale); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Retain != 5 {
+		t.Fatalf("stale-seq save was lost: retain %d, seq %d", got.Retain, got.Seq)
+	}
+}
+
+func loadExample(t *testing.T) *Manifest {
+	t.Helper()
+	data, err := os.ReadFile("../../../schema/examples/manifest-uefi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	return &m
 }

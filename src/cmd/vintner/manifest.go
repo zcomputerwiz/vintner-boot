@@ -52,7 +52,8 @@ func cmdManifest(args []string) {
 			os.Exit(1)
 		}
 
-		fmt.Printf("Loaded from copy %s, seq %d\n", m.LoadedCopy, m.Seq)
+		// stderr, so stdout stays valid JSON.
+		fmt.Fprintf(os.Stderr, "loaded from copy %s, seq %d\n", m.LoadedCopy, m.Seq)
 
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
