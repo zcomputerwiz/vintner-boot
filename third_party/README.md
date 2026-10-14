@@ -10,7 +10,7 @@ This directory contains metadata and pins for upstream projects that `vintner-bo
 *   **ref**: For `git`, a tag or branch name; for `debian`, the precise package version string.
 *   **commit**: For `git`, the 40-character SHA hash of the tagged commit (not the tag object itself, but the peeled `^{}` commit). For `debian`, this is `-`.
 *   **spdx**: The SPDX license expression applying to the component.
-*   **role**: How the component is used (e.g., `adopt`, `evaluate`, or `reference`), as defined in architecture.md §7. Note that branches (e.g., master) may record `branch snapshot` here.
+*   **role**: How the component is used (e.g., `adopt`, `evaluate`, or `reference`), as defined in architecture.md §7. Branch pins (e.g., master) record `branch snapshot` here; for those rows `verify.sh` checks that the recorded commit still exists upstream, not that it is still the branch head.
 
 ## Bumping a pin
 

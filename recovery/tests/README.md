@@ -1,1 +1,1 @@
-This directory contains the tests for the recovery image build target. This aligns with architecture.md §11.
+Tests for the recovery image, including booting with the Debian root missing, unmountable or corrupted and with `/usr` unavailable (architecture §10, WP-006).

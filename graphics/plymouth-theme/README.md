@@ -1,1 +1,1 @@
-This directory contains the plymouth-theme. This aligns with architecture.md §11.
+The Plymouth theme that keeps the firmware's BGRT logo through kernel and userspace start-up (architecture §4 "Graphics", WP-009).

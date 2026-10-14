@@ -3,19 +3,28 @@ Section: admin
 Priority: optional
 Maintainer: zcomputerwiz <zcomputerwiz@users.noreply.github.com>
 Build-Depends: debhelper-compat (= 13)
-Standards-Version: 4.6.2
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
 
 Package: vintner-core
 Architecture: all
-Description: Common boot metadata schema, manifest validation, state model, CLI and API.
- Contains the publisher (kernel/initramfs hooks, image build/verify/sign, atomic staging and garbage collection), health checks and the BIOS blessing service.
+Description: vintner boot platform - core tools, publisher and health checks
+ Common boot metadata schema, manifest validation, state model, CLI and
+ API. Contains the publisher (kernel and initramfs hooks, image build,
+ verification and signing, atomic staging and garbage collection), the
+ health checks and the BIOS blessing service.
 
 Package: vintner-platform
 Architecture: all
-Description: Inert platform payloads installed under /usr/lib/vintner/payloads/.
- Includes systemd-boot and shim binaries, GRUB core image and modules, and recovery images. Installing or upgrading this package never touches the ESP, boot storage or NVRAM.
+Description: vintner boot platform - inert boot loader and recovery payloads
+ Platform payloads installed under /usr/lib/vintner/payloads/: the
+ systemd-boot and shim binaries, the GRUB core image and modules, and the
+ recovery images. Installing or upgrading this package never touches the
+ ESP, boot storage or NVRAM; only an explicit, signed
+ "vintner platform-update" deploys a payload.
 
 Package: vintner-installer
 Architecture: all
-Description: Guided/automated installation integration, partition setup, firmware probe, boot entry registration.
- Later also provides a udeb.
+Description: vintner boot platform - installation integration
+ Guided and automated installation integration: partition setup,
+ firmware probe and boot entry registration. A udeb follows later.

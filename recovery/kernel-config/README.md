@@ -1,1 +1,1 @@
-This directory contains the kernel-config for the recovery image build target. This aligns with architecture.md §11.
+Configuration of the recovery kernel, which is built or selected independently of the installed Debian kernel (architecture §4 "Recovery", R06).

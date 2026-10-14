@@ -1,1 +1,1 @@
-This directory contains configs examples. This aligns with architecture.md §11.
+Example vintner configuration files, once the configuration schema in `schema/` exists (WP-002).

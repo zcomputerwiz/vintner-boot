@@ -1,1 +1,1 @@
-This directory contains the tools for the recovery image build target. This aligns with architecture.md §11.
+Recovery tooling: root diagnostics, rollback and log collection (WP-006, architecture §13).

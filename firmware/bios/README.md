@@ -1,1 +1,1 @@
-This directory contains static grub.cfg and grubenv interface. This aligns with architecture.md §11.
+The static, non-generative `grub.cfg` for BIOS machines and its `grubenv` trial/fallback interface. `grubenv` lives only on the plain, unencrypted boot storage partition (architecture §4). WP-004 (§13) prototypes it.

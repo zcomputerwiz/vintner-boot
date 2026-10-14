@@ -1,1 +1,1 @@
-This directory contains installer files installed onto Debian systems. This aligns with architecture.md §11.
+Installer integration: Debian Installer preseed and late commands, and later a udeb (architecture §5, phase 5 in §9).

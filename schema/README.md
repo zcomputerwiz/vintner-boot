@@ -1,1 +1,1 @@
-This directory contains manifest, configuration and state-machine definitions shared by host and recovery. This aligns with architecture.md §11.
+Language-neutral definitions shared by the installed system and the recovery image: the signed image manifest (including module-tree identity, architecture §6.1), the configuration schema, and the backend-independent state machine (`GOOD`, `STAGED`, `TRYING`, `FAILED`, `RECOVERY`, §6). WP-002 (§13) defines them.

@@ -1,1 +1,1 @@
-This directory contains systemd-units files installed onto Debian systems. This aligns with architecture.md §11.
+systemd units installed on Debian systems: health checks ordered before `boot-complete.target` and the blessing service (architecture §4, "Health and blessing").
