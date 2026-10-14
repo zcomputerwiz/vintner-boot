@@ -1,0 +1,1 @@
+This directory contains the core tool, including the CLI, publisher, health, and backend interface, as outlined in architecture.md §11. The language and layout are set by ADR-0002 (open). No code goes here until it is accepted.
