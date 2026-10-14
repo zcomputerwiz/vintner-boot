@@ -1,0 +1,56 @@
+name: Phase 0 QEMU Baseline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  boot-baseline:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: seabios
+            script: ci/qemu-seabios/boot-baseline.sh
+          - target: ovmf-sb-off
+            script: ci/qemu-ovmf/boot-baseline.sh --secure-boot off
+          - target: ovmf-sb-on
+            script: ci/qemu-ovmf/boot-baseline.sh --secure-boot on
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 ovmf qemu-utils curl shellcheck
+
+      - name: Enable KVM for GitHub-hosted runners
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache Debian image
+        id: cache-debian-image
+        uses: actions/cache@v4
+        with:
+          path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2
+          key: debian-13-genericcloud-amd64-20261001-2618
+
+      - name: Run boot baseline
+        run: |
+          ./${{ matrix.script }}
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.target }}
+          path: |
+            ci/out/${{ matrix.target }}/
+          retention-days: 7
