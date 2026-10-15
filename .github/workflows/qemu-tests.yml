@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 ovmf mtools fdisk e2fsprogs kmod cpio xz-utils \
-            python3-pefile python3-virt-firmware
+            python3-pefile python3-virt-firmware sbsigntool
 
       - name: Enable KVM for GitHub-hosted runners
         run: |
