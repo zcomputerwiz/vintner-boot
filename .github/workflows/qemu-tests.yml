@@ -1,0 +1,53 @@
+name: QEMU boot tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  boot-test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: selection-policy
+            run: ci/selection-policy/run.sh
+            out: ci/out/selection-policy
+          - name: bios-trial
+            run: ci/bios-trial/run.sh
+            out: ci/out/bios-trial
+          - name: recovery-smoke
+            run: recovery/build.sh && recovery/tests/qemu-smoke.sh
+            out: recovery/out/smoke
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 ovmf mtools fdisk e2fsprogs kmod cpio xz-utils \
+            python3-pefile python3-virt-firmware
+
+      - name: Enable KVM for GitHub-hosted runners
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.run }}
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            ${{ matrix.out }}/*.log
+            ${{ matrix.out }}/*.tsv
+          retention-days: 7
