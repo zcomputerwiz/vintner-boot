@@ -43,7 +43,7 @@ The schema is authoritative. This table explains the intent.
 | `firmware` | `uefi`, `bios`, or `both` for mixed-firmware lab disks (architecture §5) |
 | `secure_boot_tier` | `A`, `B`, `C` or `none` (architecture §8) |
 | `root` | Root filesystem identity: GPT `partuuid` and filesystem `uuid` |
-| `boot_storage` | `partuuid` of the boot storage partition |
+| `boot_storage` | `partuuid` of the boot storage partition. The publisher also puts it on every image's kernel command line as `vintner.bootstorage=PARTUUID=<partuuid>`, so the services can find and mount boot storage (architecture §5, D4) |
 | `tries` | Boot counter value used for new and re-armed images (default 3) |
 | `retain` | Number of ordinary images kept (default 3, architecture §5 image budget) |
 | `next_generation` | The generation the next published image gets. It only ever increases (ADR-0003) |

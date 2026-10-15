@@ -27,6 +27,7 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	osExit(0) // unmounts boot storage if a command mounted it
 }
 
 func usage() {

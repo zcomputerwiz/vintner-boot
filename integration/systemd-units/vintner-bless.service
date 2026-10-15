@@ -1,0 +1,20 @@
+# Re-arms the boot counter of the image that just booted and records it as
+# GOOD (architecture §4 "Health and blessing", ADR-0003 option B). It replaces
+# systemd-bless-boot.service, which must be masked because it removes the
+# counter. Boot storage is mounted only inside this unit (decision D4).
+[Unit]
+Description=Bless the current vintner boot
+DefaultDependencies=no
+Requires=boot-complete.target
+After=local-fs.target boot-complete.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/vintner bless
+PrivateMounts=yes
+
+[Install]
+WantedBy=basic.target
