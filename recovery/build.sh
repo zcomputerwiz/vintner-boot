@@ -2,7 +2,8 @@
 # Builds the minimal vintner recovery image (WP-006 phase 1) from Debian trixie
 # packages, independent of any installed system (architecture §4, R06):
 # recovery/out/{vmlinuz,initrd.img,vintner-recovery-a.efi,vintner-recovery-b.efi}.
-# Needs: curl, xz, dpkg-deb, cpio, gzip, kmod (depmod, modprobe), python3 with pefile. No root.
+# Needs: curl, xz, dpkg-deb, cpio, kmod (depmod, modprobe), binutils (objdump),
+# python3 with pefile. No root.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -33,6 +34,22 @@ depmod -b "$ROOT" "$ABI"
 # module list, decompressed so busybox modprobe can load them.
 rm -rf "$INITRD" && mkdir -p "$INITRD"/{bin,proc,sys,dev,run,mnt,etc/vintner,lib/modules/"$ABI"}
 cp "$ROOT/usr/bin/busybox" "$INITRD/bin/busybox"
+# Storage tools with their shared-library closure and trixie's own loader.
+mkdir -p "$INITRD/usr/sbin" "$INITRD/usr/lib/x86_64-linux-gnu" "$INITRD/lib64"
+cp "$ROOT/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2" "$INITRD/lib64/"
+libs=()
+for t in cryptsetup lvm mdadm e2fsck mke2fs; do
+	cp "$ROOT/usr/sbin/$t" "$INITRD/usr/sbin/$t"
+	libs+=("$INITRD/usr/sbin/$t")
+done
+while [ ${#libs[@]} -gt 0 ]; do
+	f=${libs[0]} libs=("${libs[@]:1}")
+	for l in $(objdump -p "$f" | awk '$1=="NEEDED"{print $2}'); do
+		[ -e "$INITRD/usr/lib/x86_64-linux-gnu/$l" ] && continue
+		cp -L "$ROOT/usr/lib/x86_64-linux-gnu/$l" "$INITRD/usr/lib/x86_64-linux-gnu/$l" || { echo "missing $l (needed by $f)" >&2; exit 1; }
+		libs+=("$INITRD/usr/lib/x86_64-linux-gnu/$l")
+	done
+done
 install -m 0755 recovery/initramfs/init "$INITRD/init"
 VERSION=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)
 echo "$VERSION" > "$INITRD/etc/vintner/version"
@@ -41,14 +58,13 @@ cp "$ROOT/usr/lib/modules/$ABI"/modules.{order,builtin,builtin.modinfo} "$INITRD
 while read -r m; do
 	modprobe -d "$ROOT" -S "$ABI" --show-depends "$m" 2>/dev/null | awk '$1=="insmod"{print $2}'
 done < "$INITRD/etc/vintner/modules" | sort -u | while read -r ko; do
-	rel=${ko#"$ROOT"/usr/lib/modules/"$ABI"/}
-	rel=${rel#"$ROOT"/lib/modules/"$ABI"/}
+	rel=${ko#*/lib/modules/"$ABI"/} # modprobe prints absolute paths
 	mkdir -p "$INITRD/lib/modules/$ABI/$(dirname "$rel")"
 	xz -dc "$ko" > "$INITRD/lib/modules/$ABI/${rel%.xz}"
 done
 depmod -b "$INITRD" "$ABI"
 echo "modules: $(find "$INITRD/lib/modules" -name '*.ko' | wc -l), $(du -sh "$INITRD/lib/modules" | cut -f1)" >> "$OUT/versions.txt"
-(cd "$INITRD" && find . | LC_ALL=C sort | cpio -o -H newc --owner=0:0 --quiet | gzip -9n) > "$OUT/initrd.img"
+(cd "$INITRD" && find . | LC_ALL=C sort | cpio -o -H newc --owner=0:0 --quiet | xz -9 --check=crc32 -T1) > "$OUT/initrd.img" # the kernel needs crc32 checks
 cp "$ROOT/boot/vmlinuz-$ABI" "$OUT/vmlinuz"
 
 # UKIs per ADR-0003: IMAGE_ID sorts recovery A above B; recovery B never carries a counter.

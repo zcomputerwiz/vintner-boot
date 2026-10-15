@@ -24,3 +24,14 @@ btrfs
 xfs
 isofs
 dm_mod
+dm_crypt
+aes_generic
+ecb
+xts
+aesni_intel
+algif_skcipher
+md_mod
+raid0
+raid1
+raid10
+raid456
