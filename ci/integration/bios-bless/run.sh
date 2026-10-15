@@ -27,16 +27,15 @@ rm -rf "$STATE" "$OUT/inspect_b"*
 mkdir -p "$OUT" "$DEBS" "$ROOT" "$STATE" "$MNT"
 : > "$OUT/versions.txt"
 
-first() {
-	local f
-	for f; do
-		[ -e "$f" ] && { echo "$f"; return 0; }
-	done
+# has <list> <NAME=value>: true if the ;-separated list holds exactly that item.
+has() {
+	case ";$1;" in *";$2;"*) return 0 ;; esac
 	return 1
 }
 
 # Ensure cleanup on exit
 LOOP=""
+GEN_MANIFEST=src/gen_manifest.go
 cleanup() {
 	local rc=$?
 	if [ "$rc" != 0 ]; then
@@ -50,6 +49,7 @@ cleanup() {
 	if [ -n "${LOOP:-}" ]; then
 		sudo losetup -d "$LOOP" || true
 	fi
+	rm -f "$GEN_MANIFEST"
 }
 trap cleanup EXIT
 
@@ -210,6 +210,8 @@ sudo mount "$ROOT_DEV" "$MNT"
 KERNEL_IMG=$(ls "$MNT"/boot/vmlinuz-*)
 INITRD_IMG=$(ls "$MNT"/boot/initrd.img-*)
 KERNEL_ABI=$(basename "$KERNEL_IMG" | sed 's/^vmlinuz-//')
+echo "guest-kernel $KERNEL_ABI" >> "$OUT/versions.txt"
+sed 's/^/recovery: /' recovery/out/versions.txt >> "$OUT/versions.txt"
 
 cp "$KERNEL_IMG" "$OUT/vmlinuz"
 cp "$INITRD_IMG" "$OUT/initrd.img"
@@ -335,7 +337,6 @@ REC_INITRD_SHA=$(sha256sum recovery/out/initrd.img | awk '{print $1}')
 RECA_SLOT_SHA=$(sha256sum "$OUT/reca-slot.cfg" | awk '{print $1}')
 RECB_SLOT_SHA=$(sha256sum "$OUT/recb-slot.cfg" | awk '{print $1}')
 
-GEN_MANIFEST=src/gen_manifest.go
 cat <<'EOF' > "$GEN_MANIFEST"
 package main
 
@@ -523,31 +524,35 @@ mtype -i "$DISK@@$BS_OFFSET" ::/vintner/state/manifest-b > "$OUT/inspect_b1/mani
 
 # C1 Check: systemctl status vintner-bless.service
 C1_STATUS="FAIL"
-if grep -q "Active: active (exited)" "$OUT/boot1.log" && grep -q "status=0/SUCCESS" "$OUT/boot1.log"; then
+C1_BLOCK=$(tr -d '\r' < "$OUT/boot1.log" | sed -n '/=== CHECK C1 ===/,/=== CHECK C4 ===/p')
+if echo "$C1_BLOCK" | grep -q "Active: active (exited)" && echo "$C1_BLOCK" | grep -q "ExecStart=/usr/sbin/vintner bless .*status=0/SUCCESS"; then
 	C1_STATUS="PASS"
 fi
-C1_EVID=$(tr -d '\r' < "$OUT/boot1.log" | grep -A 10 "=== CHECK C1 ===" | grep -E "Active:|Process:" | paste -sd ';' || true)
+C1_EVID=$(echo "$C1_BLOCK" | grep -E "Active:|Process:" | paste -sd ';' || true)
 
 # C2 Check: grubenv re-armed (VINTNER_T_1=xxx and no VINTNER_BOOTED)
 C2_STATUS="FAIL"
 C2_VARS=$(editenv "$OUT/inspect_b1/grubenv" list | grep '^VINTNER_' | sort | paste -sd ';')
-if echo "$C2_VARS" | grep -q "VINTNER_T_1=xxx" && ! echo "$C2_VARS" | grep -q "VINTNER_BOOTED="; then
+if has "$C2_VARS" VINTNER_T_1=xxx && ! echo "$C2_VARS" | grep -q "VINTNER_BOOTED="; then
 	C2_STATUS="PASS"
 fi
 C2_EVID="$C2_VARS"
 
 # C3 Check: manifest after boot 1
 C3_STATUS="FAIL"
-C3_EVID=$(python3 - "$OUT/inspect_b1" <<'EOF'
+C3_EVID=$(python3 - "$STATE" "$OUT/inspect_b1" <<'EOF'
 import json, sys
-out = sys.argv[1]
+def load(d, c):
+    return json.loads(open(f"{d}/manifest-{c}").readline())
 try:
-    ma = json.loads(open(f"{out}/manifest-a").readline())
-    mb = json.loads(open(f"{out}/manifest-b").readline())
-    if ma["seq"] == 3 and ma["images"][0]["state"] == "GOOD" and ma["images"][0]["first_good"] is not None and mb["seq"] == 2:
-        print(f"PASS|manifest-a seq={ma['seq']} state={ma['images'][0]['state']} first_good={ma['images'][0]['first_good']}; manifest-b seq={mb['seq']}")
-    else:
-        print(f"FAIL|ma seq={ma['seq']} state={ma['images'][0]['state']}; mb seq={mb['seq']}")
+    before = {c: load(sys.argv[1], c)["seq"] for c in "ab"}
+    after = {c: load(sys.argv[2], c) for c in "ab"}
+    new = max("ab", key=lambda c: after[c]["seq"])
+    img = after[new]["images"][0]
+    ok = (after[new]["seq"] == max(before.values()) + 1 and before[new] == min(before.values())
+          and img["state"] == "GOOD" and img.get("first_good") and img.get("last_good"))
+    print(f"{'PASS' if ok else 'FAIL'}|seq before a={before['a']} b={before['b']}, after a={after['a']['seq']} b={after['b']['seq']}; "
+          f"manifest-{new}: state={img['state']} first_good={img.get('first_good')} last_good={img.get('last_good')}")
 except Exception as e:
     print(f"FAIL|{e}")
 EOF
@@ -561,7 +566,8 @@ C3_EVID="${C3_EVID#*|}"
 C4_STATUS="FAIL"
 C4_VFAT=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^vfat-mount: //p' | paste -sd ';' || true)
 C4_VINTNER=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^vintner-mount: //p' | paste -sd ';' || true)
-if ! echo "$C4_VFAT" | grep -q "$BS_PARTUUID" && [ -z "$C4_VINTNER" ]; then
+# findmnt prints device paths, not PARTUUIDs: the ESP must be the only vfat mount.
+if [ "$(echo "$C4_VFAT" | awk -F';' '{for (i = 1; i <= NF; i++) {split($i, f, " "); print f[1]}}')" = "/boot/efi" ] && [ -z "$C4_VINTNER" ]; then
 	C4_STATUS="PASS"
 fi
 C4_EVID="vfat mounts: ${C4_VFAT:-none}; /run/vintner mounts: ${C4_VINTNER:-none}"
@@ -613,7 +619,7 @@ mtype -i "$DISK@@$BS_OFFSET" ::/grub/grubenv > "$OUT/inspect_b2/grubenv"
 # C6 Check: grubenv after boot 2 (counted, not rearmed)
 C6_STATUS="FAIL"
 C6_VARS=$(editenv "$OUT/inspect_b2/grubenv" list | grep '^VINTNER_' | sort | paste -sd ';')
-if echo "$C6_VARS" | grep -q "VINTNER_T_1=xx" && echo "$C6_VARS" | grep -q "VINTNER_BOOTED=1"; then
+if has "$C6_VARS" VINTNER_T_1=xx && has "$C6_VARS" VINTNER_BOOTED=1; then
 	C6_STATUS="PASS"
 fi
 C6_EVID="$C6_VARS"
@@ -665,9 +671,9 @@ B5_FAIL=$(tr -d '\r' < "$OUT/boot5.log" | grep -m1 -E '(Gave up waiting|ALERT!|K
 
 # C7 Check: degradation sequence xx -> x -> 0 with BOOTED=1 each time
 C7_STATUS="FAIL"
-if echo "$B3_VARS" | grep -q "VINTNER_BOOTED=1" && echo "$B3_VARS" | grep -q "VINTNER_T_1=xx" && \
-   echo "$B4_VARS" | grep -q "VINTNER_BOOTED=1" && echo "$B4_VARS" | grep -q "VINTNER_T_1=x" && \
-   echo "$B5_VARS" | grep -q "VINTNER_BOOTED=1" && echo "$B5_VARS" | grep -q "VINTNER_T_1=0" && \
+if has "$B3_VARS" VINTNER_BOOTED=1 && has "$B3_VARS" VINTNER_T_1=xx && \
+   has "$B4_VARS" VINTNER_BOOTED=1 && has "$B4_VARS" VINTNER_T_1=x && \
+   has "$B5_VARS" VINTNER_BOOTED=1 && has "$B5_VARS" VINTNER_T_1=0 && \
    [ -n "$B3_FAIL" ] && [ -n "$B4_FAIL" ] && [ -n "$B5_FAIL" ]; then
 	C7_STATUS="PASS"
 fi
@@ -689,14 +695,15 @@ B6_VARS=$(editenv "$OUT/inspect_b6/grubenv" list | grep '^VINTNER_' | sort | pas
 
 C8_TRYING=$(tr -d '\r' < "$OUT/boot6.log" | sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' | grep -m1 'vintner: trying recovery-a' || true)
 C8_REC_LOG=$(tr -d '\r' < "$OUT/boot6.log" | sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' | grep -m1 'VINTNER-RECOVERY-TEST' || true)
+C8_OS1=$(tr -d '\r' < "$OUT/boot6.log" | grep -c 'vintner: trying os-1' || true)
 
 # C8 Check: GRUB skipped os-1, booted recovery A, counted T_RA=xx and BOOTED=RA
 C8_STATUS="FAIL"
-if [ -n "$C8_TRYING" ] && echo "$C8_REC_LOG" | grep -q "root=mounted ro=yes" && \
-   echo "$B6_VARS" | grep -q "VINTNER_BOOTED=RA" && echo "$B6_VARS" | grep -q "VINTNER_T_RA=xx"; then
+if [ "$C8_OS1" = 0 ] && [ -n "$C8_TRYING" ] && echo "$C8_REC_LOG" | grep -q "root=mounted ro=yes" && \
+   has "$B6_VARS" VINTNER_BOOTED=RA && has "$B6_VARS" VINTNER_T_RA=xx; then
 	C8_STATUS="PASS"
 fi
-C8_EVID="${C8_TRYING:-none}; ${C8_REC_LOG:-none}; grubenv: $B6_VARS"
+C8_EVID="'vintner: trying os-1' lines: $C8_OS1; ${C8_TRYING:-none}; ${C8_REC_LOG:-none}; grubenv: $B6_VARS"
 
 # C9 Check: root filesystem byte-identical after recovery boot
 echo "=== Calculating root partition hash after Boot 6 ==="
@@ -707,7 +714,7 @@ C9_STATUS="FAIL"
 if [ "$ROOT_SHA_BEFORE" = "$ROOT_SHA_AFTER" ] && [ -n "$ROOT_SHA_BEFORE" ]; then
 	C9_STATUS="PASS"
 fi
-C9_EVID="before: $ROOT_SHA_BEFORE; after: $ROOT_SHA_AFTER (byte-identical)"
+C9_EVID="before: $ROOT_SHA_BEFORE; after: $ROOT_SHA_AFTER"
 
 # --- 13. Print Results Table ------------------------------------------------
 echo "=== Test Summary Table ==="
@@ -715,16 +722,18 @@ echo "=== Test Summary Table ==="
 	printf "ID\tAfter\tCheck\tExpected\tStatus\tEvidence\n"
 	printf "C1\tboot 1\tsystemctl status vintner-bless.service\tactive (exited), status 0\t%s\t%s\n" "$C1_STATUS" "$C1_EVID"
 	printf "C2\tboot 1\tgrubenv\tVINTNER_T_1=xxx and no VINTNER_BOOTED (re-armed)\t%s\t%s\n" "$C2_STATUS" "$C2_EVID"
-	printf "C3\tboot 1\tmanifest\tgeneration 1 GOOD, first_good/last_good set, seq+1\t%s\t%s\n" "$C3_STATUS" "$C3_EVID"
-	printf "C4\tboot 1\tfindmnt -rn -t vfat; grep /run/vintner mountinfo\tBoot storage not mounted anywhere\t%s\t%s\n" "$C4_STATUS" "$C4_EVID"
+	printf "C3\tboot 1\tmanifest\tgeneration 1 GOOD, first_good/last_good set, seq one higher, written to the older copy\t%s\t%s\n" "$C3_STATUS" "$C3_EVID"
+	printf "C4\tboot 1\tfindmnt -rn -t vfat; grep /run/vintner mountinfo\tOnly the ESP at /boot/efi; boot storage not mounted anywhere\t%s\t%s\n" "$C4_STATUS" "$C4_EVID"
 	printf "C5\tboot 1\tgrubenv file on host\texactly 1024 bytes, second 512 bytes all '#'\t%s\t%s\n" "$C5_STATUS" "$C5_EVID"
 	printf "C6\tboot 2\tgrubenv\tVINTNER_T_1=xx, VINTNER_BOOTED=1 (counted, not rearmed)\t%s\t%s\n" "$C6_STATUS" "$C6_EVID"
 	printf "C7\tboots 3 to 5\tgrubenv after each\tVINTNER_T_1 goes xx, then x, then 0; BOOTED=1\t%s\t%s\n" "$C7_STATUS" "$C7_EVID"
-	printf "C8\tboot 6\tserial log and grubenv\tBoots recovery A, root=mounted ro=yes; T_RA=xx, BOOTED=RA\t%s\t%s\n" "$C8_STATUS" "$C8_EVID"
+	printf "C8\tboot 6\tserial log and grubenv\tSkips os-1, boots recovery A, root=mounted ro=yes; T_RA=xx, BOOTED=RA\t%s\t%s\n" "$C8_STATUS" "$C8_EVID"
 	printf "C9\tall\troot filesystem\tRecovery boot left root partition unchanged (sha256)\t%s\t%s\n" "$C9_STATUS" "$C9_EVID"
 } > "$RESULTS"
 
 cat "$RESULTS"
+echo "=== versions.txt ==="
+cat "$OUT/versions.txt"
 
 # Check overall success
 FAILURES=$(awk -F'\t' '$5=="FAIL"{print $1}' "$RESULTS")
