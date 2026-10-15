@@ -141,7 +141,7 @@ Package manager interactions: avoid competing GRUB EFI/systemd-boot/shim maintai
 | `systemd-boot-efi`, `systemd-boot-efi-amd64-signed` | Payload source at build time (`vintner-platform`) | Loader and `systemd-stub` binaries only, no maintainer-script installation; a Debian-signed build exists in Trixie (257.13-1~deb13u1) |
 | `systemd-ukify` | `Depends` (`vintner-core`) | UKI generation |
 | `grub-pc-bin` | Payload source at build time (`vintner-platform`) | GRUB BIOS modules and tools without the auto-install scripts of `grub-pc` |
-| `systemd-boot` | Not needed by `vintner-core`; `Conflicts` (`vintner-platform`) unless the lifecycle test shows its hooks are harmless. If it is installed, `systemd-boot-update.service` and `systemd-bless-boot.service` are masked | The re-arm model (ADR-0003) uses the `vintner` bless service, not `systemd-bless-boot`. The package also ships `systemd-boot-update.service` (updates systemd-boot copies on the ESP from `/usr`) and the hooks `/etc/kernel/postinst.d/zz-systemd-boot`, `/etc/kernel/postrm.d/zz-systemd-boot` and `/etc/initramfs/post-update.d/systemd-boot`. If the lifecycle test shows those hooks write to the ESP or boot storage while the loader lives in `\EFI\vintner\`, the relation is `Conflicts` |
+| `systemd-boot` | `Conflicts` (`vintner-platform`) | Its postinst runs `bootctl install` or `bootctl update` whenever an ESP is found, may install shim as `\EFI\BOOT\BOOTX64.EFI` with a new EFI boot entry, and runs `kernel-install add`. Neither kernel-install `layout=other` nor masking `systemd-boot-update.service` prevents this (`ci/lifecycle/systemd-boot-hooks/results.md`). The re-arm model does not need `systemd-bless-boot` from this package (ADR-0003) |
 | `grub-pc`, `grub-efi-amd64` | `Conflicts` (`vintner-platform`) | Maintainer scripts run `grub-install` and the kernel hooks run `update-grub` |
 | `shim-signed` | `Conflicts` (`vintner-platform`); shim binary taken from the pinned `.deb` at payload build time | Its post-install script runs `grub-install` on EFI-booted systems |
 | `grub-cloud-amd64`, `grub-efi-ia32`, `grub-coreboot`, `grub-xen`, `grub-ieee1275`, `refind` | `Conflicts` (`vintner-platform`) | Their maintainer scripts run `grub-install` or `update-grub` (rEFInd: `efibootmgr`); found by the package survey in `ci/lifecycle/` |
@@ -376,6 +376,7 @@ The project's first release should be judged on unattended installation, autonom
 
 **Revision 1.2 (October 14, 2026)** — decisions recorded:
 
+- `systemd-boot` is now a `Conflicts` of `vintner-platform`: its postinst takes over the ESP and NVRAM even with `layout=other` (§5).
 - Accepted ADR-0002 (Go, GPL-2.0-or-later) and ADR-0003 (entry naming; re-arm boot counting). Updated §4 "Health and blessing", the `systemd-boot` row in §5 and §6 steps 6 and 7 to the re-arm model.
 - Recorded threat model decisions D1 to D3 and replaced the open decisions table with the decisions taken (§16).
 
