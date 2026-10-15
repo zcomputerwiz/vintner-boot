@@ -654,7 +654,7 @@ $INDENTED_SCRIPT
       /tmp/run_op.sh
       RC=\$?
       echo "=== OP EXIT: \$RC ===" > /dev/ttyS0
-      tail -n 20 /tmp/op.log > /dev/ttyS0
+      tail -n 20 /tmp/op.log | sed 's/^/OPLOG: /' > /dev/ttyS0
 runcmd:
   - /tmp/run_runner.sh
 EOF
@@ -714,13 +714,8 @@ def clean(text):
 b1_text = clean(open(boot1_log, errors="replace").read())
 m_exit = re.search(r"^=== OP EXIT: (-?\d+) ===$", b1_text, re.M)
 cmd_exit = int(m_exit.group(1)) if m_exit else -1
-cmd_tail = []
-if m_exit:
-    for line in b1_text[m_exit.end():].splitlines():
-        if line.startswith("=== VINTNER-REPORT-BEGIN ==="):
-            break
-        if line.strip():
-            cmd_tail.append(line)
+# The console interleaves with the command's output, so its lines are prefixed.
+cmd_tail = re.findall(r"^OPLOG: (.*)$", b1_text, re.M)
 
 # 2. Vintner loader files, for both firmwares: the disk boots on both
 changed_vintner_files = []
@@ -873,7 +868,8 @@ for p in grub-cloud-amd64 grub-pc grub-efi-amd64 grub-efi-amd64-signed shim-sign
 done
 RC=0
 if [ -n "$TO_PURGE" ]; then
-	DEBIAN_FRONTEND=noninteractive apt-get -y purge $TO_PURGE || RC=$?
+	# grub-efi-amd64-signed is Protected: apt refuses to remove it without this.
+	DEBIAN_FRONTEND=noninteractive apt-get -y --allow-remove-essential purge $TO_PURGE || RC=$?
 fi
 apt-get update || RC=$?
 dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' | awk '$1=="ii"{print $2}' | sort > /tmp/pkgs-after
