@@ -1,0 +1,363 @@
+package	version	member	command	line	excerpt
+amd64-microcode	3.20250311.1	postinst	update-initramfs	23	 dpkg-trigger --no-await update-initramfs || RC=$?
+amd64-microcode	3.20250311.1	postinst	update-initramfs	26	  update-initramfs -u || RC=$?
+amd64-microcode	3.20250311.1	postrm	update-initramfs	23	 dpkg-trigger --no-await update-initramfs || {
+amd64-microcode	3.20250311.1	postrm	update-initramfs	25	     [ -e /etc/initramfs-tools/initramfs.conf ] && update-initramfs -u || :
+aoetools	36-6	triggers	update-initramfs	2	activate-noawait update-initramfs
+azure-vm-utils	0.6.0-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+bcache-tools	1.0.8-5	triggers	update-initramfs	2	activate-noawait update-initramfs
+bilibop-lockfs	0.6.5	postinst	update-initramfs	8	        if which update-initramfs >/dev/null; then
+bilibop-lockfs	0.6.5	postinst	update-initramfs	9	            update-initramfs -u
+bilibop-lockfs	0.6.5	postrm	update-initramfs	19	        if which update-initramfs >/dev/null; then
+bilibop-lockfs	0.6.5	postrm	update-initramfs	20	            update-initramfs -u
+bilibop-lockfs	0.6.5	triggers	update-initramfs	1	activate-await update-initramfs
+bilibop-rules	0.6.5	postinst	update-initramfs	243	        if which update-initramfs >/dev/null; then
+bilibop-rules	0.6.5	postinst	update-initramfs	246	                    update-initramfs -u
+bilibop-rules	0.6.5	postinst	update-initramfs	249	                update-initramfs -u
+bilibop-rules	0.6.5	postrm	update-initramfs	49	        if which update-initramfs >/dev/null; then
+bilibop-rules	0.6.5	postrm	update-initramfs	50	            update-initramfs -u
+bilibop-rules	0.6.5	triggers	update-initramfs	1	activate-await update-initramfs
+bootcd	6.8.2	postinst	update-initramfs	21	  update-initramfs -u
+bootcd	6.8.2	postrm	update-initramfs	7	 if [ -x /usr/sbin/update-initramfs -a -e /etc/initramfs-tools/initramfs.conf ]; then
+bootcd	6.8.2	postrm	update-initramfs	8	  update-initramfs -u -k all
+bootcd	6.8.2	triggers	update-initramfs	2	activate-noawait update-initramfs
+brltty	6.7-3.1+deb13u3	postinst	update-initramfs	16	 ! command -v update-initramfs >/dev/null 2>&1 || update-initramfs -u
+btrfs-progs	6.14-1	triggers	update-initramfs	2	activate-noawait update-initramfs
+busybox	1:1.37.0-6+b9	triggers	update-initramfs	2	activate-noawait update-initramfs
+busybox-static	1:1.37.0-6+b9	triggers	update-initramfs	2	activate-noawait update-initramfs
+clevis-dracut	20-1	triggers	update-initramfs	1	activate-noawait    update-initramfs
+clevis-initramfs	20-1	triggers	update-initramfs	1	activate-noawait    update-initramfs
+clevis-initramfs	20-1	triggers	update-initramfs	3	activate-noawait update-initramfs
+cloud-initramfs-dyn-netconf	0.18.debian14	postinst	update-initramfs	6	  dpkg-trigger update-initramfs;;
+cloud-initramfs-dyn-netconf	0.18.debian14	postrm	update-initramfs	6	  dpkg-trigger update-initramfs;;
+cloud-initramfs-dyn-netconf	0.18.debian14	triggers	update-initramfs	2	activate-noawait update-initramfs
+cloud-initramfs-growroot	0.18.debian14	postinst	update-initramfs	6	  dpkg-trigger update-initramfs;;
+cloud-initramfs-growroot	0.18.debian14	postrm	update-initramfs	6	  dpkg-trigger update-initramfs;;
+cloud-initramfs-growroot	0.18.debian14	triggers	update-initramfs	2	activate-noawait update-initramfs
+cloud-initramfs-rescuevol	0.18.debian14	postinst	update-initramfs	6	  dpkg-trigger update-initramfs;;
+cloud-initramfs-rescuevol	0.18.debian14	postrm	update-initramfs	6	  dpkg-trigger update-initramfs;;
+cloud-initramfs-rescuevol	0.18.debian14	triggers	update-initramfs	2	activate-noawait update-initramfs
+cryptsetup-initramfs	2:2.7.5-2	postinst	update-initramfs	20	        if command -v update-initramfs >/dev/null; then
+cryptsetup-initramfs	2:2.7.5-2	postinst	update-initramfs	21	            update-initramfs -u
+cryptsetup-initramfs	2:2.7.5-2	postrm	update-initramfs	7	        if command -v update-initramfs >/dev/null; then
+cryptsetup-initramfs	2:2.7.5-2	postrm	update-initramfs	8	            update-initramfs -u
+cryptsetup-initramfs	2:2.7.5-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+cryptsetup-nuke-password	8	postinst	update-initramfs	57	    dpkg-trigger --no-await update-initramfs
+cryptsetup-nuke-password	8	triggers	update-initramfs	2	activate-noawait update-initramfs
+dmsetup	2:1.02.205-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+dracut	106-6	postinst	dracut	11	            /etc/kernel/postinst.d/dracut "$kversion"
+dracut	106-6	postinst	update-initramfs	18	    if dpkg-trigger --no-await update-initramfs; then
+dracut	106-6	postinst	update-initramfs	19	        echo "update-initramfs: deferring update (trigger activated)"
+dracut	106-6	triggers	update-initramfs	1	interest-await update-initramfs
+dracut-core	106-6	postrm	dracut	7	 rm -f /var/log/dracut.log*
+dracut-core	106-6	usr/lib/kernel/install.d/50-dracut.install	dracut	19	if [[ "${KERNEL_INSTALL_INITRD_GENERATOR:-dracut}" = "dracut" ]]; then
+dracut-core	106-6	usr/lib/kernel/install.d/50-dracut.install	dracut	27	if [[ "$KERNEL_INSTALL_UKI_GENERATOR" = "dracut" ]]; then
+dracut-core	106-6	usr/lib/kernel/install.d/50-dracut.install	dracut	73	dracut -f \
+dracut-core	106-6	usr/lib/kernel/install.d/51-dracut-rescue.install	dracut	20	if [[ "$KERNEL_INSTALL_UKI_GENERATOR" = "dracut" ]]; then
+dracut-core	106-6	usr/lib/kernel/install.d/51-dracut-rescue.install	dracut	23	elif [[ "${KERNEL_INSTALL_INITRD_GENERATOR:-dracut}" != "dracut" ]]; then
+dracut-core	106-6	usr/lib/kernel/install.d/51-dracut-rescue.install	dracut	113	        for f in $(dropindirs_sort ".conf" "/etc/dracut.conf.d" "/usr/lib/dracut/dracut.conf.d"); do
+dracut-core	106-6	usr/lib/kernel/install.d/51-dracut-rescue.install	dracut	122	                && echo "Skipping, 'dracut_rescue_image' not set to 'yes' in any dracut configuration file"
+dracut-core	106-6	usr/lib/kernel/install.d/51-dracut-rescue.install	dracut	134	            dracut -f \
+dropbear-initramfs	2025.89-1~deb13u1	postinst	update-initramfs	48	    update-initramfs -u
+dropbear-initramfs	2025.89-1~deb13u1	triggers	update-initramfs	2	activate-noawait update-initramfs
+fuse3	3.17.2-3	postinst	update-initramfs	34	  if [ -x "`which update-initramfs 2>/dev/null`" ]
+fuse3	3.17.2-3	postinst	update-initramfs	36	   update-initramfs -u
+fuse3	3.17.2-3	postrm	update-initramfs	7	  if [ -x "`which update-initramfs 2>/dev/null`" ]
+fuse3	3.17.2-3	postrm	update-initramfs	9	   update-initramfs -u
+fuse3	3.17.2-3	triggers	update-initramfs	2	activate-noawait update-initramfs
+glx-alternative-nvidia	1.2.2	postinst	update-initramfs	186	 dpkg-trigger --no-await update-initramfs
+glx-alternative-nvidia	1.2.2	triggers	update-initramfs	4	activate-noawait update-initramfs
+grml-rescueboot	0.6.6	postinst	update-grub	20	  if ! which update-grub >/dev/null 2>&1; then
+grml-rescueboot	0.6.6	postinst	update-grub	21	    echo "WARN: ISOs found inside ${ISO_LOCATION} but update-grub not present (huh?)"
+grml-rescueboot	0.6.6	postinst	update-grub	27	    echo "WARN: Ignoring request to run update-grub to avoid possible boot loader problems."
+grml-rescueboot	0.6.6	postinst	update-grub	31	  echo "INFO: ISOs found inside ${ISO_LOCATION}, invoking update-grub:"
+grml-rescueboot	0.6.6	postinst	update-grub	32	  update-grub
+grml-rescueboot	0.6.6	postrm	update-grub	8	      if test -e /boot/grub/grub.cfg && which update-grub >/dev/null 2>&1; then
+grml-rescueboot	0.6.6	postrm	update-grub	10	        update-grub
+grub-cloud-amd64	0.1.1	postinst	grub-install	7	    grub-install --target=i386-pc "$basedev"
+grub-cloud-amd64	0.1.1	postinst	grub-install	13	    grub-install --target=x86_64-efi --no-nvram --uefi-secure-boot --force-extra-removable
+grub-cloud-amd64	0.1.1	postinst	update-grub	29	        update-grub
+grub-common	2.12-9+deb13u2	etc/grub.d/00_header	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-common	2.12-9+deb13u2	etc/grub.d/05_debian_theme	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-common	2.12-9+deb13u2	etc/grub.d/05_debian_theme	grub-mkconfig	20	# Include the GRUB helper library for grub-mkconfig.
+grub-common	2.12-9+deb13u2	etc/grub.d/10_linux	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-common	2.12-9+deb13u2	etc/grub.d/20_linux_xen	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-common	2.12-9+deb13u2	etc/grub.d/25_bli	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-common	2.12-9+deb13u2	etc/grub.d/30_os-prober	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-common	2.12-9+deb13u2	etc/grub.d/30_os-prober	grub-mkconfig	366	      gettext_printf "%s is not yet supported by grub-mkconfig.\n" "  ${LONGNAME}" >&2
+grub-common	2.12-9+deb13u2	etc/grub.d/30_uefi-firmware	grub-mkconfig	4	# grub-mkconfig helper script.
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	135	# In order to determine whether we accidentally ran grub-install without
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	330	    if ! grub-install $@ ; then
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	331	        echo "Failed: grub-install $@" >&2
+grub-coreboot	2.12-9+deb13u2	postinst	update-grub	342	    if egrep -q '^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub' /etc/kernel-img.conf 2>/dev/null; then
+grub-coreboot	2.12-9+deb13u2	postinst	update-grub	343	      echo 'Removing update-grub hooks from /etc/kernel-img.conf in favour of' >&2
+grub-coreboot	2.12-9+deb13u2	postinst	update-grub	345	      sed -ri /etc/kernel-img.conf -e '\%^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub%d'
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	461	          # upgrade-from-grub-legacy; perhaps they ran grub-install by hand
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	494	        # grub-install diversions to create an image that's chained from the
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	513	            grub-install --target=i386-pc --no-floppy --grub-setup=/bin/true "$(grub-probe -t drive /boot/grub)" > /dev/null
+grub-coreboot	2.12-9+deb13u2	postinst	update-grub	520	            echo "Running update-grub Legacy to hook our core.img in it" >&2
+grub-coreboot	2.12-9+deb13u2	postinst	update-grub	521	            LET_US_TRY_GRUB_2=true /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	526	          # Skip grub-install in containers.
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	595	            echo "grub-coreboot: Running grub-install ..."
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	599	                echo "$real_device does not exist, so cannot grub-install to it!" >&2
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	602	                if grub-install --target=i386-pc --force --no-floppy $real_device ; then
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	603	                  echo "  grub-install success for $real_device"
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	607	                  echo "  grub-install failure for $real_device"
+grub-coreboot	2.12-9+deb13u2	postinst	grub-install	715	          # Remove marker file used to indicate that grub-install was run
+grub-coreboot	2.12-9+deb13u2	postinst	update-grub	791	      update-grub 3>&-
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	135	# In order to determine whether we accidentally ran grub-install without
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	330	    if ! grub-install $@ ; then
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	331	        echo "Failed: grub-install $@" >&2
+grub-efi-amd64	2.12-9+deb13u2	postinst	update-grub	342	    if egrep -q '^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub' /etc/kernel-img.conf 2>/dev/null; then
+grub-efi-amd64	2.12-9+deb13u2	postinst	update-grub	343	      echo 'Removing update-grub hooks from /etc/kernel-img.conf in favour of' >&2
+grub-efi-amd64	2.12-9+deb13u2	postinst	update-grub	345	      sed -ri /etc/kernel-img.conf -e '\%^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub%d'
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	461	          # upgrade-from-grub-legacy; perhaps they ran grub-install by hand
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	494	        # grub-install diversions to create an image that's chained from the
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	513	            grub-install --target=i386-pc --no-floppy --grub-setup=/bin/true "$(grub-probe -t drive /boot/grub)" > /dev/null
+grub-efi-amd64	2.12-9+deb13u2	postinst	update-grub	520	            echo "Running update-grub Legacy to hook our core.img in it" >&2
+grub-efi-amd64	2.12-9+deb13u2	postinst	update-grub	521	            LET_US_TRY_GRUB_2=true /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	526	          # Skip grub-install in containers.
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	595	            echo "grub-efi-amd64: Running grub-install ..."
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	599	                echo "$real_device does not exist, so cannot grub-install to it!" >&2
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	602	                if grub-install --target=i386-pc --force --no-floppy $real_device ; then
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	603	                  echo "  grub-install success for $real_device"
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	607	                  echo "  grub-install failure for $real_device"
+grub-efi-amd64	2.12-9+deb13u2	postinst	grub-install	715	          # Remove marker file used to indicate that grub-install was run
+grub-efi-amd64	2.12-9+deb13u2	postinst	update-grub	791	      update-grub 3>&-
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	135	# In order to determine whether we accidentally ran grub-install without
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	330	    if ! grub-install $@ ; then
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	331	        echo "Failed: grub-install $@" >&2
+grub-efi-ia32	2.12-9+deb13u2	postinst	update-grub	342	    if egrep -q '^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub' /etc/kernel-img.conf 2>/dev/null; then
+grub-efi-ia32	2.12-9+deb13u2	postinst	update-grub	343	      echo 'Removing update-grub hooks from /etc/kernel-img.conf in favour of' >&2
+grub-efi-ia32	2.12-9+deb13u2	postinst	update-grub	345	      sed -ri /etc/kernel-img.conf -e '\%^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub%d'
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	461	          # upgrade-from-grub-legacy; perhaps they ran grub-install by hand
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	494	        # grub-install diversions to create an image that's chained from the
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	513	            grub-install --target=i386-pc --no-floppy --grub-setup=/bin/true "$(grub-probe -t drive /boot/grub)" > /dev/null
+grub-efi-ia32	2.12-9+deb13u2	postinst	update-grub	520	            echo "Running update-grub Legacy to hook our core.img in it" >&2
+grub-efi-ia32	2.12-9+deb13u2	postinst	update-grub	521	            LET_US_TRY_GRUB_2=true /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	526	          # Skip grub-install in containers.
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	595	            echo "grub-efi-ia32: Running grub-install ..."
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	599	                echo "$real_device does not exist, so cannot grub-install to it!" >&2
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	602	                if grub-install --target=i386-pc --force --no-floppy $real_device ; then
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	603	                  echo "  grub-install success for $real_device"
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	607	                  echo "  grub-install failure for $real_device"
+grub-efi-ia32	2.12-9+deb13u2	postinst	grub-install	715	          # Remove marker file used to indicate that grub-install was run
+grub-efi-ia32	2.12-9+deb13u2	postinst	update-grub	791	      update-grub 3>&-
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	135	# In order to determine whether we accidentally ran grub-install without
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	330	    if ! grub-install $@ ; then
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	331	        echo "Failed: grub-install $@" >&2
+grub-ieee1275	2.12-9+deb13u2	postinst	update-grub	342	    if egrep -q '^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub' /etc/kernel-img.conf 2>/dev/null; then
+grub-ieee1275	2.12-9+deb13u2	postinst	update-grub	343	      echo 'Removing update-grub hooks from /etc/kernel-img.conf in favour of' >&2
+grub-ieee1275	2.12-9+deb13u2	postinst	update-grub	345	      sed -ri /etc/kernel-img.conf -e '\%^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub%d'
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	461	          # upgrade-from-grub-legacy; perhaps they ran grub-install by hand
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	494	        # grub-install diversions to create an image that's chained from the
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	513	            grub-install --target=i386-pc --no-floppy --grub-setup=/bin/true "$(grub-probe -t drive /boot/grub)" > /dev/null
+grub-ieee1275	2.12-9+deb13u2	postinst	update-grub	520	            echo "Running update-grub Legacy to hook our core.img in it" >&2
+grub-ieee1275	2.12-9+deb13u2	postinst	update-grub	521	            LET_US_TRY_GRUB_2=true /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	526	          # Skip grub-install in containers.
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	595	            echo "grub-ieee1275: Running grub-install ..."
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	599	                echo "$real_device does not exist, so cannot grub-install to it!" >&2
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	602	                if grub-install --target=i386-pc --force --no-floppy $real_device ; then
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	603	                  echo "  grub-install success for $real_device"
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	607	                  echo "  grub-install failure for $real_device"
+grub-ieee1275	2.12-9+deb13u2	postinst	grub-install	715	          # Remove marker file used to indicate that grub-install was run
+grub-ieee1275	2.12-9+deb13u2	postinst	update-grub	791	      update-grub 3>&-
+grub-ipxe	1.21.1+git20250501.dad20602+dfsg-1	postinst	update-grub	7	        command -v update-grub > /dev/null && update-grub || :
+grub-ipxe	1.21.1+git20250501.dad20602+dfsg-1	postrm	update-grub	7	        command -v update-grub > /dev/null && update-grub || :
+grub-pc	2.12-9+deb13u2	postinst	grub-install	135	# In order to determine whether we accidentally ran grub-install without
+grub-pc	2.12-9+deb13u2	postinst	grub-install	330	    if ! grub-install $@ ; then
+grub-pc	2.12-9+deb13u2	postinst	grub-install	331	        echo "Failed: grub-install $@" >&2
+grub-pc	2.12-9+deb13u2	postinst	update-grub	342	    if egrep -q '^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub' /etc/kernel-img.conf 2>/dev/null; then
+grub-pc	2.12-9+deb13u2	postinst	update-grub	343	      echo 'Removing update-grub hooks from /etc/kernel-img.conf in favour of' >&2
+grub-pc	2.12-9+deb13u2	postinst	update-grub	345	      sed -ri /etc/kernel-img.conf -e '\%^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub%d'
+grub-pc	2.12-9+deb13u2	postinst	grub-install	461	          # upgrade-from-grub-legacy; perhaps they ran grub-install by hand
+grub-pc	2.12-9+deb13u2	postinst	grub-install	494	        # grub-install diversions to create an image that's chained from the
+grub-pc	2.12-9+deb13u2	postinst	grub-install	513	            grub-install --target=i386-pc --no-floppy --grub-setup=/bin/true "$(grub-probe -t drive /boot/grub)" > /dev/null
+grub-pc	2.12-9+deb13u2	postinst	update-grub	520	            echo "Running update-grub Legacy to hook our core.img in it" >&2
+grub-pc	2.12-9+deb13u2	postinst	update-grub	521	            LET_US_TRY_GRUB_2=true /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-pc	2.12-9+deb13u2	postinst	grub-install	526	          # Skip grub-install in containers.
+grub-pc	2.12-9+deb13u2	postinst	grub-install	595	            echo "grub-pc: Running grub-install ..."
+grub-pc	2.12-9+deb13u2	postinst	grub-install	599	                echo "$real_device does not exist, so cannot grub-install to it!" >&2
+grub-pc	2.12-9+deb13u2	postinst	grub-install	602	                if grub-install --target=i386-pc --force --no-floppy $real_device ; then
+grub-pc	2.12-9+deb13u2	postinst	grub-install	603	                  echo "  grub-install success for $real_device"
+grub-pc	2.12-9+deb13u2	postinst	grub-install	607	                  echo "  grub-install failure for $real_device"
+grub-pc	2.12-9+deb13u2	postinst	grub-install	715	          # Remove marker file used to indicate that grub-install was run
+grub-pc	2.12-9+deb13u2	postinst	update-grub	791	      update-grub 3>&-
+grub-pc	2.12-9+deb13u2	prerm	update-grub	11	      echo "Running update-grub Legacy to remove our core.img in it" >&2
+grub-pc	2.12-9+deb13u2	prerm	update-grub	12	      /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-xen	2.12-9+deb13u2	postinst	grub-install	135	# In order to determine whether we accidentally ran grub-install without
+grub-xen	2.12-9+deb13u2	postinst	grub-install	330	    if ! grub-install $@ ; then
+grub-xen	2.12-9+deb13u2	postinst	grub-install	331	        echo "Failed: grub-install $@" >&2
+grub-xen	2.12-9+deb13u2	postinst	update-grub	342	    if egrep -q '^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub' /etc/kernel-img.conf 2>/dev/null; then
+grub-xen	2.12-9+deb13u2	postinst	update-grub	343	      echo 'Removing update-grub hooks from /etc/kernel-img.conf in favour of' >&2
+grub-xen	2.12-9+deb13u2	postinst	update-grub	345	      sed -ri /etc/kernel-img.conf -e '\%^[[:space:]]*post(inst|rm)_hook[[:space:]]*=[[:space:]]*(/sbin/|/usr/sbin/)?update-grub%d'
+grub-xen	2.12-9+deb13u2	postinst	grub-install	461	          # upgrade-from-grub-legacy; perhaps they ran grub-install by hand
+grub-xen	2.12-9+deb13u2	postinst	grub-install	494	        # grub-install diversions to create an image that's chained from the
+grub-xen	2.12-9+deb13u2	postinst	grub-install	513	            grub-install --target=i386-pc --no-floppy --grub-setup=/bin/true "$(grub-probe -t drive /boot/grub)" > /dev/null
+grub-xen	2.12-9+deb13u2	postinst	update-grub	520	            echo "Running update-grub Legacy to hook our core.img in it" >&2
+grub-xen	2.12-9+deb13u2	postinst	update-grub	521	            LET_US_TRY_GRUB_2=true /usr/lib/grub-legacy/update-grub 2>&1 | sed -e "s/^/    /g" >&2
+grub-xen	2.12-9+deb13u2	postinst	grub-install	526	          # Skip grub-install in containers.
+grub-xen	2.12-9+deb13u2	postinst	grub-install	595	            echo "grub-xen: Running grub-install ..."
+grub-xen	2.12-9+deb13u2	postinst	grub-install	599	                echo "$real_device does not exist, so cannot grub-install to it!" >&2
+grub-xen	2.12-9+deb13u2	postinst	grub-install	602	                if grub-install --target=i386-pc --force --no-floppy $real_device ; then
+grub-xen	2.12-9+deb13u2	postinst	grub-install	603	                  echo "  grub-install success for $real_device"
+grub-xen	2.12-9+deb13u2	postinst	grub-install	607	                  echo "  grub-install failure for $real_device"
+grub-xen	2.12-9+deb13u2	postinst	grub-install	715	          # Remove marker file used to indicate that grub-install was run
+grub-xen	2.12-9+deb13u2	postinst	update-grub	791	      update-grub 3>&-
+grub2-common	2.12-9+deb13u2	etc/kernel/postinst.d/zz-update-grub	update-grub	4	command -v update-grub >/dev/null || exit 0
+grub2-common	2.12-9+deb13u2	etc/kernel/postinst.d/zz-update-grub	update-grub	16	    # time by calling update-grub multiple times on upgrade and removal.
+grub2-common	2.12-9+deb13u2	etc/kernel/postinst.d/zz-update-grub	update-grub	21	  exec update-grub
+grub2-common	2.12-9+deb13u2	etc/kernel/postrm.d/zz-update-grub	update-grub	4	command -v update-grub >/dev/null || exit 0
+grub2-common	2.12-9+deb13u2	etc/kernel/postrm.d/zz-update-grub	update-grub	16	    # time by calling update-grub multiple times on upgrade and removal.
+grub2-common	2.12-9+deb13u2	etc/kernel/postrm.d/zz-update-grub	update-grub	21	  exec update-grub
+initramfs-tools	0.148.4	postinst	update-initramfs	8	 update-initramfs -u
+initramfs-tools	0.148.4	postinst	update-initramfs	11	 DPKG_MAINTSCRIPT_PACKAGE='' update-initramfs -u
+initramfs-tools	0.148.4	triggers	update-initramfs	1	interest-await update-initramfs
+intel-microcode	3.20251111.1~deb13u1	postinst	update-initramfs	23	        dpkg-trigger --no-await update-initramfs || RC=$?
+intel-microcode	3.20251111.1~deb13u1	postinst	update-initramfs	26	            update-initramfs -u || RC=$?
+intel-microcode	3.20251111.1~deb13u1	postrm	update-initramfs	23	        dpkg-trigger --no-await update-initramfs || {
+intel-microcode	3.20251111.1~deb13u1	postrm	update-initramfs	25	            [ -e /etc/initramfs-tools/initramfs.conf ] && update-initramfs -u || :
+iscsiuio	2.1.11-1+deb13u2	triggers	update-initramfs	2	activate-noawait update-initramfs
+kdump-tools	1:1.10.7	etc/kernel/postinst.d/kdump-tools	update-initramfs	123	 echo "update-initramfs: failed for $kdumpdir/initrd.img-${version} with $mkinitramfs_return." >&2
+kdump-tools	1:1.10.7	etc/kernel/postrm.d/kdump-tools	update-initramfs	6	[ -x /usr/sbin/update-initramfs ] || exit 0
+kdump-tools	1:1.10.7	postinst	update-grub	100	if command -v update-grub > /dev/null && [ -e /boot/grub/grub.cfg ]; then
+kdump-tools	1:1.10.7	postinst	update-grub	101	 update-grub
+kdump-tools	1:1.10.7	postrm	update-grub	53	        if command -v update-grub > /dev/null && [ -e /boot/grub/grub.cfg ]; then
+kdump-tools	1:1.10.7	postrm	update-grub	54	         update-grub
+kdump-tools	1:1.10.7	triggers	update-initramfs	2	activate-noawait update-initramfs
+klibc-utils	2.0.14-1	triggers	update-initramfs	2	activate-noawait update-initramfs
+kmod	34.2-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+kxc	0.17-1	triggers	update-initramfs	2	activate-noawait update-initramfs
+live-boot-initramfs-tools	1:20250815~deb13u1	postinst	update-initramfs	7	  if which update-initramfs >/dev/null 2>&1 && [ -e /etc/initramfs-tools/initramfs.conf ]
+live-boot-initramfs-tools	1:20250815~deb13u1	postinst	update-initramfs	9	   update-initramfs -u
+live-boot-initramfs-tools	1:20250815~deb13u1	postrm	update-initramfs	7	  if which update-initramfs >/dev/null 2>&1 && [ -e /etc/initramfs-tools/initramfs.conf ]
+live-boot-initramfs-tools	1:20250815~deb13u1	postrm	update-initramfs	9	   update-initramfs -u
+live-boot-initramfs-tools	1:20250815~deb13u1	triggers	update-initramfs	2	activate-noawait update-initramfs
+live-tools	1:20240525	postrm	update-initramfs	7	  # initramfs-tools: update-initramfs
+live-tools	1:20240525	postrm	update-initramfs	8	  dpkg-divert --package live-tools --quiet --remove --rename --divert /usr/sbin/update-initramfs.orig.initramfs-tools /usr/sbin/update-initramfs
+live-tools	1:20240525	postrm	update-initramfs	9	  dpkg-divert --package live-tools --quiet --remove --rename --divert /usr/share/man/man8/update-initramfs.orig.initramfs-tools.8.gz /usr/share/man/man8/update-initramfs.8.gz
+live-tools	1:20240525	preinst	update-initramfs	7	  # initramfs-tools: update-initramfs
+live-tools	1:20240525	preinst	update-initramfs	8	  dpkg-divert --package live-tools --quiet --add --rename --divert /usr/sbin/update-initramfs.orig.initramfs-tools /usr/sbin/update-initramfs
+live-tools	1:20240525	preinst	update-initramfs	9	  dpkg-divert --package live-tools --quiet --add --rename --divert /usr/share/man/man8/update-initramfs.orig.initramfs-tools.8.gz /usr/share/man/man8/update-initramfs.8.gz
+lvm2	2.03.31-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+mandos-client	1.8.19-1	postinst	update-initramfs	25	    if command -v update-initramfs >/dev/null; then
+mandos-client	1.8.19-1	postinst	update-initramfs	26	 update-initramfs -k all -u 1>&2
+mandos-client	1.8.19-1	postinst	dracut	27	    elif command -v dracut >/dev/null; then
+mandos-client	1.8.19-1	postinst	dracut	28	 dracut_version="`dpkg-query --showformat='${Version}' --show dracut`"
+mandos-client	1.8.19-1	postinst	dracut	30	  && bash -c '. /etc/dracut.conf; . /etc/dracut.conf.d/*; [ "$hostonly" != yes ]'; then
+mandos-client	1.8.19-1	postinst	dracut	34	 # Logic taken from dracut.postinst
+mandos-client	1.8.19-1	postinst	dracut	54	  /etc/kernel/postinst.d/dracut "$kversion" 1>&2
+mandos-client	1.8.19-1	postrm	update-initramfs	34	    if command -v update-initramfs >/dev/null; then
+mandos-client	1.8.19-1	postrm	update-initramfs	35	 update-initramfs -k all -u 1>&2
+mandos-client	1.8.19-1	postrm	dracut	36	    elif command -v dracut >/dev/null; then
+mandos-client	1.8.19-1	postrm	dracut	37	 # Logic taken from dracut.postinst
+mandos-client	1.8.19-1	postrm	dracut	41	  /etc/kernel/postinst.d/dracut "$kversion" 1>&2
+mandos-client	1.8.19-1	usr/share/initramfs-tools/hooks/mandos	update-initramfs	7	# administrator runs 'update-initramfs' by hand to update an initramfs
+mdadm	4.4-11	postinst	update-initramfs	101	    command -v update-initramfs >/dev/null 2>&1 && update-initramfs -u
+mdadm	4.4-11	postinst	update-grub	104	        update-grub || true
+mdadm	4.4-11	postrm	update-initramfs	10	 if command -v update-initramfs >/dev/null 2>&1; then
+mdadm	4.4-11	postrm	update-initramfs	11	     update-initramfs -u
+mdadm	4.4-11	triggers	update-initramfs	2	activate-noawait update-initramfs
+memtest86+	7.20-1	postinst	update-grub	10	  elif [ -x "$(command -v update-grub 2>/dev/null)" ] ; then
+memtest86+	7.20-1	postinst	update-grub	11	   update-grub 3>&-
+memtest86+	7.20-1	postrm	update-grub	10	  elif [ -x "$(command -v update-grub 2>/dev/null)" ] ; then
+memtest86+	7.20-1	postrm	update-grub	11	   update-grub 3>&-
+miniramfs	1.0.6	triggers	update-initramfs	1	interest-noawait update-initramfs
+multipath-tools-boot	0.11.1-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+nbd-client	1:3.26.1-6.1	postinst	update-initramfs	109	                if [ -f /$(which update-initramfs) ]
+nbd-client	1:3.26.1-6.1	postinst	update-initramfs	111	                        update-initramfs -u
+nbd-client	1:3.26.1-6.1	triggers	update-initramfs	2	activate-noawait update-initramfs
+ntfs-3g	1:2022.10.3-5+deb13u2	triggers	update-initramfs	2	activate-noawait update-initramfs
+open-iscsi	2.1.11-1+deb13u2	triggers	update-initramfs	2	activate-noawait update-initramfs
+osk-sdl	0.67.1-4	postinst	update-initramfs	10	        if which update-initramfs >/dev/null; then
+osk-sdl	0.67.1-4	postinst	update-initramfs	11	            update-initramfs -u
+osk-sdl	0.67.1-4	postrm	update-initramfs	7	        if which update-initramfs >/dev/null; then
+osk-sdl	0.67.1-4	postrm	update-initramfs	8	            update-initramfs -u
+osk-sdl	0.67.1-4	triggers	update-initramfs	2	activate-noawait update-initramfs
+ostree-boot	2025.2-1	postinst	update-initramfs	7	        dpkg-trigger --no-await update-initramfs
+overlayroot	0.18.debian14	postinst	update-initramfs	6	  dpkg-trigger update-initramfs;;
+overlayroot	0.18.debian14	postrm	update-initramfs	6	  dpkg-trigger update-initramfs;;
+overlayroot	0.18.debian14	triggers	update-initramfs	2	activate-noawait update-initramfs
+plymouth	24.004.60-5	postinst	update-initramfs	16	  if which update-initramfs >/dev/null 2>&1 && [ -e /etc/initramfs-tools/initramfs.conf ]; then
+plymouth	24.004.60-5	postinst	update-initramfs	17	   update-initramfs -u -k all
+plymouth	24.004.60-5	postrm	update-initramfs	14	  if which update-initramfs >/dev/null 2>&1 && [ -e /etc/initramfs-tools/initramfs.conf ]; then
+plymouth	24.004.60-5	postrm	update-initramfs	15	   update-initramfs -u -k all
+qcom-phone-utils	0.4.2	triggers	update-initramfs	2	activate-noawait update-initramfs
+refind	0.14.2-2.1	postinst	efibootmgr	12	    BootCurrent=$(efibootmgr | grep BootCurrent | cut -d " " -f 2)
+refind	0.14.2-2.1	postinst	efibootmgr	15	    BootShimFile=$(efibootmgr -v | grep Boot$BootCurrent | cut -f 2- -d '\' | cut -f 1 -d ')' | grep -i 'shim\|preloader' || true)
+refind	0.14.2-2.1	postinst	efibootmgr	83	            echo "use efibootmgr to set the computer to boot with something else."
+reiserfsprogs	1:3.6.27-9	postinst	update-initramfs	7	  if which update-initramfs > /dev/null  && [ -e /etc/initramfs-tools/initramfs.conf ]
+reiserfsprogs	1:3.6.27-9	postinst	update-initramfs	9	   update-initramfs -u
+reiserfsprogs	1:3.6.27-9	triggers	update-initramfs	2	activate-noawait update-initramfs
+sg3-utils-udev	1.48-3~deb13u1	postinst	update-initramfs	14	 if [ -x /usr/sbin/update-initramfs -a -e /etc/initramfs-tools/initramfs.conf ]; then
+sg3-utils-udev	1.48-3~deb13u1	postinst	update-initramfs	15	  update-initramfs -u
+sg3-utils-udev	1.48-3~deb13u1	postrm	update-initramfs	25	 if [ -x /usr/sbin/update-initramfs -a -e /etc/initramfs-tools/initramfs.conf ]; then
+sg3-utils-udev	1.48-3~deb13u1	postrm	update-initramfs	26	  update-initramfs -u
+sg3-utils-udev	1.48-3~deb13u1	triggers	update-initramfs	2	activate-noawait update-initramfs
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	17	# Select the right target architecture for grub-install
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	56	# Call grub-install but don't fail on errors. Let's not break upgrades
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	59	    if ! grub-install $@ ; then
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	60	        echo "Failed: grub-install $@" >&2
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	73	 # Call grub-install to make sure we're added to the ESP as
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	77	    which grub-install >/dev/null 2>&1
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postinst	grub-install	80	     # call grub-install safely without dropping them
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	23	# Select the right target architecture for grub-install
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	65	# Call grub-install but don't fail on errors. Let's not break upgrades
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	68	    if ! grub-install $@ ; then
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	69	        echo "Failed: grub-install $@" >&2
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	82	 # If we're being removed, try to call grub-install to drop us
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	86	    which grub-install >/dev/null 2>&1
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	89	     # call grub-install without dropping them
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	postrm	grub-install	109	     # the ESP; grub-install doesn't clean that up for us.
+shim-signed	1.51~1+deb13u1+16.1-2~deb13u1	preinst	grub-install	13	# Select the right target architecture for grub-install
+systemd	257.13-1~deb13u1	usr/lib/kernel/install.d/90-loaderentry.install	kernel-install	216	    # Try a few variations that are generated by various initrd generators in their kernel-install hooks if
+systemd-boot	257.13-1~deb13u1	etc/initramfs/post-update.d/systemd-boot	bootctl	5	test -x /usr/bin/bootctl || exit 0
+systemd-boot	257.13-1~deb13u1	etc/initramfs/post-update.d/systemd-boot	bootctl	7	bootctl is-installed --quiet || exit 0
+systemd-boot	257.13-1~deb13u1	etc/initramfs/post-update.d/systemd-boot	kernel-install	20	kernel-install add "$1" "$k" "$2"
+systemd-boot	257.13-1~deb13u1	etc/kernel/postinst.d/zz-systemd-boot	bootctl	5	test -x /usr/bin/bootctl || exit 0
+systemd-boot	257.13-1~deb13u1	etc/kernel/postinst.d/zz-systemd-boot	bootctl	7	bootctl is-installed --quiet || exit 0
+systemd-boot	257.13-1~deb13u1	etc/kernel/postinst.d/zz-systemd-boot	kernel-install	11	kernel-install add "$1" "$2"
+systemd-boot	257.13-1~deb13u1	etc/kernel/postrm.d/zz-systemd-boot	bootctl	5	test -x /usr/bin/bootctl || exit 0
+systemd-boot	257.13-1~deb13u1	etc/kernel/postrm.d/zz-systemd-boot	bootctl	7	bootctl is-installed --quiet || exit 0
+systemd-boot	257.13-1~deb13u1	etc/kernel/postrm.d/zz-systemd-boot	kernel-install	11	kernel-install remove "$1"
+systemd-boot	257.13-1~deb13u1	postinst	bootctl	37	    esp_path="$(bootctl --quiet --print-esp-path 2>/dev/null)"
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	69	    if command -v efibootmgr >/dev/null 2>&1 && efibootmgr | grep -i -q "Boot.*${vendor_upper}.*EFI\\\\${vendor}\\\\shim${efi_arch}.efi"; then
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	70	        bootentry="$(efibootmgr | grep -i "Boot.*${vendor_upper}.*EFI\\\\${vendor}\\\\shim${efi_arch}.efi" | cut -d' ' -f1 | sed -e 's/Boot//' -e 's/*//')"
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	71	        efibootmgr -q --delete-bootnum --bootnum "$bootentry"
+systemd-boot	257.13-1~deb13u1	postinst	bootctl	102	    esp_path="$(bootctl --quiet --print-esp-path 2>/dev/null)"
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	135	    if ! command -v efibootmgr >/dev/null 2>&1; then
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	136	        echo "efibootmgr not found, skipping boot entry creation"
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	137	    elif ! efibootmgr | grep -i -q "Boot.*${vendor_upper}.*EFI\\\\${vendor}\\\\shim${efi_arch}.efi.*systemd-boot${efi_arch}.efi\|Boot.*${vendor_upper}.*EFI\\\\${vendor}\\\\shim${efi_arch}.efi.*730079007300740065006d0064002d0062006f006f007400"; then
+systemd-boot	257.13-1~deb13u1	postinst	efibootmgr	146	        efibootmgr -q --create --disk "$drive" --part "$partno" --loader "EFI/${vendor}/shim${efi_arch}.efi" --label "${vendor_upper}" --unicode "\EFI\systemd\systemd-boot${efi_arch}.efi \0"
+systemd-boot	257.13-1~deb13u1	postinst	bootctl	150	if [ "$1" = configure ] && bootctl --print-esp-path > /dev/null 2>&1; then
+systemd-boot	257.13-1~deb13u1	postinst	bootctl	151	    if bootctl is-installed > /dev/null 2>&1; then
+systemd-boot	257.13-1~deb13u1	postinst	bootctl	152	        bootctl update --graceful
+systemd-boot	257.13-1~deb13u1	postinst	bootctl	154	        bootctl install --make-machine-id-directory=auto
+systemd-boot	257.13-1~deb13u1	postinst	kernel-install	163	            kernel-install add "$ver" "$k"
+systemd-boot	257.13-1~deb13u1	prerm	bootctl	26	    esp_path="$(bootctl --quiet --print-esp-path 2>/dev/null)"
+systemd-boot	257.13-1~deb13u1	prerm	efibootmgr	58	    if command -v efibootmgr >/dev/null 2>&1 && efibootmgr | grep -i -q "Boot.*${vendor_upper}.*EFI\\\\${vendor}\\\\shim${efi_arch}.efi"; then
+systemd-boot	257.13-1~deb13u1	prerm	efibootmgr	59	        bootentry="$(efibootmgr | grep -i "Boot.*${vendor_upper}.*EFI\\\\${vendor}\\\\shim${efi_arch}.efi" | cut -d' ' -f1 | sed -e 's/Boot//' -e 's/*//')"
+systemd-boot	257.13-1~deb13u1	prerm	efibootmgr	60	        efibootmgr -q --delete-bootnum --bootnum "$bootentry"
+systemd-boot	257.13-1~deb13u1	prerm	bootctl	65	if [ "$1" = remove -o "$1" = purge ] && bootctl --print-esp-path > /dev/null 2>&1; then
+systemd-boot	257.13-1~deb13u1	prerm	kernel-install	69	        kernel-install remove "$ver"
+systemd-boot	257.13-1~deb13u1	prerm	bootctl	73	    bootctl remove --graceful
+tboot	1.10.5-5	etc/grub.d/20_linux_tboot	grub-mkconfig	4	# grub-mkconfig helper script.
+tboot	1.10.5-5	etc/grub.d/20_linux_xen_tboot	grub-mkconfig	4	# grub-mkconfig helper script.
+thin-provisioning-tools	1.1.0-4+b1	triggers	update-initramfs	2	activate-noawait update-initramfs
+toybox	0.8.9+dfsg-1.1	triggers	update-initramfs	2	activate-noawait update-initramfs
+udev	257.13-1~deb13u1	triggers	update-initramfs	6	activate-noawait update-initramfs
+unl0kr	2.0.3+dfsg-2	triggers	update-initramfs	2	activate-noawait update-initramfs
+v86d	0.1.10-5	postinst	update-initramfs	9	        if [ -x /usr/sbin/update-initramfs \
+v86d	0.1.10-5	postinst	update-initramfs	11	                update-initramfs -u
+v86d	0.1.10-5	postrm	update-initramfs	9	        if [ -x /usr/sbin/update-initramfs \
+v86d	0.1.10-5	postrm	update-initramfs	11	                update-initramfs -u
+v86d	0.1.10-5	triggers	update-initramfs	2	activate-noawait update-initramfs
+xfsprogs	6.13.0-2+deb13u1	postinst	update-initramfs	7	  if [ -x /usr/sbin/update-initramfs ] && [ -e /etc/initramfs-tools/initramfs.conf ]
+xfsprogs	6.13.0-2+deb13u1	postinst	update-initramfs	9	   update-initramfs -u
+xfsprogs	6.13.0-2+deb13u1	triggers	update-initramfs	2	activate-noawait update-initramfs
+yubikey-luks	0.5.1+29.g5df2b95-6.3	postinst	update-initramfs	7	        if [ -x /usr/sbin/update-initramfs -a -e /etc/initramfs-tools/initramfs.conf ] ; then
+yubikey-luks	0.5.1+29.g5df2b95-6.3	postinst	update-initramfs	8	            update-initramfs -u
+yubikey-luks	0.5.1+29.g5df2b95-6.3	postrm	update-initramfs	7	        if [ -x /usr/sbin/update-initramfs -a -e /etc/initramfs-tools/initramfs.conf ] ; then
+yubikey-luks	0.5.1+29.g5df2b95-6.3	postrm	update-initramfs	8	            update-initramfs -u
+yubikey-luks	0.5.1+29.g5df2b95-6.3	triggers	update-initramfs	2	activate-noawait update-initramfs
+zfs-initramfs	2.3.9-0+deb13u1	triggers	update-initramfs	2	activate-noawait update-initramfs

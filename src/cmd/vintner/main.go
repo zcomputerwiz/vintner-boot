@@ -14,6 +14,8 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "manifest":
+		cmdManifest(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -24,5 +26,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]")
+	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  manifest  Manage the installation manifest")
 }
