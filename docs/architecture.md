@@ -144,9 +144,10 @@ Package manager interactions: avoid competing GRUB EFI/systemd-boot/shim maintai
 | `systemd-boot` | Not needed by `vintner-core`; `Conflicts` (`vintner-platform`) unless the lifecycle test shows its hooks are harmless. If it is installed, `systemd-boot-update.service` and `systemd-bless-boot.service` are masked | The re-arm model (ADR-0003) uses the `vintner` bless service, not `systemd-bless-boot`. The package also ships `systemd-boot-update.service` (updates systemd-boot copies on the ESP from `/usr`) and the hooks `/etc/kernel/postinst.d/zz-systemd-boot`, `/etc/kernel/postrm.d/zz-systemd-boot` and `/etc/initramfs/post-update.d/systemd-boot`. If the lifecycle test shows those hooks write to the ESP or boot storage while the loader lives in `\EFI\vintner\`, the relation is `Conflicts` |
 | `grub-pc`, `grub-efi-amd64` | `Conflicts` (`vintner-platform`) | Maintainer scripts run `grub-install` and the kernel hooks run `update-grub` |
 | `shim-signed` | `Conflicts` (`vintner-platform`); shim binary taken from the pinned `.deb` at payload build time | Its post-install script runs `grub-install` on EFI-booted systems |
+| `grub-cloud-amd64`, `grub-efi-ia32`, `grub-coreboot`, `grub-xen`, `grub-ieee1275`, `refind` | `Conflicts` (`vintner-platform`) | Their maintainer scripts run `grub-install` or `update-grub` (rEFInd: `efibootmgr`); found by the package survey in `ci/lifecycle/` |
 | kernel-install | `vintner-core` sets `layout=other` | Keeps kernel-install's built-in loader-entry and UKI plugins from writing to `$BOOT`; verified by the lifecycle test |
 
-Every other package whose maintainer scripts call `grub-install`, `update-grub`, `bootctl install`/`update` or `efibootmgr` is found by the lifecycle test (§10), which installs, upgrades and removes each such package and asserts the loader, recovery and NVRAM state are unchanged.
+Every other package whose maintainer scripts call `grub-install`, `update-grub`, `bootctl install`/`update` or `efibootmgr` is listed by the package survey (`ci/lifecycle/find-boot-writers.sh`, rerun against each Debian release) and exercised by the lifecycle test (§10), which installs, upgrades and removes each such package and asserts the loader, recovery and NVRAM state are unchanged.
 
 ## 6. Boot image publishing protocol
 
