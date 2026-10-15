@@ -2,7 +2,8 @@
 # Proves on Debian 13's own systemd-boot binary how vintner UKI entries are
 # ordered, counted and selected (architecture §4.1 and §10, ADR-0003).
 # Needs: curl, xz, dpkg-deb, cpio, gzip, sfdisk, mtools, python3 with pefile,
-# python3-virt-firmware, qemu-system-x86_64 and the OVMF 4M firmware. No root.
+# python3-virt-firmware, sbsigntool, openssl, qemu-system-x86_64 and the OVMF 4M
+# firmware, including its Secure Boot build. No root.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -107,13 +108,16 @@ EOF
 
 ACCEL=tcg
 [ -w /dev/kvm ] && ACCEL=kvm
-boot() { # one boot; prints the test id that booted, or NONE
-	local log=$OUT/$SCEN-boot$1.log
-	timeout 300 qemu-system-x86_64 -machine "q35,accel=$ACCEL" -m 512 -nodefaults -display none \
-		-monitor none -serial "file:$log" -no-reboot \
+BOOT_TIMEOUT=300
+QEMU_SB=()
+boot() { # one boot; prints the test id that booted, or NONE. With QMP=1, QMP commands come from stdin.
+	local log=$OUT/$SCEN-boot$1.log in=/dev/null qmp=()
+	[ "${QMP:-}" = 1 ] && in=/dev/stdin qmp=(-qmp stdio)
+	timeout "$BOOT_TIMEOUT" qemu-system-x86_64 -machine "q35,accel=$ACCEL,smm=on" -m 512 -nodefaults -display none \
+		-monitor none -serial "file:$log" -no-reboot "${QEMU_SB[@]}" "${qmp[@]}" \
 		-drive "if=pflash,format=raw,unit=0,file=$CODE,readonly=on" \
 		-drive "if=pflash,format=raw,unit=1,file=$OUT/vars.fd" \
-		-drive "file=$IMG,format=raw,if=virtio" </dev/null >/dev/null 2>&1 || true
+		-drive "file=$IMG,format=raw,if=virtio" <"$in" >/dev/null 2>&1 || true
 	grep -ao -m1 'VINTNER-TEST-BOOTED id=[A-Za-z0-9-]*' "$log" | sed 's/.*id=//' || echo NONE
 }
 
@@ -155,6 +159,48 @@ scenario S9-one-shot-recovery-a-bad "rb"
 head -c 4096 "$OUT/uki-os-2.efi" > "$OUT/uki-trunc.efi"
 new_disk trunc:vintner-os-2+3.efi os-1:vintner-os-1.efi; new_vars
 scenario S10-image-fails-to-load "x" OBSERVE
+
+# Hidden menu (timeout 0): space pressed through the first 15 s, then Enter.
+key() { # qcode
+	printf '{"execute":"input-send-event","arguments":{"events":[{"type":"key","data":{"down":%s,"key":{"type":"qcode","data":"%s"}}}]}}\n' true "$1" false "$1"
+}
+keys() {
+	echo '{"execute":"qmp_capabilities"}'
+	for _ in $(seq 60); do key spc; sleep 0.25; done
+	sleep 5; key ret; sleep 120
+}
+new_disk "${S1[@]}"; new_vars
+SCEN=S13-key-shows-menu
+got=$(QMP=1 boot 1 < <(keys))
+grep -aq 'os-1' "$OUT/$SCEN-boot1.log" && menu=shown || menu="not shown"
+printf '%s (menu %s)\t%s\t%s\tOBSERVED\n' "$SCEN" "$menu" "$got" "$(listing)" | tee -a "$SUMMARY"
+
+# --- Secure Boot: a listed entry that fails LoadImage (ADR-0003 finding 5) ---
+# Throwaway test key, made per run: one self-signed certificate is PK, KEK and
+# db. systemd-boot and every UKI that should load are signed with it.
+SB=$OUT/sb
+mkdir -p "$SB"
+openssl req -new -x509 -newkey rsa:2048 -sha256 -days 30 -nodes -subj "/CN=vintner selection-policy test key" \
+	-keyout "$SB/test.key" -out "$SB/test.crt" 2>/dev/null
+G=bbbbbbbb-cccc-dddd-eeee-ffffffffffff
+virt-fw-vars -i "$VARS" -o "$SB/vars.fd" --set-pk "$G" "$SB/test.crt" --add-kek "$G" "$SB/test.crt" \
+	--add-db "$G" "$SB/test.crt" --secure-boot >/dev/null
+sign() { sbsign --key "$SB/test.key" --cert "$SB/test.crt" --output "$2" "$1" >/dev/null 2>&1; }
+sign "$SDBOOT" "$SB/systemd-bootx64.efi"
+for u in os-1 os-2; do sign "$OUT/uki-$u.efi" "$OUT/uki-$u-signed.efi"; done
+SDBOOT=$SB/systemd-bootx64.efi
+CODE=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd
+VARS=$SB/vars.fd
+QEMU_SB=(-global "driver=cfi.pflash01,property=secure,value=on")
+new_disk os-2-signed:vintner-os-2+3.efi os-1-signed:vintner-os-1.efi; new_vars
+scenario S11-secure-boot-signed "os-2"
+# The unsigned os-2 never runs. OVMF falls back to \EFI\BOOT\BOOTX64.EFI, which is
+# systemd-boot again, so each power-on takes two tries, then the first stops
+# at "No bootable option". The second power-on takes the last try and the
+# fallback run boots os-1.
+BOOT_TIMEOUT=90
+new_disk os-2:vintner-os-2+3.efi os-1-signed:vintner-os-1.efi; new_vars
+scenario S12-secure-boot-unsigned-entry "NONE os-1"
 
 echo "trixie packages:"; cat "$OUT/versions.txt"
 exit $fail
