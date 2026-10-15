@@ -9,6 +9,8 @@ mount -t devtmpfs dev /dev
 mount -t tmpfs run /run
 [ -d /sys/firmware/efi/efivars ] && mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null
 
+# The kernel autoloads (crypto algorithms, aliases) through this path; busybox has no /sbin.
+echo /bin/modprobe > /proc/sys/kernel/modprobe
 while read -r m; do modprobe -q "$m" 2>/dev/null; done < /etc/vintner/modules
 # Give storage drivers up to 10 s to register block devices.
 i=0

@@ -23,7 +23,7 @@ ROOT_SUM=$(sha256sum < "$T/root.img")
 
 gpt_fat() { # image size type-guid: one FAT partition, prints its byte offset
 	truncate -s "$2" "$1"
-	printf 'label: gpt\ntype=%s\n' "$3" | sfdisk -q "$1"
+	printf 'label: gpt\ntype=%s\n' "$3" | sfdisk -q --wipe always "$1"
 	local off=$(( $(sfdisk -J "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["partitiontable"]["partitions"][0]["start"])') * 512 ))
 	mformat -i "$1@@$off" -F ::
 	echo "$off"
@@ -57,7 +57,7 @@ run() { # name firmware(uefi|bios) cmdline extra-disks...
 	local d
 	for d in "$@"; do q+=(-drive "file=$d,format=raw,if=virtio"); done
 	timeout 300 "${q[@]}" </dev/null >/dev/null 2>&1 || true
-	grep -ao -m1 'VINTNER-RECOVERY-TEST [^\r]*' "$log" | sed 's/^VINTNER-RECOVERY-TEST //' || echo "no result"
+	grep -ao -m1 'VINTNER-RECOVERY-TEST .*' "$log" | tr -d '\r' | sed 's/^VINTNER-RECOVERY-TEST //' || echo "no result"
 }
 
 fail=0

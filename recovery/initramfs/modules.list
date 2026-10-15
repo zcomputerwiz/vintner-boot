@@ -14,6 +14,8 @@ mmc_block
 sdhci_pci
 usbhid
 hid_generic
+crc32c_generic
+crc32c_intel
 ext4
 vfat
 nls_cp437
