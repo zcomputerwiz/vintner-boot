@@ -776,7 +776,7 @@ esp_modified = [k for k in sorted(curr_esp) if k in base_esp and curr_esp[k] != 
 changed_nvram = []
 if firmware != "uefi":
     nvram_col = "n/a (BIOS)"
-elif op_kind == "prep":
+elif op_kind == "prep" or op_id == "X0":
     nvram_col = "not compared (no control run yet)"
 else:
     out = subprocess.check_output(["virt-fw-vars", "-i", vars_file, "-p"])
@@ -857,7 +857,7 @@ printf 'ID\tKind\tStatus\tCommandExit\tVintnerFiles\tNVRAM\tBoot2\tEvidence\n' >
 
 # --- 10. Preparation (Operation P0) ------------------------------------------
 echo "=== Running Operation P0 (Preparation: purge stock bootloaders) ==="
-P0_SCRIPT=$(cat <<'EOF'
+PURGE_SCRIPT=$(cat <<'EOF'
 BEFORE=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}=${Version}\n' 'grub*' 'shim*' 'systemd-boot*' 2>/dev/null | awk '$1=="ii"{print $2}' | paste -sd' ')
 dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' | awk '$1=="ii"{print $2}' | sort > /tmp/pkgs-before
 TO_PURGE=""
@@ -879,12 +879,24 @@ echo "REMOVED-BY-APT: $(comm -23 /tmp/pkgs-before /tmp/pkgs-after | paste -sd' '
 exit $RC
 EOF
 )
+# On an EFI-booted system, shim-signed's postrm runs grub-install when /boot/efi/EFI/debian
+# exists, with --force-extra-removable if grub2/force_efi_extra_removable is set, as on the
+# cloud image: that replaces \EFI\BOOT\BOOTX64.EFI (X0). The installer therefore removes the
+# stock loader's ESP directory before it purges the packages.
+P0_SCRIPT="rm -rf /boot/efi/EFI/debian
+echo \"ESP-DEBIAN-REMOVED: \$([ -e /boot/efi/EFI/debian ] && echo no || echo yes)\"
+$PURGE_SCRIPT"
 
 P0_SEED=$(make_seed "P0" "$P0_SCRIPT")
 P0_VARS=""
 [ "$FIRMWARE" = "uefi" ] && P0_VARS="$BASE_VARS"
 PRE_P0="$OUT/pre-p0.raw"
 cp --sparse=always "$DISK" "$PRE_P0"
+X0_VARS=""
+if [ "$FIRMWARE" = "uefi" ]; then
+	X0_VARS="$OUT/X0-vars.fd"
+	cp "$BASE_VARS" "$X0_VARS"
+fi
 
 echo "Booting P0 Boot 1..."
 run_qemu "$DISK" "$P0_SEED" "$OUT/P0-boot1.log" 600 "$P0_VARS"
@@ -892,8 +904,19 @@ echo "Booting P0 Boot 2..."
 run_qemu "$DISK" "$P0_SEED" "$OUT/P0-boot2.log" 120 "$P0_VARS"
 
 inspect P0 prep "$DISK" "$PRE_P0" "$P0_VARS"
-rm -f "$PRE_P0"
-if [ "$(tail -n 1 "$RESULTS" | cut -f3)" != "PASS" ]; then
+
+# X0: the same removal without first removing \EFI\debian, from the disk before P0.
+echo "=== Running Operation X0 (conflicting: purge stock bootloaders, ESP directory kept) ==="
+X0_SEED=$(make_seed "X0" "$PURGE_SCRIPT")
+qemu-img create -q -f qcow2 -F raw -b pre-p0.raw "$OUT/X0.qcow2"
+run_qemu "$OUT/X0.qcow2" "$X0_SEED" "$OUT/X0-boot1.log" 600 "$X0_VARS"
+run_qemu "$OUT/X0.qcow2" "$X0_SEED" "$OUT/X0-boot2.log" 120 "$X0_VARS"
+INSPECT_TMP="$OUT/X0-inspect.raw"
+qemu-img convert -O raw "$OUT/X0.qcow2" "$INSPECT_TMP"
+inspect X0 conflicting "$INSPECT_TMP" "$PRE_P0" "$X0_VARS"
+rm -f "$INSPECT_TMP" "$OUT/X0.qcow2" "$PRE_P0"
+INSPECT_TMP=""
+if [ "$(awk -F'\t' '$1=="P0"{print $3}' "$RESULTS")" != "PASS" ]; then
 	echo "CRITICAL: P0 failed; every other operation would run on a broken base." >&2
 	exit 1
 fi
