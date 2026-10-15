@@ -47,30 +47,30 @@ ci/integration/bios-bless/run.sh
 
 ## Package versions
 
-Taken directly from `versions.txt`:
+From the run's `versions.txt` (the run prints it at the end):
 
-- `grub-pc-bin`: `2.12-9+deb13u2`
-- `grub-common`: `2.12-9+deb13u2`
+- `grub-pc-bin` and `grub-common`: `2.12-9+deb13u2`
 - `libc6`: `2.41-12+deb13u4`
-- `liblzma5`: `5.8.1-1+deb13u1`
-- `libdevmapper1.02.1`: `2:1.02.205-2`
-- `libselinux1`: `3.8.1-1`
-- `libudev1`: `257.13-1~deb13u1`
-- `libpcre2-8-0`: `10.46-1~deb13u2`
-- `libcap2`: `1:2.75-10+deb13u1+b3`
-- Guest kernel: `6.12.111+deb13-cloud-amd64` (from `debian-13-genericcloud-amd64-20261001-2618.qcow2`)
-- Recovery kernel: `6.12.107+deb13-amd64` (from `recovery/build.sh`)
+- guest kernel: `6.12.111+deb13-cloud-amd64`, from the cloud image
+- recovery kernel: `linux-image-6.12.107+deb13-amd64` `6.12.107-1`, from `recovery/build.sh`
+- recovery `busybox-static` `1:1.37.0-6+b9`, `cryptsetup-bin` `2:2.7.5-2`, `lvm2` `2.03.31-2`, `mdadm` `4.4-11`, `e2fsprogs` `1.47.2-3+b12`
 
-## Results (2026-10-15, QEMU KVM)
+## Results
+
+GitHub Actions, KVM, 2026-10-15, commit `974337b` (job `bios-bless` in run 38791744879). Evidence is copied from the run's `results.tsv`.
 
 | ID | After | Check | Expected | Status | Evidence |
 |---|---|---|---|---|---|
-| C1 | boot 1 | `systemctl status vintner-bless.service` | `active (exited)`, status 0 | PASS | `Active: active (exited) since Thu 2026-10-15 18:29:47 UTC; 184ms ago;    Process: 584 ExecStart=/usr/sbin/vintner bless (code=exited, status=0/SUCCESS)` |
+| C1 | boot 1 | `systemctl status vintner-bless.service` | `active (exited)`, status 0 | PASS | `Active: active (exited) since Thu 2026-10-15 19:12:39 UTC; 69ms ago`; `Process: 563 ExecStart=/usr/sbin/vintner bless (code=exited, status=0/SUCCESS)` |
 | C2 | boot 1 | grubenv | `VINTNER_T_1=xxx` and no `VINTNER_BOOTED` (re-armed) | PASS | `VINTNER_ORDER=1;VINTNER_T_1=xxx;VINTNER_T_RA=xxx` |
-| C3 | boot 1 | manifest | generation 1 `GOOD`, `first_good`/`last_good` set, `seq+1` | PASS | `manifest-a seq=3 state=GOOD first_good=2026-10-15T18:29:47Z; manifest-b seq=2` |
-| C4 | boot 1 | `findmnt -rn -t vfat; grep /run/vintner mountinfo` | Boot storage not mounted anywhere | PASS | `vfat mounts: /boot/efi /dev/vda15; /run/vintner mounts: none` |
-| C5 | boot 1 | grubenv file on host | exactly 1024 bytes, second 512 bytes all `#` | PASS | `size=1024 bytes; bytes 512..1023 all '#' padding` |
-| C6 | boot 2 | grubenv | `VINTNER_T_1=xx`, `VINTNER_BOOTED=1` (counted, not rearmed) | PASS | `VINTNER_BOOTED=1;VINTNER_ORDER=1;VINTNER_T_1=xx;VINTNER_T_RA=xxx` |
-| C7 | boots 3 to 5 | grubenv after each | `VINTNER_T_1` goes `xx`, then `x`, then `0`; `BOOTED=1` | PASS | `B3: VINTNER_BOOTED=1;VINTNER_T_1=xx (Gave up waiting for root file system device.  Common problems:); B4: VINTNER_BOOTED=1;VINTNER_T_1=x (Gave up waiting for root file system device.  Common problems:); B5: VINTNER_BOOTED=1;VINTNER_T_1=0 (Gave up waiting for root file system device.  Common problems:)` |
-| C8 | boot 6 | serial log and grubenv | Boots recovery A, `root=mounted ro=yes`; `T_RA=xx`, `BOOTED=RA` | PASS | `vintner: trying recovery-a; VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261015T184350; grubenv: VINTNER_BOOTED=RA;VINTNER_ORDER=1;VINTNER_T_1=0;VINTNER_T_RA=xx` |
-| C9 | all | root filesystem | Recovery boot left root partition unchanged (sha256) | PASS | `before: 64db0d8510bf081b72f81316d3f29333f541b466ea7492b8dd655a6ea2608383; after: 64db0d8510bf081b72f81316d3f29333f541b466ea7492b8dd655a6ea2608383 (byte-identical)` |
+| C3 | boot 1 | manifest | generation 1 `GOOD`, `first_good` and `last_good` set, `seq` one higher, written to the older copy | PASS | `seq before a=1 b=2, after a=3 b=2; manifest-a: state=GOOD first_good=2026-10-15T19:12:39Z last_good=2026-10-15T19:12:39Z` |
+| C4 | boot 1 | `findmnt -rn -t vfat -o TARGET,SOURCE`; `grep /run/vintner /proc/self/mountinfo` | Only the ESP at `/boot/efi`; boot storage not mounted anywhere | PASS | `vfat mounts: /boot/efi /dev/vda15; /run/vintner mounts: none` |
+| C5 | boot 1 | grubenv file on the host | exactly 1024 bytes, the second 512 bytes all `#` | PASS | `size=1024 bytes; bytes 512..1023 all '#' padding` |
+| C6 | boot 2 | grubenv | `VINTNER_T_1=xx`, `VINTNER_BOOTED=1` (counted, not re-armed) | PASS | `VINTNER_BOOTED=1;VINTNER_ORDER=1;VINTNER_T_1=xx;VINTNER_T_RA=xxx` |
+| C7 | boots 3 to 5 | grubenv after each | `VINTNER_T_1` goes `xx`, then `x`, then `0`; `VINTNER_BOOTED=1` each time | PASS | B3: `VINTNER_BOOTED=1;VINTNER_T_1=xx` (`Gave up waiting for root file system device.`); B4: `VINTNER_BOOTED=1;VINTNER_T_1=x` (same); B5: `VINTNER_BOOTED=1;VINTNER_T_1=0` (same) |
+| C8 | boot 6 | serial log and grubenv | Skips os-1, boots recovery A, `root=mounted ro=yes`; `VINTNER_T_RA=xx`, `VINTNER_BOOTED=RA` | PASS | `'vintner: trying os-1' lines: 0`; `vintner: trying recovery-a`; `VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261015T191457`; grubenv `VINTNER_BOOTED=RA;VINTNER_ORDER=1;VINTNER_T_1=0;VINTNER_T_RA=xx` |
+| C9 | all | sha256 of the root partition before and after boot 6 | unchanged | PASS | before `7f54fa42725d6cba35cc027497fa73bd2cad4f643d278801c50008eaaad9414d`, after `7f54fa42725d6cba35cc027497fa73bd2cad4f643d278801c50008eaaad9414d` |
+
+## Findings
+
+- In boot 6, recovery A writes its test logs to boot storage (`/dev/vda2`, `/vintner/recovery-logs/`), not to the root. This is what `recovery/initramfs/init` does in test mode.

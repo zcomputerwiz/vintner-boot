@@ -2,6 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM and loop devices with partition scanning (`losetup -P`).
 - **Issued:** 2026-10-15
+- **Status:** done: `ci/integration/bios-bless/`, reviewed and run in CI.
 - **Base branch:** `main`. Work on branch `wo-0002` and open one pull request against `main`.
 
 ## Why
