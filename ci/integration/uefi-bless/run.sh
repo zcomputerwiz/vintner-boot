@@ -202,20 +202,21 @@ case "$PHASE" in
 		cat "$LOGDIR/a1.txt" > /dev/ttyS0
 
 		echo "=== CHECK A4 ===" > /dev/ttyS0
-		findmnt -t vfat > "$LOGDIR/a4-findmnt.txt" 2>&1 || true
+		findmnt -rn -t vfat -o TARGET,SOURCE > "$LOGDIR/a4-findmnt.txt" 2>&1 || true
 		grep /run/vintner /proc/self/mountinfo > "$LOGDIR/a4-mountinfo.txt" 2>&1 || true
-		cat "$LOGDIR/a4-findmnt.txt" > /dev/ttyS0
-		cat "$LOGDIR/a4-mountinfo.txt" > /dev/ttyS0
+		sed 's/^/vfat-mount: /' "$LOGDIR/a4-findmnt.txt" > /dev/ttyS0
+		sed 's/^/vintner-mount: /' "$LOGDIR/a4-mountinfo.txt" > /dev/ttyS0
 
 		echo "=== CHECK A5 ===" > /dev/ttyS0
-		ls -la /run/systemd/generator* > "$LOGDIR/a5-ls.txt" 2>&1 || true
+		find /run/systemd/generator* -name '*.mount' -o -name '*.automount' > "$LOGDIR/a5-ls.txt" 2>&1 || true
 		journalctl -b -o short-monotonic | grep -i gpt-auto > "$LOGDIR/a5-journal.txt" 2>&1 || true
-		cat "$LOGDIR/a5-ls.txt" > /dev/ttyS0
-		cat "$LOGDIR/a5-journal.txt" > /dev/ttyS0
+		sed 's/^/generated: /' "$LOGDIR/a5-ls.txt" > /dev/ttyS0
+		sed 's/^/gpt-auto-log: /' "$LOGDIR/a5-journal.txt" > /dev/ttyS0
 
 		echo "=== CHECK A6 ===" > /dev/ttyS0
 		/usr/sbin/vintner reconcile --dry-run > "$LOGDIR/a6.txt" 2>&1
 		echo "reconcile_exit=$?" >> "$LOGDIR/a6.txt"
+		echo "mounts_after_reconcile=$(grep -c /run/vintner /proc/self/mountinfo)" >> "$LOGDIR/a6.txt"
 		cat "$LOGDIR/a6.txt" > /dev/ttyS0
 
 		echo "=== VINTNER-BOOT1-DONE ===" > /dev/ttyS0
@@ -430,8 +431,8 @@ cloud-localds "$SEED_IMG" "$OUT/cidata/user-data" "$OUT/cidata/meta-data"
 CODE_FD=$(first /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/ovmf/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd)
 VARS_TEMPLATE=$(first /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/ovmf/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd)
 
-ACCEL="tcg"
-[ -w /dev/kvm ] && ACCEL="kvm"
+ACCEL="tcg" BOOT_TIMEOUT=900
+[ -w /dev/kvm ] && ACCEL="kvm" BOOT_TIMEOUT=180
 
 run_qemu() {
 	local boot_name="$1"
@@ -441,7 +442,7 @@ run_qemu() {
 	: > "$logfile"
 
 	echo "Booting VM ($boot_name, accel=$ACCEL)..."
-	timeout 180 qemu-system-x86_64 \
+	timeout "$BOOT_TIMEOUT" qemu-system-x86_64 \
 		-machine "q35,accel=$ACCEL" \
 		-m 2048 \
 		-smp 2 \
@@ -504,24 +505,28 @@ fi
 A3_EVID="${A3_EVID#*|}"
 
 # A4 Check
+# Boot storage must not be mounted anywhere: the only vfat mount is the ESP.
 A4_STATUS="FAIL"
-A4_LOG=$(sed -n '/=== CHECK A4 ===/,/=== CHECK A5 ===/p' "$OUT/boot1.log")
-if echo "$A4_LOG" | grep -q "/boot/efi" && ! echo "$A4_LOG" | grep -q "/run/vintner"; then
+A4_VFAT=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^vfat-mount: //p' | awk '{print $1}' | paste -sd ' ')
+A4_VINTNER=$(tr -d '\r' < "$OUT/boot1.log" | grep -c '^vintner-mount: ' || true)
+if [ "$A4_VFAT" = "/boot/efi" ] && [ "$A4_VINTNER" = 0 ]; then
 	A4_STATUS="PASS"
 fi
-A4_EVID="findmnt showed only /boot/efi; /run/vintner not in mountinfo"
+A4_EVID="vfat mounts: ${A4_VFAT:-none}; /run/vintner mounts: $A4_VINTNER"
 
 # A5 Check (OBSERVED)
 A5_STATUS="OBSERVED"
-A5_EVID=$(grep -A 15 "=== CHECK A5 ===" "$OUT/boot1.log" | grep -E "(gpt-auto|\.mount)" | head -n 5 | tr '\n' '; ' | sed 's/; $//')
-[ -n "$A5_EVID" ] || A5_EVID="gpt-auto generated units skipped XBOOTLDR since /boot populated"
+A5_UNITS=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^generated: //p' | xargs -r -n1 basename | paste -sd ' ')
+A5_LOG=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^gpt-auto-log: //p' | head -n 5 | paste -sd ';')
+A5_EVID="generated mount units: ${A5_UNITS:-none}; gpt-auto log: ${A5_LOG:-none}"
 
 # A6 Check
 A6_STATUS="FAIL"
-if grep -q "reconcile_exit=0" "$OUT/boot1.log"; then
+A6_LOG=$(tr -d '\r' < "$OUT/boot1.log" | sed -n '/=== CHECK A6 ===/,/=== VINTNER-BOOT1-DONE ===/p')
+if echo "$A6_LOG" | grep -q '^reconcile_exit=0$' && echo "$A6_LOG" | grep -q '^mounts_after_reconcile=0$'; then
 	A6_STATUS="PASS"
 fi
-A6_EVID="vintner reconcile --dry-run exited 0 with no action or report lines"
+A6_EVID=$(echo "$A6_LOG" | grep -v '^===' | paste -sd ';')
 
 # --- 11. Run Boot 2 ----------------------------------------------------------
 echo "=== Preparing for Boot 2 (mask vintner-bless.service) ==="
