@@ -71,3 +71,4 @@ ci/out/
 # Go module files (the C++ template above ignores *.mod)
 !go.mod
 !go.sum
+recovery/out/

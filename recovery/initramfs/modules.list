@@ -1,0 +1,24 @@
+# Loaded at start by init; build.sh copies each module's dependency closure.
+virtio_blk
+virtio_scsi
+sd_mod
+ahci
+nvme
+xhci_pci
+ehci_pci
+ohci_pci
+uhci_hcd
+usb_storage
+uas
+mmc_block
+sdhci_pci
+usbhid
+hid_generic
+ext4
+vfat
+nls_cp437
+nls_ascii
+btrfs
+xfs
+isofs
+dm_mod

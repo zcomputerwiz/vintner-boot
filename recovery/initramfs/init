@@ -1,0 +1,62 @@
+#!/bin/busybox sh
+# vintner recovery init: shell, read-only root mount, logs (WP-006 phase 1).
+# Needs nothing from the installed system (architecture §4 "Recovery", R06).
+/bin/busybox --install -s /bin
+export PATH=/bin
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev
+mount -t tmpfs run /run
+[ -d /sys/firmware/efi/efivars ] && mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null
+
+while read -r m; do modprobe -q "$m" 2>/dev/null; done < /etc/vintner/modules
+# Give storage drivers up to 10 s to register block devices.
+i=0
+while [ $i -lt 20 ] && ! grep -q ' [hsv]d[a-z][0-9]*$\| nvme\| mmcblk' /proc/partitions; do sleep 0.5; i=$((i + 1)); done
+sleep 1
+
+arg() { sed -n "s/.*vintner\.$1=\([^ ]*\).*/\1/p" /proc/cmdline; }
+echo "vintner recovery $(cat /etc/vintner/version)"
+
+# Root: vintner.root=UUID=<fs uuid> (the manifest's root.uuid) or a /dev path.
+# shortcut: no LUKS, LVM or md yet; such roots report root=failed. Add cryptsetup in the full WP-006 image.
+root=absent ro=no
+spec=$(arg root)
+if [ -n "$spec" ]; then
+	root=failed
+	case $spec in /dev/*) dev=$spec ;; *) dev=$(findfs "$spec" 2>/dev/null) ;; esac
+	mkdir -p /mnt/root
+	# noload: never replay an ext4 journal, so the root stays byte-identical.
+	if [ -n "$dev" ] && { mount -t ext4 -o ro,noload "$dev" /mnt/root 2>/dev/null || mount -o ro "$dev" /mnt/root; }; then
+		root=mounted
+		grep -q ' /mnt/root [^ ]* ro[, ]' /proc/mounts && ro=yes
+	fi
+fi
+
+# Logs to /run, and to boot storage when found: the vfat partition holding /vintner.
+L=/run/vintner/logs/$(date +%Y%m%dT%H%M%S)
+mkdir -p "$L"
+dmesg > "$L/dmesg.txt"
+cat /proc/partitions > "$L/partitions.txt"
+cat /proc/mounts > "$L/mounts.txt"
+echo "root=$root ro=$ro spec=$spec" > "$L/root.txt"
+logs=$L
+mkdir -p /mnt/bs
+for p in /sys/class/block/*/partition; do
+	dev=/dev/$(basename "$(dirname "$p")")
+	mount -t vfat -o ro "$dev" /mnt/bs 2>/dev/null || continue
+	if [ -d /mnt/bs/vintner ] && mount -o remount,rw /mnt/bs; then
+		d=/mnt/bs/vintner/recovery-logs/${L##*/}
+		mkdir -p "$d" && cp "$L"/* "$d"/ && sync && logs=$dev:/vintner/recovery-logs/${L##*/}
+	fi
+	umount /mnt/bs
+done
+
+if [ "$(arg recovery_test)" = 1 ]; then
+	echo "VINTNER-RECOVERY-TEST root=$root ro=$ro logs=$logs" > /dev/ttyS0
+	poweroff -f
+fi
+
+echo "root: $root (read-only: $ro)  logs: $logs"
+[ -c /dev/ttyS0 ] && setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1' &
+while :; do setsid cttyhack sh; done
