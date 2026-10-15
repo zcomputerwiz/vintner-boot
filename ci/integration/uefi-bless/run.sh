@@ -526,7 +526,7 @@ A6_LOG=$(tr -d '\r' < "$OUT/boot1.log" | sed -n '/=== CHECK A6 ===/,/=== VINTNER
 if echo "$A6_LOG" | grep -q '^reconcile_exit=0$' && echo "$A6_LOG" | grep -q '^mounts_after_reconcile=0$'; then
 	A6_STATUS="PASS"
 fi
-A6_EVID=$(echo "$A6_LOG" | grep -v '^===' | paste -sd ';')
+A6_EVID=$(echo "$A6_LOG" | grep -E '^(reconcile_exit|mounts_after_reconcile)=|^REPORT:|^ACTION:' | paste -sd ';')
 
 # --- 11. Run Boot 2 ----------------------------------------------------------
 echo "=== Preparing for Boot 2 (mask vintner-bless.service) ==="
