@@ -28,7 +28,7 @@ Debian 13 ships systemd 257. The findings below come from reading the systemd v2
 7. **`auto-entries no` hides the automatic menu entries** for Windows Boot Manager, macOS, the EFI shell and `\EFI\BOOT\BOOTX64.EFI`. `auto-firmware` is a separate setting.
 8. **The `LoaderConfigTimeout` EFI variable overrides the `loader.conf` timeout.** It is set from the menu (`+` and `-` keys) or by `bootctl set-timeout`. The `d` key in the menu writes `LoaderEntryDefault`.
 
-From findings 2 and 4, the all-bad case is defined by the code. Bad entries sort last, and `default vintner-*` takes the first match, so the first non-bad `vintner-*` entry boots. This still has to be proven by the CI test in §10, because it is implementation behaviour and not a documented interface.
+From findings 2 and 4, the all-bad case is defined by the code. `ci/selection-policy/run.sh` confirmed findings 1, 2, 4 and 6 and the resulting order on Debian's `systemd-boot-efi` 257.13-1~deb13u1, including the all-bad case (results in `ci/selection-policy/README.md`). A UKI whose headers cannot be read is not listed at all, so finding 5 applies only to entries that are listed but fail to load. Bad entries sort last, and `default vintner-*` takes the first match, so the first non-bad `vintner-*` entry boots. This still has to be proven by the CI test in §10, because it is implementation behaviour and not a documented interface.
 
 ## Decision: names and `.osrel` fields
 
