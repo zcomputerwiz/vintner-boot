@@ -1,0 +1,5 @@
+# Debian trixie packages unpacked by recovery/build.sh; @KERNEL@ is the image linux-image-amd64 depends on.
+@KERNEL@
+busybox-static
+systemd-boot-efi
+systemd-ukify
