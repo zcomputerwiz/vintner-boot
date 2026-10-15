@@ -22,6 +22,9 @@ jobs:
           - name: recovery-smoke
             run: recovery/build.sh && recovery/tests/qemu-smoke.sh
             out: recovery/out/smoke
+          - name: uefi-bless
+            run: ci/integration/uefi-bless/run.sh
+            out: ci/out/integration/uefi-bless
 
     steps:
       - name: Check out repository
@@ -30,8 +33,21 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 ovmf mtools fdisk e2fsprogs kmod cpio xz-utils \
-            python3-pefile python3-virt-firmware sbsigntool
+          sudo apt-get install -y qemu-system-x86 qemu-utils ovmf mtools fdisk e2fsprogs kmod cpio xz-utils \
+            python3-pefile python3-virt-firmware sbsigntool cloud-image-utils
+
+      - name: Set up Go
+        if: matrix.name == 'uefi-bless'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/go.mod
+
+      - name: Cache Debian image
+        if: matrix.name == 'uefi-bless'
+        uses: actions/cache@v4
+        with:
+          path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2
+          key: debian-13-genericcloud-amd64-20261001-2618
 
       - name: Enable KVM for GitHub-hosted runners
         run: |
