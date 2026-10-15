@@ -712,10 +712,10 @@ def clean(text):
 
 # 1. Boot 1: exit status and the command's last lines
 b1_text = clean(open(boot1_log, errors="replace").read())
-m_exit = re.search(r"^=== OP EXIT: (-?\d+) ===$", b1_text, re.M)
+# Console output can share a line with these markers, so they are not anchored.
+m_exit = re.search(r"=== OP EXIT: (-?\d+) ===", b1_text)
 cmd_exit = int(m_exit.group(1)) if m_exit else -1
-# The console interleaves with the command's output, so its lines are prefixed.
-cmd_tail = re.findall(r"^OPLOG: (.*)$", b1_text, re.M)
+cmd_tail = re.findall(r"OPLOG: (.*)$", b1_text, re.M)
 
 # 2. Vintner loader files, for both firmwares: the disk boots on both
 changed_vintner_files = []
