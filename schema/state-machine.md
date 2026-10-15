@@ -35,6 +35,10 @@ The publisher and the health service compare the manifest with boot storage befo
 - **A file in `/EFI/Linux/` or `/vintner/bios/` that matches `vintner-os-*` but has no record** is reported and left alone (threat model T5).
 - **A record whose file is missing** is reported. It is removed from the manifest only by garbage collection or an operator command.
 - **A counter at zero on a `TRYING` or `GOOD` record** sets the record to `FAILED`.
+- **A `STAGED` record with files in its final place that do not verify** is reported and left alone. For BIOS, verifying includes the generation being in `VINTNER_ORDER` with its counter set.
+- **On BIOS, only a counter of exactly `0` is at zero.** An unset or malformed counter, or an unreadable `grubenv`, is reported and changes nothing.
+
+Staging names: generation `g` stages its UKI as `/vintner/staging/vintner-os-<g>.efi` and its BIOS slot as the directory `/vintner/staging/os-<g>/`. `vintner reconcile` implements these rules (`src/internal/state`).
 
 ## Garbage collection
 
