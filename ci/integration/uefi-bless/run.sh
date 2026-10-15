@@ -246,7 +246,8 @@ sudo chmod 0755 "$MNT/usr/local/bin/vintner-guest-checks.sh"
 cat <<'EOF' | sudo tee "$MNT/etc/systemd/system/vintner-guest-checks.service" >/dev/null
 [Unit]
 Description=Run vintner test checks
-After=multi-user.target
+# Nothing else waits for vintner-bless.service; without this the checks race it.
+After=multi-user.target vintner-bless.service
 Requires=multi-user.target
 
 [Service]
