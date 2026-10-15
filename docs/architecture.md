@@ -1,6 +1,6 @@
 # vintner-boot — Debian Boot Platform Implementation Plan
 
-**Status:** Architecture baseline, revision 1.2 (October 14, 2026; see §17 for the change log)  
+**Status:** Architecture baseline, revision 1.3 (October 15, 2026; see §17 for the change log)  
 **Target:** Debian 13 (Trixie) onward, x86-64 UEFI and legacy BIOS  
 **Primary objective:** Windows-like installation/boot/recovery reliability without coupling the machine's boot platform to routine Debian package upgrades.  
 **Naming:** the project is `vintner-boot`; Debian packages, boot entries, ESP directories and NVRAM labels use the `vintner` prefix.
@@ -116,6 +116,8 @@ Suggested single-disk x86-64 GPT layout for new installations:
 | Boot storage (XBOOTLDR) | Normal UKIs and recovery UKIs (UEFI); kernel+initramfs slots, recovery images and `grubenv` (BIOS) | **Required.** GPT type `bc13c2ff-59e6-4262-a352-b275fd6f7172` (MBR type `0xEA`); FAT32, plain, unencrypted; size from the image budget below (default 2 GiB) |
 | Debian root | Standard Debian filesystem | ext4 in v1; optional Btrfs later |
 | Data | Optional separate persistent state | `/home` or `/var` policy decided at install |
+
+**Mounting boot storage.** Boot storage is never in fstab and has no permanent mount point (decision D4). As with the Windows system partitions, nothing on the running system sees it in normal use. The vintner services (publisher, bless, health, reconcile) mount it on demand at `/run/vintner/boot` inside their own mount namespace (`PrivateMounts=yes`), with `nosuid,nodev,noexec,umask=0077,flush`. They mount it read-only unless they write, and unmount it when done. They find it through `vintner.bootstorage=PARTUUID=<partuuid>` on the kernel command line of every vintner image, which is the same value as the manifest's `boot_storage.partuuid`. `systemd-gpt-auto-generator` would mount an XBOOTLDR partition at `/boot`, but it skips a populated `/boot`, which Debian's always is. A CI check must confirm this.
 
 **Image budget.** Boot storage must hold, without garbage collection: N ordinary images (default 3: candidate, current good, previous good), two recovery images (A and B, §8), one image of staging headroom, and a 20% margin. With placeholder sizes of 150 MiB per ordinary UKI or slot and 300 MiB per recovery image this is about 1.5 GiB, hence the 2 GiB default. WP-002 replaces the placeholders with measured sizes.
 
@@ -371,8 +373,13 @@ The project's first release should be judged on unattended installation, autonom
 | D1 | Recovery console authentication | None in v1, valid only while nothing unlocks the disk automatically ([threat model](security-threat-model.md) T9) |
 | D2 | Tier A key model | Per-machine signing keys; no shared site signing key on machines (threat model T3) |
 | D3 | Image anti-rollback | None in v1 beyond SBAT; documented (threat model T2) |
+| D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 1.3 (October 15, 2026)** — decisions recorded:
+
+- Boot storage is mounted only on demand, privately, by the vintner services (D4, §5).
 
 **Revision 1.2 (October 14, 2026)** — decisions recorded:
 

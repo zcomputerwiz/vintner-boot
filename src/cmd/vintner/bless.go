@@ -20,16 +20,19 @@ import (
 
 func cmdBless(args []string) {
 	fs := flag.NewFlagSet("vintner bless", flag.ExitOnError)
-	bootStorage := fs.String("boot-storage", "", "boot storage mount point")
+	bootStorage := fs.String("boot-storage", "", "boot storage directory (default: mount the partition named by vintner.bootstorage= on demand)")
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
 
 	fs.Parse(args)
 
-	if *bootStorage == "" {
-		fmt.Fprintln(os.Stderr, "vintner bless: --boot-storage is required")
+	dir, err := mountBootStorage(*bootStorage, true)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
 		osExit(1)
+		return
 	}
+	*bootStorage = dir
 
 	sDir := *stateDir
 	if sDir == "" {

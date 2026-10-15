@@ -15,17 +15,19 @@ import (
 
 func cmdReconcile(args []string) {
 	fs := flag.NewFlagSet("vintner reconcile", flag.ExitOnError)
-	bootStorage := fs.String("boot-storage", "", "boot storage mount point")
+	bootStorage := fs.String("boot-storage", "", "boot storage directory (default: mount the partition named by vintner.bootstorage= on demand)")
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	dryRun := fs.Bool("dry-run", false, "print actions but do not perform them")
 
 	fs.Parse(args)
 
-	if *bootStorage == "" {
-		fmt.Fprintln(os.Stderr, "vintner reconcile: --boot-storage is required")
-		osExit(2)
+	dir, err := mountBootStorage(*bootStorage, !*dryRun)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vintner reconcile: %v\n", err)
+		osExit(1)
 		return
 	}
+	*bootStorage = dir
 
 	sDir := *stateDir
 	if sDir == "" {
