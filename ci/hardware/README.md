@@ -98,7 +98,9 @@ ci/hardware/make-usb.sh inspect bios /dev/sdX
 
 ---
 
-## Results Table
+## Virtual-machine dry runs
+
+These runs check the images and the procedure. They are not real-hardware results: QEMU's OVMF and SeaBIOS are already covered by CI, and VirtualBox's BIOS is one more firmware implementation, still virtual.
 
 | ID | Machine (Make, Model, Firmware Version) | Boot Mode | Steps Taken | Observed Behavior & Evidence | Status |
 |---|---|---|---|---|---|
@@ -109,7 +111,9 @@ ci/hardware/make-usb.sh inspect bios /dev/sdX
 | B3 | VirtualBox 7.2.20 (Oracle VM VirtualBox BIOS) | BIOS / Legacy | Plain boot in VirtualBox BIOS VM | GRUB booted `os-2`, screen displayed `VINTNER REAL-HARDWARE TEST BOOTED id=os-2`, auto-powered off after 30s. | PASS |
 | B4 | VirtualBox 7.2.20 (Oracle VM VirtualBox BIOS) | BIOS / Legacy | Inspected cloned medium `grubenv` | `VINTNER_BOOTED=2`, `VINTNER_T_2=xx`, `VINTNER_T_1=xxx`, `VINTNER_T_RA=xxx`. BIOS disk write verified. | PASS |
 
-### Physical Hardware Observations
+## Real-hardware results
+
+**Pending.** No physical machine has been tested yet. Record each machine here with this template, one row per check.
 
 *Template for recording physical test machines:*
 

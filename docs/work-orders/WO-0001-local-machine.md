@@ -2,6 +2,7 @@
 
 - **For:** an agent with a local Linux workstation (root via `sudo`, KVM, loop devices, a kernel with `vfat` and device-mapper). Part B also needs a person at real hardware.
 - **Issued:** 2026-10-15
+- **Status:** Part A done: `ci/integration/uefi-bless/`, reviewed and run in CI. Part B tooling merged (`ci/hardware/`); real-hardware results are pending a person with a spare UEFI PC and a BIOS or CSM PC.
 - **Base branch:** `main`. Work on a new branch per part (`wo-0001-a`, `wo-0001-b`) and open one pull request per part against `main`.
 
 ## Why this work order exists
