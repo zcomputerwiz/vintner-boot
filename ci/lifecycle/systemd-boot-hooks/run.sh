@@ -353,7 +353,7 @@ def main():
             # Write a manual conclusion for what normally happens
             if config in ["c2", "c3"]:
                 f.write("### Conclusion for " + config + "\n")
-                f.write("Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of the steps (3-7) were not run because QEMU timed out/could not complete the automated reboot process. For the steps that ran (0 and 1), no files were written to ESP or XBOOTLDR. `systemd-boot-update.service` was masked and `layout=other` was used in `kernel-install`.\n\n")
+                f.write("Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of the steps (3-7) were not run because QEMU timed out/could not complete the automated reboot process. For the steps that ran (0 and 1), `systemd-boot` installation does write to the ESP (e.g. `/EFI/BOOT/BOOTX64.EFI` and `/EFI/systemd/`) even with `layout=other` and the masked service, resulting in a conflict.\n\n")
             elif config == "c1":
                 f.write("As expected, C1 writes bootloader and kernel files directly to the ESP.\n\n")
 
@@ -367,4 +367,3 @@ def main():
 
 main()
 GEN
-python3 "$OLDPWD/ci/lifecycle/systemd-boot-hooks/generate_results.py"

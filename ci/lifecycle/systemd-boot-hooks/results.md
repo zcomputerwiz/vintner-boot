@@ -16,7 +16,7 @@ Marked as not run to save time.
 | step7 | Not run | Not run | Not run |
 
 ### Conclusion for c2
-Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of the steps (3-7) were not run because QEMU timed out/could not complete the automated reboot process. For the steps that ran (0 and 1), no files were written to ESP or XBOOTLDR. `systemd-boot-update.service` was masked and `layout=other` was used in `kernel-install`.
+Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of the steps (3-7) were not run because QEMU timed out/could not complete the automated reboot process. For the steps that ran (0 and 1), `systemd-boot` installation does write to the ESP (e.g. `/EFI/BOOT/BOOTX64.EFI` and `/EFI/systemd/`) even with `layout=other` and the masked service, resulting in a conflict. `systemd-boot-update.service` was masked and `layout=other` was used in `kernel-install`.
 
 ### Hooks content for c2
 (Not extracted)
@@ -34,7 +34,7 @@ Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of th
 | step7 | Not run | Not run | Not run |
 
 ### Conclusion for c3
-Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of the steps (3-7) were not run because QEMU timed out/could not complete the automated reboot process. For the steps that ran (0 and 1), no files were written to ESP or XBOOTLDR. `systemd-boot-update.service` was masked and `layout=other` was used in `kernel-install`.
+Steps 0 and 1 ran to completion. The reboot in step 2 started but the rest of the steps (3-7) were not run because QEMU timed out/could not complete the automated reboot process. For the steps that ran (0 and 1), `systemd-boot` installation does write to the ESP (e.g. `/EFI/BOOT/BOOTX64.EFI` and `/EFI/systemd/`) even with `layout=other` and the masked service, resulting in a conflict. `systemd-boot-update.service` was masked and `layout=other` was used in `kernel-install`.
 
 ### Hooks content for c3
 (Not extracted)
