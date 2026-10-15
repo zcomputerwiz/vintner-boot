@@ -68,7 +68,7 @@ The costs of option B:
 
 - **One more FAT rename on boot storage per successful boot.** systemd-boot already makes one rename per counted boot.
 - **A good image can be demoted by transient failures.** For example, N power cuts during boot demote a GOOD image. The health service reports a demoted image, and the operator or publisher re-arms it.
-- **The `systemd-boot` dependency changes.** `vintner-core` would no longer need `systemd-bless-boot` from the `systemd-boot` package, so the `Depends` row in §5 becomes a candidate for `Conflicts`. The lifecycle test decides this, as §5 already requires.
+- **The `systemd-boot` dependency changes.** `vintner-core` no longer needs `systemd-bless-boot` from the `systemd-boot` package. The experiment in `ci/lifecycle/systemd-boot-hooks/` showed that the package's postinst takes over the ESP, so §5 now lists it as a `Conflicts`.
 
 ## Consequences
 
