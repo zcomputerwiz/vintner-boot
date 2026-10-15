@@ -84,8 +84,10 @@ func TestCmdReconcile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(filepath.Join(stagingDir, "vintner-os-1-tmp"), []byte("data"), 0644); err != nil {
-		t.Fatal(err)
+	for _, f := range []string{"vintner-os-1.efi", "vintner-os-10.efi"} {
+		if err := os.WriteFile(filepath.Join(stagingDir, f), []byte("data"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	exitCode = 0
@@ -95,8 +97,11 @@ func TestCmdReconcile(t *testing.T) {
 		t.Errorf("expected exit code 0, got %d", exitCode)
 	}
 
-	if _, err := os.Stat(filepath.Join(stagingDir, "vintner-os-1-tmp")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(stagingDir, "vintner-os-1.efi")); !os.IsNotExist(err) {
 		t.Errorf("expected staging file to be removed, got err: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(stagingDir, "vintner-os-10.efi")); err != nil {
+		t.Errorf("another generation's staging file was touched: %v", err)
 	}
 
 	m2, err := manifest.Load(stateDir)

@@ -59,7 +59,7 @@ func cmdReconcile(args []string) {
 		if !*dryRun {
 			if a.Type == "remove_staging" {
 				p := filepath.Join(*bootStorage, "vintner", "staging", a.Name)
-				if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				if err := os.RemoveAll(p); err != nil { // a BIOS staging entry is a directory
 					fmt.Fprintf(os.Stderr, "vintner reconcile: failed to remove %s: %v\n", p, err)
 					osExit(1)
 					return
