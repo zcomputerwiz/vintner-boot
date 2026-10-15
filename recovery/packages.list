@@ -3,3 +3,34 @@
 busybox-static
 systemd-boot-efi
 systemd-ukify
+# Storage tools for LUKS, LVM and md roots and ext4 repair, and their libraries.
+# build.sh copies each tool's shared-library closure and fails on a missing one.
+libc6
+cryptsetup-bin
+libcryptsetup12
+libargon2-1
+libjson-c5
+libssl3t64
+libpopt0
+libblkid1
+libuuid1
+libdevmapper1.02.1
+libselinux1
+libpcre2-8-0
+libudev1
+libcap2
+lvm2
+libaio1t64
+libdevmapper-event1.02.1
+libedit2
+libbsd0
+libmd0
+libtinfo6
+libsystemd0
+mdadm
+e2fsprogs
+libcom-err2
+libext2fs2t64
+libss2
+zlib1g
+libzstd1

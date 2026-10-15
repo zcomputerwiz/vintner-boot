@@ -2,7 +2,9 @@
 # vintner recovery init: shell, read-only root mount, logs (WP-006 phase 1).
 # Needs nothing from the installed system (architecture §4 "Recovery", R06).
 /bin/busybox --install -s /bin
-export PATH=/bin
+export PATH=/usr/sbin:/bin
+# No udev here: device-mapper users create their own nodes.
+export DM_DISABLE_UDEV=1
 mount -t proc proc /proc
 mount -t sysfs sys /sys
 mount -t devtmpfs dev /dev
@@ -20,13 +22,54 @@ sleep 1
 arg() { sed -n "s/.*vintner\.$1=\([^ ]*\).*/\1/p" /proc/cmdline; }
 echo "vintner recovery $(cat /etc/vintner/version)"
 
-# Root: vintner.root=UUID=<fs uuid> (the manifest's root.uuid) or a /dev path.
-# shortcut: no LUKS, LVM or md yet; such roots report root=failed. Add cryptsetup in the full WP-006 image.
+# ask PROMPT: prints the first line typed on the screen (tty1) or on ttyS0,
+# without echo. /dev/console reads only from the last console= device.
+ask() {
+	mkfifo /run/answer
+	pids=
+	for t in tty1 ttyS0; do
+		[ -c /dev/$t ] || continue
+		(printf '%s' "$1" >/dev/$t; stty -echo </dev/$t; read -r a </dev/$t; stty echo </dev/$t
+			echo >/dev/$t; echo "$a" >/run/answer) 2>/dev/null &
+		pids="$pids $!"
+	done
+	read -r a </run/answer
+	# shellcheck disable=SC2086 # one PID per word
+	kill $pids 2>/dev/null
+	rm -f /run/answer
+	echo "$a"
+}
+
+# md arrays and LVM volumes come up read-only, so the root and every layer
+# under it stay byte-identical.
+activate() {
+	mdadm --assemble --scan --readonly >/dev/null 2>&1
+	vgs=$(lvm vgs --noheadings -o vg_name 2>/dev/null | awk '{printf "%s\"%s\"", (NR > 1 ? "," : ""), $1}')
+	[ -n "$vgs" ] && lvm vgchange -ay --sysinit --config "activation { read_only_volume_list = [ $vgs ] }" >/dev/null 2>&1
+}
+find_root() { case $spec in /dev/*) [ -b "$spec" ] && echo "$spec" ;; *) findfs "$spec" 2>/dev/null ;; esac; }
+
+# Root: vintner.root=UUID=<fs uuid> (the manifest's root.uuid) or a /dev path,
+# on a plain partition, md, LVM or LUKS. A LUKS passphrase is asked for only
+# when the root is not found without it; an empty answer skips the device.
 root=absent ro=no
 spec=$(arg root)
 if [ -n "$spec" ]; then
 	root=failed
-	case $spec in /dev/*) dev=$spec ;; *) dev=$(findfs "$spec" 2>/dev/null) ;; esac
+	activate
+	dev=$(find_root)
+	if [ -z "$dev" ]; then
+		n=0
+		# shellcheck disable=SC2013 # device names have no spaces
+		for d in $(awk 'NR > 2 {print "/dev/" $4}' /proc/partitions); do
+			cryptsetup isLuks "$d" 2>/dev/null || continue
+			n=$((n + 1))
+			pw=$(ask "Passphrase for $d (empty to skip): ")
+			[ -n "$pw" ] && printf '%s' "$pw" | cryptsetup open --readonly --key-file=- "$d" "luks$n"
+		done
+		activate
+		dev=$(find_root)
+	fi
 	mkdir -p /mnt/root
 	# noload: never replay an ext4 journal, so the root stays byte-identical.
 	if [ -n "$dev" ] && { mount -t ext4 -o ro,noload "$dev" /mnt/root 2>/dev/null || mount -o ro "$dev" /mnt/root; }; then
@@ -60,5 +103,9 @@ if [ "$(arg recovery_test)" = 1 ]; then
 fi
 
 echo "root: $root (read-only: $ro)  logs: $logs"
-[ -c /dev/ttyS0 ] && setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1' &
-while :; do setsid cttyhack sh; done
+# One shell on the screen and one on ttyS0, each respawned.
+for t in tty1 ttyS0; do
+	# setsid -c takes stdin as the controlling tty; cttyhack would pick the last console.
+	[ -c /dev/$t ] && (while :; do setsid -c sh </dev/$t >/dev/$t 2>&1; done) &
+done
+while :; do sleep 3600; done

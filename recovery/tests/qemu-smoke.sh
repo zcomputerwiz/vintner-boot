@@ -2,7 +2,9 @@
 # Smoke test for recovery/out (run recovery/build.sh first): boots the recovery
 # image as a UKI under OVMF and as kernel+initrd under SeaBIOS, with and without
 # a root disk, and checks it reports the root mounted read-only, leaves the root
-# byte-identical and writes logs to boot storage. No root needed.
+# byte-identical and writes logs to boot storage. Then it builds LVM-on-LUKS and
+# md RAID1 roots with the recovery shell and checks those the same way. No root
+# needed.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -76,4 +78,57 @@ check bios-root "$(run bios-root bios "$WITH_ROOT" "$T/root.img")" '^root=mounte
 check bios-logs "$(run bios-logs bios "$WITH_ROOT" "$T/root.img" "$T/bootstorage.img")" 'logs=/dev/vd[a-z][0-9]+:/vintner/recovery-logs/'
 check logs-on-disk "$(mdir -b -i "$T/bootstorage.img@@$BS_OFF" ::/vintner/recovery-logs 2>/dev/null | head -1)" 'recovery-logs/'
 check root-unchanged "$(sha256sum < "$T/root.img")" "^${ROOT_SUM%% *}"
+
+# --- LVM on LUKS, and md RAID1 ----------------------------------------------
+# The host has no device-mapper, so the recovery shell on ttyS0 builds these
+# disks itself. ttyS0 is a pair of FIFOs that this script reads and writes.
+serial() { # name cmdline disks...: boots under SeaBIOS in the background
+	local name=$1 cmdline=$2 d
+	shift 2
+	rm -f "$T/$name".{in,out}
+	mkfifo "$T/$name.in" "$T/$name.out"
+	local q=(qemu-system-x86_64 -machine "q35,accel=$ACCEL" -m 1024 -nodefaults -display none -monitor none
+		-serial "pipe:$T/$name" -no-reboot -kernel "$OUT/vmlinuz" -initrd "$OUT/initrd.img" -append "$cmdline")
+	for d in "$@"; do q+=(-drive "file=$d,format=raw,if=virtio"); done
+	timeout 600 "${q[@]}" </dev/null >/dev/null 2>&1 &
+	cat "$T/$name.out" > "$T/$name.log" &
+}
+await() { # name pattern: waits up to 5 minutes for pattern on ttyS0
+	for _ in $(seq 600); do
+		tr -d '\r' < "$T/$1.log" | grep -aq "$2" && return 0
+		sleep 0.5
+	done
+	echo "$1: timed out waiting for '$2'" >&2
+	return 1
+}
+say() { printf '%s\n' "$2" > "$T/$1.in"; }
+result() { tr -d '\r' < "$T/$1.log" | grep -ao -m1 'VINTNER-RECOVERY-TEST .*' | sed 's/^VINTNER-RECOVERY-TEST //' || echo "no result"; }
+
+LVM_UUID=2b7c1e9a-5d34-4f6e-8a21-c0d9e8f7a6b5
+MD_UUID=9e8d7c6b-5a49-4382-a1b0-c9d8e7f6a5b4
+truncate -s 128M "$T/luks.img" "$T/md1.img" "$T/md2.img"
+serial provision "console=ttyS0" "$T/luks.img" "$T/md1.img" "$T/md2.img"
+await provision 'root: absent'
+# The quoted markers keep the echoed command line from matching. The shell runs
+# busybox applets before PATH, and busybox has its own mke2fs.
+say provision "printf pw | cryptsetup luksFormat -q --pbkdf pbkdf2 --pbkdf-force-iterations 1000 --key-file=- /dev/vda \
+&& printf pw | cryptsetup open --key-file=- /dev/vda c && lvm pvcreate -q /dev/mapper/c && lvm vgcreate -q vg /dev/mapper/c \
+&& lvm lvcreate -q -y -L 32m -n root vg && /usr/sbin/mke2fs -q -t ext4 -U $LVM_UUID /dev/mapper/vg-root \
+&& mdadm --create /dev/md0 --run -q --level=1 --raid-devices=2 --metadata=1.2 /dev/vdb /dev/vdc \
+&& /usr/sbin/mke2fs -q -t ext4 -U $MD_UUID /dev/md0 && sync && echo 'PROVISION''-OK'; poweroff -f"
+await provision 'PROVISION-OK' || true
+wait
+check provision "$(tr -d '\r' < "$T/provision.log" | grep -ac 'PROVISION-OK')" '^1$'
+SUMS=$(cat "$T/luks.img" "$T/md1.img" "$T/md2.img" | sha256sum)
+
+serial lvm-luks "$TEST vintner.root=UUID=$LVM_UUID" "$T/luks.img"
+await lvm-luks 'Passphrase for /dev/vda' && say lvm-luks pw
+await lvm-luks 'VINTNER-RECOVERY-TEST' || true
+wait
+check lvm-on-luks "$(result lvm-luks)" '^root=mounted ro=yes '
+serial md "$TEST vintner.root=UUID=$MD_UUID" "$T/md1.img" "$T/md2.img"
+await md 'VINTNER-RECOVERY-TEST' || true
+wait
+check md-raid1 "$(result md)" '^root=mounted ro=yes '
+check layers-unchanged "$(cat "$T/luks.img" "$T/md1.img" "$T/md2.img" | sha256sum)" "^${SUMS%% *}"
 exit $fail
