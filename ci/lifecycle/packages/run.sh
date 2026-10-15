@@ -1033,6 +1033,8 @@ echo "=================================================================="
 echo "=== Test Summary Table ($FIRMWARE) ==="
 echo "=================================================================="
 cat "$RESULTS"
+echo "=== versions.txt ==="
+cat "$VERSIONS"
 
 FAILURES=$(awk -F'\t' '$2!="conflicting" && $3=="FAIL"{print $1}' "$RESULTS")
 if [ -n "$FAILURES" ]; then
