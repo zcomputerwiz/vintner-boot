@@ -25,6 +25,9 @@ jobs:
           - name: uefi-bless
             run: ci/integration/uefi-bless/run.sh
             out: ci/out/integration/uefi-bless
+          - name: bios-bless
+            run: recovery/build.sh && ci/integration/bios-bless/run.sh
+            out: ci/out/integration/bios-bless
 
     steps:
       - name: Check out repository
@@ -34,16 +37,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 qemu-utils ovmf mtools fdisk e2fsprogs kmod cpio xz-utils \
-            python3-pefile python3-virt-firmware sbsigntool cloud-image-utils
+            python3-pefile python3-virt-firmware sbsigntool cloud-image-utils binutils
 
       - name: Set up Go
-        if: matrix.name == 'uefi-bless'
+        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless'
         uses: actions/setup-go@v5
         with:
           go-version-file: src/go.mod
 
       - name: Cache Debian image
-        if: matrix.name == 'uefi-bless'
+        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless'
         uses: actions/cache@v4
         with:
           path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2
@@ -66,4 +69,5 @@ jobs:
           path: |
             ${{ matrix.out }}/*.log
             ${{ matrix.out }}/*.tsv
+            ${{ matrix.out }}/*.txt
           retention-days: 7
