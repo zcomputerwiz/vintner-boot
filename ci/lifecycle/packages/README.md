@@ -38,26 +38,27 @@ The test builds one Debian 13 disk that boots through vintner on both firmwares,
 
 ### 2. Preparation (Operation P0)
 As the vintner installer does after deploying vintner (§5), P0 purges Debian's stock boot loader packages (`grub-cloud-amd64`, `grub-pc`, `grub-efi-amd64`, `grub-efi-amd64-signed`, `shim-signed`, `systemd-boot`) and runs `apt-get update`.
-- Boot 1 executes the purge and package update.
+- Boot 1 executes the purge and package update, and prints the loader packages it found (`LOADER-PACKAGES-BEFORE`) and every package apt removed (`REMOVED-BY-APT`).
 - Boot 2 confirms that the machine boots cleanly through vintner on os-1 and that blessing succeeds.
+- The host compares the disk with a copy taken before P0, exactly as for the operations below, except NVRAM: there is no control run yet.
 - If P0 fails, the run halts immediately: all subsequent tests require an intact base.
 - The post-P0 disk is preserved as `base.raw`, and the post-P0 NVRAM variables as `base-vars.fd`.
 
 ### 3. Operation Execution
-Each of the 14 test operations starts from a fresh overlay (`qemu-img create -f qcow2 -F raw -b base.raw <op>.qcow2`) and, for UEFI, a fresh copy of `base-vars.fd`.
+Each of the 15 test operations starts from a fresh overlay (`qemu-img create -f qcow2 -F raw -b base.raw <op>.qcow2`) and, for UEFI, a fresh copy of `base-vars.fd`.
 - **Boot 1:** Runs the designated operation via a NoCloud seed (`user-data` with `instance-id: lifecycle-<op>`) using QEMU user networking (`-nic user,model=virtio-net-pci`). The script records the command exit code and the last 20 lines of output to `ttyS0`.
 - **Boot 2:** Boots the machine untouched to observe which loader executes and whether vintner remains in control.
-- **Host evaluation:** The host reads the disk back via `qemu-img convert` to raw, examining partition offsets using `mtools`, `python3-virt-firmware`, and SHA-256 digests.
+- **Host evaluation:** The host reads the disk back via `qemu-img convert` to raw, examining partition offsets using `mtools`, `python3-virt-firmware`, and SHA-256 digests. The disk boots on both firmwares, so every run checks the loader files of both. A read that should succeed (a file system, a listed file, the variable store) stops the run rather than reading as "no change". The change list for each operation, with the last 20 lines of its command output, is printed in the log and written to `<op>-changes.txt`.
 
 ### 4. Evaluation Criteria & Failure Conditions
 
 | Category | Operations | What constitutes FAIL |
 |---|---|---|
-| **Preparation** | P0 | Non-zero exit code during package purge or update; or if Boot 2 fails to come up through vintner on os-1 with `BLESS_ACTIVE: active`. |
+| **Preparation** | P0 | As for everyday operations, except NVRAM, against the disk before P0. |
 | **Control** | C0 | Non-zero exit code; any difference in vintner loader files, boot storage UKIs/slots, or NVRAM; or if Boot 2 fails to boot vintner os-1. |
 | **Negative Control** | N1 | FAIL if the test misses either of the two intentional changes: the added negative test file on boot storage (`/vintner/bios/os-1/lifecycle-negative-test`) or the appended line in `/loader/loader.conf`. This proves the inspection engine can detect modifications and fails when changes occur. |
-| **Everyday Operations** | K1, K2, K3, K4, U1, U2, U3 | Non-zero command exit; any modified, added, or removed vintner loader file (UEFI: `\EFI\BOOT\BOOTX64.EFI`, `\EFI\vintner\systemd-bootx64.efi`, `\loader\loader.conf`; BIOS: MBR bytes 0..439, BIOS boot partition); any modified, added, or removed boot storage file (excluding normal state/logs and counter renames); any NVRAM change differing from C0; or if Boot 2 does not boot vintner os-1. |
-| **Competing Packages** | X1, X2, X3, X4, X5 | Always OBSERVED. Full file and NVRAM changes are recorded as evidence for architecture §5 package conflicts. |
+| **Everyday Operations** | K1, K2, K3, K4, U1, U2, U3 | Non-zero command exit; any modified or removed vintner loader file, for both firmwares in every run (UEFI: `\EFI\BOOT\BOOTX64.EFI`, `\EFI\vintner\systemd-bootx64.efi`, `\loader\loader.conf`; BIOS: MBR bytes 0..439, the whole BIOS Boot Partition); any modified, added, or removed boot storage file (excluding normal state/logs and counter renames); any `Boot####` or `BootOrder` variable differing from C0; or if Boot 2 does not come up through vintner os-1: the kernel command line has `vintner.bootstorage=PARTUUID=<boot storage>`, `vintner-bless.service` is active, and the loader chose os-1 (UEFI `LoaderEntrySelected`, BIOS the first `vintner: trying` line). |
+| **Competing Packages** | X1, X2, X3, X4, X5, X6 | Always OBSERVED. X6 is X4 with `grub-pc/install_devices` preseeded to `/dev/vda`, the answer an administrator gives to the prompt. Full file and NVRAM changes are recorded as evidence for architecture §5 package conflicts. |
 
 ---
 
