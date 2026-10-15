@@ -24,7 +24,7 @@ func TestReadWriteRoundtrip(t *testing.T) {
 
 	env := &Env{}
 	env.Set("A", "back\\slash")
-	env.Set("B", "two\nlines")
+	env.Set("B", "two\n#lines") // continuation line starting with #
 	env.Set("C", "plain")
 	env.Set("D", "end_with_backslash\\")
 
@@ -43,8 +43,8 @@ func TestReadWriteRoundtrip(t *testing.T) {
 	}
 
 	b, ok := readEnv.Get("B")
-	if !ok || b != "two\nlines" {
-		t.Errorf("B = %q, want two\\nlines", b)
+	if !ok || b != "two\n#lines" {
+		t.Errorf("B = %q, want two\\n#lines", b)
 	}
 
 	c, ok := readEnv.Get("C")

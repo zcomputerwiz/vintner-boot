@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -42,7 +43,6 @@ func cmdBless(args []string) {
 	}
 
 	var bootedGen int
-	var foundBooted bool
 
 	info, err := os.Stat(*efivarsDir)
 	isUEFI := err == nil && info.IsDir()
@@ -50,7 +50,7 @@ func cmdBless(args []string) {
 	if isUEFI {
 		_, val, err := efivar.GetString(*efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo)
 		if err != nil {
-			if err == efivar.ErrNotFound || strings.Contains(err.Error(), "no such file") {
+			if errors.Is(err, efivar.ErrNotFound) {
 				fmt.Fprintln(os.Stderr, "vintner bless: LoaderBootCountPath not found, entry was not counted")
 				osExit(0)
 			}
@@ -59,11 +59,7 @@ func cmdBless(args []string) {
 		}
 
 		// e.g. \EFI\Linux\vintner-os-42+2-1.efi
-		parts := strings.Split(val, "\\")
-		if len(parts) == 1 {
-			parts = strings.Split(val, "/")
-		}
-		filename := parts[len(parts)-1]
+		filename := val[strings.LastIndexAny(val, `\/`)+1:]
 
 		parsed, ok := bls.Parse(filename)
 		if !ok {
@@ -89,7 +85,6 @@ func cmdBless(args []string) {
 		}
 
 		bootedGen = gen
-		foundBooted = true
 	} else {
 		// BIOS
 		envPath := filepath.Join(*bootStorage, "grub", "grubenv")
@@ -119,11 +114,6 @@ func cmdBless(args []string) {
 		}
 
 		bootedGen = gen
-		foundBooted = true
-	}
-
-	if !foundBooted {
-		osExit(0)
 	}
 
 	// Update manifest

@@ -23,7 +23,9 @@ type Env struct {
 	values []string
 }
 
-// Read loads a GRUB environment block from path.
+// Read loads a GRUB environment block from path. It parses the way GRUB's
+// grub_envblk_iterate does: "#" starts a comment line, a backslash escapes
+// the next byte, and a value ends at the first unescaped newline.
 func Read(path string) (*Env, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -32,68 +34,43 @@ func Read(path string) (*Env, error) {
 	if len(data) != blockSize {
 		return nil, errors.New("grubenv: file size is not exactly 1024 bytes")
 	}
-
 	if !bytes.HasPrefix(data, []byte(headerLine)) {
 		return nil, errors.New("grubenv: invalid header")
 	}
-
-	env := &Env{}
-	lines := bytes.Split(data, []byte{'\n'})
-
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-
-		// Skip header lines (first line is always headerLine due to HasPrefix check)
-		if i == 0 || (i == 1 && string(line)+"\n" == warningLine) {
-			continue
-		}
-
-		if len(line) == 0 {
-			continue
-		}
-
-		// Comments or padding
-		if line[0] == '#' {
-			continue
-		}
-
-		eq := bytes.IndexByte(line, '=')
-		if eq == -1 {
-			// Malformed line
-			continue
-		}
-
-		name := string(line[:eq])
-		valBytes := line[eq+1:]
-
-		// Handle multi-line values where newline is escaped with backslash
-		for len(valBytes) > 0 {
-			// Count trailing backslashes
-			bsCount := 0
-			for j := len(valBytes) - 1; j >= 0; j-- {
-				if valBytes[j] == '\\' {
-					bsCount++
-				} else {
-					break
-				}
-			}
-
-			// If odd, it's an escaped newline
-			if bsCount%2 != 0 && i+1 < len(lines) && (len(lines[i+1]) == 0 || lines[i+1][0] != '#') {
-				i++
-				valBytes = append(valBytes[:len(valBytes)-1], '\n')
-				valBytes = append(valBytes, lines[i]...)
-			} else {
-				break
-			}
-		}
-
-		valStr := string(valBytes)
-		valStr = strings.ReplaceAll(valStr, "\\\\", "\\")
-
-		env.Set(name, valStr)
+	if data[blockSize-1] != '#' {
+		return nil, errors.New("grubenv: no padding")
 	}
 
+	env := &Env{}
+	p := data[len(headerLine):]
+	for len(p) > 0 {
+		if p[0] == '#' || p[0] == '\n' {
+			nl := bytes.IndexByte(p, '\n')
+			if nl < 0 {
+				break
+			}
+			p = p[nl+1:]
+			continue
+		}
+		eq := bytes.IndexByte(p, '=')
+		if eq < 0 {
+			return nil, errors.New("grubenv: variable without '='")
+		}
+		name := string(p[:eq])
+		var val []byte
+		i := eq + 1
+		for ; i < len(p) && p[i] != '\n'; i++ {
+			if p[i] == '\\' && i+1 < len(p) {
+				i++
+			}
+			val = append(val, p[i])
+		}
+		if i == len(p) {
+			return nil, errors.New("grubenv: unterminated value")
+		}
+		env.Set(name, string(val))
+		p = p[i+1:]
+	}
 	return env, nil
 }
 
@@ -148,10 +125,6 @@ func Write(path string, e *Env) error {
 
 	if buf.Len() > 512 {
 		return ErrFirstSector
-	}
-
-	if buf.Len() > blockSize {
-		return errors.New("grubenv: environment block too large")
 	}
 
 	// Pad with #
