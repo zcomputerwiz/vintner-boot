@@ -124,6 +124,12 @@ mcopy -o -i "$DISK@@$ESP_OFFSET" firmware/uefi/loader.conf ::/loader/loader.conf
 echo "=== Configuring guest root filesystem ==="
 LOOP=""
 cleanup() {
+	local rc=$?
+	if [ "$rc" != 0 ]; then
+		for l in "$OUT"/boot*.log; do
+			[ -f "$l" ] && { echo "--- last 60 lines of $l ---"; tr -d '\r' < "$l" | tail -n 60; }
+		done
+	fi
 	if [ -n "${MNT:-}" ] && mountpoint -q "$MNT"; then
 		sudo umount "$MNT" || true
 	fi
@@ -475,7 +481,7 @@ A1_STATUS="FAIL"
 if grep -q "Active: active (exited)" "$OUT/boot1.log"; then
 	A1_STATUS="PASS"
 fi
-A1_EVID=$(grep -A 10 "=== CHECK A1 ===" "$OUT/boot1.log" | grep -E "Active:|Process:" | tr '\n' '; ' | sed 's/; $//')
+A1_EVID=$(tr -d '\r' < "$OUT/boot1.log" | grep -A 10 "=== CHECK A1 ===" | grep -E "Active:|Process:" | paste -sd ';' || true)
 
 # A2 Check
 A2_STATUS="FAIL"
