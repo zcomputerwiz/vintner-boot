@@ -31,7 +31,7 @@ bash recovery/build.sh
 
 | Parameter | Effect |
 |---|---|
-| `vintner.root=UUID=<fs uuid>` or `vintner.root=/dev/...` | Root to mount read-only. The UUID is the manifest's `root.uuid`. ext4 is mounted with `noload`, so no journal is replayed. |
+| `vintner.root=UUID=<fs uuid>` or `vintner.root=/dev/...` | Root to mount read-only. The UUID is the manifest's `root.uuid`. ext4 is mounted with `noload`, so no journal is replayed. Without this parameter, recovery takes `root.uuid` from the valid manifest copy with the highest `seq` on boot storage ([`schema/manifest.md`](../schema/manifest.md); valid here means line 2 is the SHA-256 of line 1). The UEFI recovery UKIs rely on this: they are shared by every installation, so their command line names no root. |
 | `vintner.recovery_test=1` | Print `VINTNER-RECOVERY-TEST root=<absent\|mounted\|failed> ro=<yes\|no> logs=<path>` on `ttyS0` and power off. |
 
 **Storage layers:**

@@ -2,7 +2,8 @@
 # Smoke test for recovery/out (run recovery/build.sh first): boots the recovery
 # image as a UKI under OVMF and as kernel+initrd under SeaBIOS, with and without
 # a root disk, and checks it reports the root mounted read-only, leaves the root
-# byte-identical and writes logs to boot storage. Then it builds LVM-on-LUKS and
+# byte-identical and writes logs to boot storage. Without vintner.root= it takes
+# the root from the manifest on boot storage. Then it builds LVM-on-LUKS and
 # md RAID1 roots with the recovery shell and checks those the same way. No root
 # needed.
 set -euo pipefail
@@ -77,6 +78,26 @@ check bios-no-root "$(run bios-no-root bios "$TEST")" '^root=absent '
 check bios-root "$(run bios-root bios "$WITH_ROOT" "$T/root.img")" '^root=mounted ro=yes '
 check bios-logs "$(run bios-logs bios "$WITH_ROOT" "$T/root.img" "$T/bootstorage.img")" 'logs=/dev/vd[a-z][0-9]+:/vintner/recovery-logs/'
 check logs-on-disk "$(mdir -b -i "$T/bootstorage.img@@$BS_OFF" ::/vintner/recovery-logs 2>/dev/null | head -1)" 'recovery-logs/'
+# Root from the manifest on boot storage, as the UEFI recovery UKIs need: they
+# are shared, so their command line names no root.
+manifest() { # seq uuid: one manifest copy whose line 2 is the SHA-256 of line 1
+	local j="{\"format\":1,\"seq\":$1,\"root\":{\"partuuid\":\"0a1b2c3d-0000-4000-8000-000000000001\",\"uuid\":\"$2\"}}"
+	printf '%s\n%s\n' "$j" "$(printf '%s' "$j" | sha256sum | cut -d' ' -f1)"
+}
+bs_with() { # image manifest-a manifest-b: boot storage holding those two copies
+	local off
+	off=$(gpt_fat "$1" 64M BC13C2FF-59E6-4262-A352-B275FD6F7172)
+	mmd -i "$1@@$off" ::/vintner ::/vintner/state
+	printf '%s\n' "$2" > "$T/manifest-a" && mcopy -i "$1@@$off" "$T/manifest-a" ::/vintner/state/manifest-a
+	printf '%s\n' "$3" > "$T/manifest-b" && mcopy -i "$1@@$off" "$T/manifest-b" ::/vintner/state/manifest-b
+}
+OTHER=0e9d8c7b-6a5f-4e3d-8c2b-1a0f9e8d7c6b
+# a names the root; b has a higher seq but a broken hash, so a is used.
+bs_with "$T/bs-hash.img" "$(manifest 1 "$UUID")" "$(manifest 2 "$OTHER" | sed '2s/^./x/')"
+check manifest-root "$(run manifest-root uefi "$TEST" "$T/root.img" "$T/bs-hash.img")" '^root=mounted ro=yes '
+# Both valid: the higher seq is used, and the root it names does not exist.
+bs_with "$T/bs-seq.img" "$(manifest 1 "$UUID")" "$(manifest 2 "$OTHER")"
+check manifest-seq "$(run manifest-seq bios "$TEST" "$T/root.img" "$T/bs-seq.img")" '^root=failed '
 check root-unchanged "$(sha256sum < "$T/root.img")" "^${ROOT_SUM%% *}"
 
 # --- LVM on LUKS, and md RAID1 ----------------------------------------------

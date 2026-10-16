@@ -49,11 +49,38 @@ activate() {
 }
 find_root() { case $spec in /dev/*) [ -b "$spec" ] && echo "$spec" ;; *) findfs "$spec" 2>/dev/null ;; esac; }
 
-# Root: vintner.root=UUID=<fs uuid> (the manifest's root.uuid) or a /dev path,
+# manifest_root: root.uuid from the valid manifest copy with the highest seq on
+# boot storage (schema/manifest.md). A copy is used only if line 2 is the
+# SHA-256 of line 1; the JSON itself is not validated here.
+manifest_root() {
+	mkdir -p /mnt/bs
+	for p in /sys/class/block/*/partition; do
+		mount -t vfat -o ro "/dev/$(basename "$(dirname "$p")")" /mnt/bs 2>/dev/null || continue
+		best='' bestseq=-1
+		for c in /mnt/bs/vintner/state/manifest-a /mnt/bs/vintner/state/manifest-b; do
+			[ -f "$c" ] || continue
+			j=$(sed -n 1p "$c")
+			[ "$(printf '%s' "$j" | sha256sum | cut -d' ' -f1)" = "$(sed -n 2p "$c")" ] || continue
+			s=$(printf '%s' "$j" | sed -n 's/.*"seq":\([0-9][0-9]*\).*/\1/p')
+			# "uuid" right after a quote, so not the end of "partuuid".
+			u=$(printf '%s' "$j" | sed -n 's/.*"root":{[^}]*"uuid":"\([0-9A-Fa-f-][0-9A-Fa-f-]*\)".*/\1/p')
+			if [ -n "$s" ] && [ -n "$u" ] && [ "$s" -gt "$bestseq" ]; then best=$u bestseq=$s; fi
+		done
+		umount /mnt/bs
+		[ -n "$best" ] && { echo "$best"; return; }
+	done
+}
+
+# Root: vintner.root=UUID=<fs uuid> or a /dev path on the command line, else
+# the manifest's root.uuid (the UEFI recovery UKIs are shared and carry none),
 # on a plain partition, md, LVM or LUKS. A LUKS passphrase is asked for only
 # when the root is not found without it; an empty answer skips the device.
 root=absent ro=no
 spec=$(arg root)
+if [ -z "$spec" ]; then
+	u=$(manifest_root)
+	[ -n "$u" ] && spec=UUID=$u && echo "root from the manifest on boot storage: $spec"
+fi
 if [ -n "$spec" ]; then
 	root=failed
 	activate
