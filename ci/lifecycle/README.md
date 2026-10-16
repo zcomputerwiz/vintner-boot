@@ -1,5 +1,7 @@
 # Boot Writers Locator
 
+The package lifecycle test, which installs and removes these packages on a system that boots through vintner, is in [`packages/`](packages/). [`systemd-boot-hooks/`](systemd-boot-hooks/) is an earlier, partial run of the `systemd-boot` case (its steps 2 to 7 never ran); `packages/` operation X1 supersedes it.
+
 This script (`find-boot-writers.sh`) is used to find every Debian 13 (trixie) package whose maintainer scripts or kernel/initramfs hooks can write a bootloader, boot entries, NVRAM, or regenerate the initramfs.
 
 It downloads the indexes and scans them for potential packages matching specific paths or having dependencies on specific boot-related packages. It then downloads these packages and statically analyzes their maintainer scripts and hooks for the relevant command invocations.
