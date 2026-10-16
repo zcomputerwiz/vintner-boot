@@ -260,7 +260,14 @@ echo "guest-kernel: $KERNEL_ABI" >> "$VERSIONS"
 
 cp "$KERNEL_IMG" "$OUT/vmlinuz"
 cp "$INITRD_IMG" "$OUT/initrd.img"
-cat "$MNT/etc/os-release" > "$OUT/osrel"
+# os-1's .osrel per ADR-0003: the installed os-release with IMAGE_ID=vintner-os,
+# IMAGE_VERSION=<generation> and the ABI appended to PRETTY_NAME, so images the
+# publisher adds (generation 2 and up) sort above it.
+OS_PRETTY=$(sed -n 's/^PRETTY_NAME=//p' "$MNT/etc/os-release" | tr -d '"')
+{
+	grep -vE '^(IMAGE_ID|IMAGE_VERSION|PRETTY_NAME)=' "$MNT/etc/os-release"
+	printf 'PRETTY_NAME="%s, %s"\nIMAGE_ID=vintner-os\nIMAGE_VERSION=1\n' "$OS_PRETTY" "$KERNEL_ABI"
+} > "$OUT/osrel"
 
 # Install static vintner binary
 sudo cp "$OUT/vintner" "$MNT/usr/sbin/vintner"
