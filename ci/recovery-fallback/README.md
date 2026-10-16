@@ -105,14 +105,14 @@ udev 257.13-1~deb13u1
 | D3 | F2 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
 | D3 | F3 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
 | D3 | F4 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
-| D4 | F1 | OBSERVED | VINTNER-RECOVERY-TEST root=failed ro=no logs=/dev/vda2:/vintner/recovery-logs/20261016T072816 |
-| D4 | F2 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T090455 |
-| D4 | F3 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T104146 |
-| D4 | F4 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T121332 |
-| D5 | F1 | PASS | unchanged (sha256=f9ed3139c3e63883fb1ac6b1051e262294493a442f2a91908ea0f9b3e8cea6d8) |
-| D5 | F2 | PASS | unchanged (sha256=e0bcfbd9cbd084dcf8d782d388aa8e25feb8f4126edb51b299411b8abd50d5ad) |
-| D5 | F3 | PASS | unchanged (sha256=66703668e53f2e203d2b609bf7ad1e8f2d211323de04e5baa6c60f1e8e7bfad8) |
-| D5 | F4 | PASS | unchanged (sha256=7c2d7f0a5e20b6f45a258f45a7e7e7d0b50bac21cdc43bbb7c0c850286bb45a2) |
+| D4 | F1 | OBSERVED | VINTNER-RECOVERY-TEST root=failed ro=no logs=/dev/vda2:/vintner/recovery-logs/20261016T150753 |
+| D4 | F2 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T151425 |
+| D4 | F3 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T152058 |
+| D4 | F4 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T152150 |
+| D5 | F1 | PASS | unchanged (sha256=1771ed33d66923e20fb15c29302b45ad181437f1e8c8a77305fdc69506a0b905) |
+| D5 | F2 | PASS | unchanged (sha256=27dfa1c5a1fe86633b41574d0c33b411f3a2f900ca4849f285661cdafd6c7a66) |
+| D5 | F3 | PASS | unchanged (sha256=efbcc77d4a4734280ecfe6b1303171524b391e738fe99bea15be0d98db403fbe) |
+| D5 | F4 | PASS | unchanged (sha256=13dee58078cdbfe949ddb75aab037d61c5139ddaab1a66cb31c8d8fbcd962dde) |
 | D6 | F1 | OBSERVED | B1: killed at timeout; B2: killed at timeout; B3: killed at timeout |
 | D6 | F2 | OBSERVED | B1: killed at timeout; B2: killed at timeout; B3: killed at timeout |
 | D6 | F3 | OBSERVED | B1: killed at timeout; B2: killed at timeout; B3: killed at timeout |
@@ -131,14 +131,14 @@ udev 257.13-1~deb13u1
 | D3 | F2 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
 | D3 | F3 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
 | D3 | F4 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
-| D4 | F1 | OBSERVED | VINTNER-RECOVERY-TEST root=failed ro=no logs=/dev/vda2:/vintner/recovery-logs/20261016T135935 |
-| D4 | F2 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T140745 |
-| D4 | F3 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T141555 |
-| D4 | F4 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T141914 |
-| D5 | F1 | PASS | unchanged (sha256=ecbf5a8de6bcb1dbbad72e1b581a314076b85609933c358c7f7e74907b530265) |
-| D5 | F2 | PASS | unchanged (sha256=f9a60cd047c75059bbaff00faa8f397f0db0ff9a047047c34234a49fcd2739dd) |
-| D5 | F3 | PASS | unchanged (sha256=70b4f261f205c05712de58260d9784893d6d61c1512b0bc1548ff67ae9b26664) |
-| D5 | F4 | PASS | unchanged (sha256=e789eb64e6971260bd6c52d527707862fa3d150991aaf1d59abe94fb34ffbcb3) |
+| D4 | F1 | OBSERVED | VINTNER-RECOVERY-TEST root=failed ro=no logs=/dev/vda2:/vintner/recovery-logs/20261016T150753 |
+| D4 | F2 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T151426 |
+| D4 | F3 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T152058 |
+| D4 | F4 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T152149 |
+| D5 | F1 | PASS | unchanged (sha256=6cd9c426445a1dca2bb4b32628ce332f3ff79d050765fc9ff305c1cb1eca8d67) |
+| D5 | F2 | PASS | unchanged (sha256=7b065d29ae149c640d15f53743e73cd8db256d153075ec70ecb298a6994182dc) |
+| D5 | F3 | PASS | unchanged (sha256=2c1f2a1a83ffec5ac9ab9637c57a0c75eaff7fd8cb21c9c88bfea8f40aec7ff4) |
+| D5 | F4 | PASS | unchanged (sha256=57c94d04a69d836b1523d9470c5e745d8f21aeae046a6dcaa7b08bac20a469a6) |
 | D6 | F1 | OBSERVED | B1: killed at timeout; B2: killed at timeout; B3: killed at timeout |
 | D6 | F2 | OBSERVED | B1: killed at timeout; B2: killed at timeout; B3: killed at timeout |
 | D6 | F3 | OBSERVED | B1: killed at timeout; B2: killed at timeout; B3: killed at timeout |
