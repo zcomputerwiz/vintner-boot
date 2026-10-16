@@ -13,7 +13,7 @@ import (
 func cmdManifest(args []string) {
 	if len(args) < 2 {
 		usageManifest()
-		os.Exit(2)
+		osExit(2)
 	}
 
 	switch args[0] {
@@ -27,19 +27,19 @@ func cmdManifest(args []string) {
 				} else {
 					fmt.Fprintln(os.Stderr, "vintner manifest show: missing argument for --state-dir")
 					usageManifest()
-					os.Exit(2)
+					osExit(2)
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "vintner manifest show: unknown argument %q\n", args[i])
 				usageManifest()
-				os.Exit(2)
+				osExit(2)
 			}
 		}
 
 		if stateDir == "" {
 			fmt.Fprintln(os.Stderr, "vintner manifest show: --state-dir is required")
 			usageManifest()
-			os.Exit(2)
+			osExit(2)
 		}
 
 		m, err := manifest.Load(stateDir)
@@ -49,7 +49,7 @@ func cmdManifest(args []string) {
 			} else {
 				fmt.Fprintf(os.Stderr, "vintner manifest show: failed to load: %v\n", err)
 			}
-			os.Exit(1)
+			osExit(1)
 		}
 
 		// stderr, so stdout stays valid JSON.
@@ -60,7 +60,7 @@ func cmdManifest(args []string) {
 		enc.SetEscapeHTML(false)
 		if err := enc.Encode(m); err != nil {
 			fmt.Fprintf(os.Stderr, "vintner manifest show: failed to encode output: %v\n", err)
-			os.Exit(1)
+			osExit(1)
 		}
 
 	case "help", "-h", "--help":
@@ -68,7 +68,7 @@ func cmdManifest(args []string) {
 	default:
 		fmt.Fprintf(os.Stderr, "vintner manifest: unknown command %q\n", args[0])
 		usageManifest()
-		os.Exit(2)
+		osExit(2)
 	}
 }
 

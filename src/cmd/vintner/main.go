@@ -11,7 +11,7 @@ import (
 func main() {
 	if len(os.Args) < 2 {
 		usage()
-		os.Exit(2)
+		osExit(2)
 	}
 	switch os.Args[1] {
 	case "bless":
@@ -25,7 +25,7 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "vintner: unknown command %q\n", os.Args[1])
 		usage()
-		os.Exit(2)
+		osExit(2)
 	}
 	osExit(0) // unmounts boot storage if a command mounted it
 }
