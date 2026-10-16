@@ -2,7 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM, loop devices with partition scanning (`losetup -P`), `debugfs` (e2fsprogs) and outbound network access.
 - **Issued:** 2026-10-16
-- **Status:** ready. Both prerequisites are on `main`: recovery finds the root from the manifest when the command line names none, and `ci/lib/vintner-base.sh` builds the base disk.
+- **Status:** done: `ci/recovery-fallback/`, reviewed and run in CI (`fallback-uefi`, `fallback-bios`). Results and findings in `ci/recovery-fallback/README.md`.
 - **Base branch:** `main`. Work on branch `wo-0004` and open one pull request against `main`.
 
 ## Why
