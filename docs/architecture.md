@@ -1,6 +1,6 @@
 # vintner-boot — Debian Boot Platform Implementation Plan
 
-**Status:** Architecture baseline, revision 1.3 (October 15, 2026; see §17 for the change log)  
+**Status:** Architecture baseline, revision 1.4 (October 15, 2026; see §17 for the change log)  
 **Target:** Debian 13 (Trixie) onward, x86-64 UEFI and legacy BIOS  
 **Primary objective:** Windows-like installation/boot/recovery reliability without coupling the machine's boot platform to routine Debian package upgrades.  
 **Naming:** the project is `vintner-boot`; Debian packages, boot entries, ESP directories and NVRAM labels use the `vintner` prefix.
@@ -125,7 +125,10 @@ For mixed-firmware lab testing, one GPT can contain a BIOS Boot Partition, an ES
 
 Partition labels are for humans; boot configuration should use stable UUID/PARTUUIDs or explicitly resolved device identities. A disk replacement or clone must not accidentally select the wrong root.
 
-Installer choice: **Debian Installer preseed with late commands and custom installer package**, then investigate an installer component/u-deb for native integration. Before disabling the stock GRUB installer, confirm the project loader and recovery are successfully installed; on errors, retain an ordinary Debian boot path and report installation incomplete. Document preseed variables but don't assume generic `grub-installer/skip` is sufficient across all d-i versions without an end-to-end test. Because `vintner-platform` conflicts with the stock loader packages (below), the order is fixed: deploy and verify the project loader and recovery from the installer, then remove the stock loader packages, then install the `vintner` packages. If verification fails, the `vintner` packages are not installed and the stock GRUB path remains.
+Installer choice: **Debian Installer preseed with late commands and custom installer package**, then investigate an installer component/u-deb for native integration. Before disabling the stock GRUB installer, confirm the project loader and recovery are successfully installed; on errors, retain an ordinary Debian boot path and report installation incomplete. Document preseed variables but don't assume generic `grub-installer/skip` is sufficient across all d-i versions without an end-to-end test. Because `vintner-platform` conflicts with the stock loader packages (below), the order is fixed: deploy and verify the project loader and recovery from the installer, then remove the stock loader packages, then verify the project loader again, then install the `vintner` packages. If either verification fails, the `vintner` packages are not installed and the stock GRUB path remains. Removing the stock loader packages needs two precautions, both found by the package lifecycle test (`ci/lifecycle/packages/`, findings 1 and 2):
+
+- Remove the stock loader's ESP directory (`\EFI\debian`) and its boot entry first. Otherwise `shim-signed`'s removal script runs `grub-install` on an EFI-booted system, and with `grub2/force_efi_extra_removable` set, as on Debian's cloud images, that replaces `\EFI\BOOT\BOOTX64.EFI` and the next boot is Debian's GRUB.
+- Purge with `--allow-remove-essential`: `grub-efi-amd64-signed` is `Protected: yes`, and apt otherwise refuses the whole removal.
 
 Debian package boundaries (v1):
 
@@ -145,7 +148,7 @@ Package manager interactions: avoid competing GRUB EFI/systemd-boot/shim maintai
 | `grub-pc-bin` | Payload source at build time (`vintner-platform`) | GRUB BIOS modules and tools without the auto-install scripts of `grub-pc` |
 | `systemd-boot` | `Conflicts` (`vintner-platform`) | Its postinst runs `bootctl install` or `bootctl update` whenever an ESP is found, may install shim as `\EFI\BOOT\BOOTX64.EFI` with a new EFI boot entry, and runs `kernel-install add`. Neither kernel-install `layout=other` nor masking `systemd-boot-update.service` prevents this (`ci/lifecycle/systemd-boot-hooks/results.md`). The re-arm model does not need `systemd-bless-boot` from this package (ADR-0003) |
 | `grub-pc`, `grub-efi-amd64` | `Conflicts` (`vintner-platform`) | Maintainer scripts run `grub-install` and the kernel hooks run `update-grub` |
-| `shim-signed` | `Conflicts` (`vintner-platform`); shim binary taken from the pinned `.deb` at payload build time | Its post-install script runs `grub-install` on EFI-booted systems |
+| `shim-signed` | `Conflicts` (`vintner-platform`); shim binary taken from the pinned `.deb` at payload build time | Its maintainer scripts run `grub-install` on EFI-booted systems, its removal script too while `\EFI\debian` exists (`ci/lifecycle/packages/`, X0) |
 | `grub-cloud-amd64`, `grub-efi-ia32`, `grub-coreboot`, `grub-xen`, `grub-ieee1275`, `refind` | `Conflicts` (`vintner-platform`) | Their maintainer scripts run `grub-install` or `update-grub` (rEFInd: `efibootmgr`); found by the package survey in `ci/lifecycle/` |
 | kernel-install | `vintner-core` sets `layout=other` | Keeps kernel-install's built-in loader-entry and UKI plugins from writing to `$BOOT`; verified by the lifecycle test |
 
@@ -376,6 +379,10 @@ The project's first release should be judged on unattended installation, autonom
 | D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 1.4 (October 15, 2026)** — from the package lifecycle test (`ci/lifecycle/packages/`):
+
+- The installer removes `\EFI\debian` and its boot entry before it purges the stock loader packages, purges with `--allow-remove-essential`, and verifies the project loader again afterwards (§5).
 
 **Revision 1.3 (October 15, 2026)** — decisions recorded:
 
