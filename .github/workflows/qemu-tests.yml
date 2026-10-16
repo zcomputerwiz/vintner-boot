@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -47,13 +47,13 @@ jobs:
 
       - name: Set up Go
         if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: src/go.mod
 
       - name: Cache Debian image
         if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2
           key: debian-13-genericcloud-amd64-20261001-2618
@@ -69,7 +69,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: |
