@@ -1,6 +1,6 @@
 # vintner-boot — Debian Boot Platform Implementation Plan
 
-**Status:** Architecture baseline, revision 1.4 (October 15, 2026; see §17 for the change log)  
+**Status:** Architecture baseline, revision 1.5 (October 16, 2026; see §17 for the change log)  
 **Target:** Debian 13 (Trixie) onward, x86-64 UEFI and legacy BIOS  
 **Primary objective:** Windows-like installation/boot/recovery reliability without coupling the machine's boot platform to routine Debian package upgrades.  
 **Naming:** the project is `vintner-boot`; Debian packages, boot entries, ESP directories and NVRAM labels use the `vintner` prefix.
@@ -95,6 +95,8 @@ UEFI firmware ---------------------- BIOS firmware
 **Recovery:** a separately built, project-signed UKI on UEFI; separate Linux kernel/initramfs artifacts on BIOS. Can mount Debian read-only, inspect damaged filesystems, inspect published boot images, revert selection, and perform offline repairs with explicit consent. Recovery boot does not depend on the target OS's `/usr`, package database, modules, or fstab.
 
 **Graphics:** `systemd-stub`/firmware splash may render early image; Plymouth handles continuing kernel/initramfs/userland animation and unlock prompts. Try OEM BGRT logo preservation. Boot-manager spinner is optional: once firmware hands over to a Linux kernel the boot manager cannot keep animating on its own. A short discontinuity is an acceptable v1 tradeoff if the framebuffer remains stable.
+
+The kernel's early framebuffer, and Plymouth until a GPU driver loads, keep whatever display mode the loader leaves. systemd-boot's `console-mode` defaults to `keep`, so with the menu hidden the firmware's mode and its logo stay on screen, but some firmware starts EFI applications in a low-resolution mode. Switching to the panel's native mode clears the firmware logo, so a loader that switches must redraw the logo or the screen flashes. Native resolution against logo continuity is decided in phase 6 from measurements. On BIOS, the static GRUB configuration hands the kernel VGA text mode, so Plymouth has no framebuffer until a GPU driver loads; a VBE linear framebuffer (`insmod vbe`, `gfxpayload=keep`) is the alternative.
 
 ### 4.1 systemd-boot selection policy
 
@@ -195,6 +197,7 @@ v1 rule: the manifest records a module-tree identity for each image (the SHA-256
 | **GRUB 2** | Mature BIOS x86 loading, configurable environment blocks | **Adopt BIOS v1** in minimal static form, built from `grub-pc-bin` (not `grub-pc`); `grubenv` on the boot storage partition only; derive trial/fallback from RAUC GRUB examples |
 | **Limine** | BIOS+UEFI Linux and EFI protocols; BGRT option; measured and config-hash boot enforcement | **Prototype candidate** for replacing BIOS GRUB; upstream config hash tied to loader conflicts with changing signed config and must be addressed |
 | **ReactOS FreeLoader** | BIOS Linux loader, UEFI GOP/BGRT graphics, menu UI | **Study, don't fork for v1**; UEFI Linux dispatcher is absent; NT-specific code and ReactOS build coupling add cost |
+| **LiberNT** (ReactOS fork) | FreeLoader with EDID-based GOP mode selection, BGRT redraw after a mode change, a path for GOP without a linear framebuffer, and a BIOS VBE framebuffer handoff | **Graphics reference only**: no UEFI Linux handoff and no boot counting; the video files are GPL-2.0-or-later, some new files GPL-3.0-or-later |
 | **ReactOS GOP spinner PR #8831** | Reference for kernel-side GOP animation and handoff | **Design reference only**; closed unmerged, requires ReactOS kernel facilities |
 | **SYSLINUX/EXTLINUX** | Compact BIOS Linux loader/config | **Reference or fallback only**; fewer advantages than GRUB on broad boot/media/recovery support |
 | **LinuxBoot** | Boot Linux as firmware/early loader | **Architectural reference**; BIOS/UEFI PC firmware replacement is unnecessary and highly hardware-dependent |
@@ -258,7 +261,7 @@ Matrix axes:
 - Failure injection: candidate missing, hash mismatch, broken command line, malformed image, missing modules, root absent, filesystem damaged, before/after metadata commits, reboot/power cut during publication, repeated crash, permanent hang with/without watchdog.
 - Recovery: menu invocation, automatic fallback, mount root read-only, stage prior known-good, recovery independently boots if `/usr` unavailable.
 - Security: signed/untrusted UKI, revoked certificate simulation, MOK-vs-db trust behavior, each Secure Boot tier (§8), tampered fallback, unsigned config changes, image downgrade/rollback policy, malicious disk labels/paths.
-- Graphics: Intel/AMD/NVIDIA-relevant modes, firmware BGRT present/absent, GOP simple framebuffer to KMS transition, encrypted root prompt, serial/headless fallback.
+- Graphics: Intel/AMD/NVIDIA-relevant modes, firmware BGRT present/absent, GOP simple framebuffer to KMS transition, encrypted root prompt, serial/headless fallback. The firmware's GOP mode against the monitor's EDID-preferred mode: resolution of the early framebuffer and whether the logo survives a mode change. GOP without a linear framebuffer (`PixelBltOnly`), where Linux has no early framebuffer. On BIOS, VGA text against a VBE linear framebuffer.
 
 CI should record serial logs, QEMU exit reason, UEFI variables, BLS entry changes, GRUB environment state, root selection, image hashes, and mounted root identity. Add deterministic filesystem image fault-injection harnesses. CI runs QEMU with KVM where the runner exposes `/dev/kvm` and falls back to TCG with longer timeouts otherwise. No hardware experiments until virtual no-loss upgrade/recovery tests pass.
 
@@ -333,6 +336,7 @@ Backend interface (semantics, not final API signatures): `list_images`, `publish
 ## 14. Source index (upstream references)
 
 - ReactOS FreeLoader code: https://github.com/reactos/reactos/tree/master/boot/freeldr/freeldr ; BGRT: https://github.com/reactos/reactos/blob/master/boot/freeldr/freeldr/arch/uefi/uefivid.c ; experimental spinner https://github.com/reactos/reactos/pull/8831
+- LiberNT FreeLoader graphics, at commit `75498be`: GOP mode selection from EDID, BGRT validation, rotation and redraw: https://github.com/ahmedarif193/LiberNT/blob/75498be9ebfb92369a57ba29315b9b57f2e8bb60/boot/freeldr/freeldr/arch/uefi/uefivid.c ; framebuffer console: https://github.com/ahmedarif193/LiberNT/blob/75498be9ebfb92369a57ba29315b9b57f2e8bb60/boot/freeldr/freeldr/arch/vidfb.c ; BIOS VBE linear framebuffer: https://github.com/ahmedarif193/LiberNT/blob/75498be9ebfb92369a57ba29315b9b57f2e8bb60/boot/freeldr/freeldr/arch/i386/pc/pcvideo.c
 - Limine v12 usage/security: https://github.com/limine-bootloader/limine/blob/v12.x/USAGE.md ; configuration: https://github.com/limine-bootloader/limine/blob/v12.x/CONFIG.md
 - systemd-boot: https://manpages.debian.org/trixie/systemd-boot/systemd-boot.7.en.html
 - Automatic boot assessment: https://github.com/systemd/systemd/blob/main/docs/AUTOMATIC_BOOT_ASSESSMENT.md
@@ -379,6 +383,12 @@ The project's first release should be judged on unattended installation, autonom
 | D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 1.5 (October 16, 2026)** — from a review of LiberNT, a ReactOS fork:
+
+- LiberNT added to §7 as a graphics reference; nothing in it changes boot selection, counting or recovery.
+- §4 "Graphics" records the display-mode tradeoff for phase 6 and the BIOS text-mode handoff.
+- §10 graphics tests add the EDID-preferred mode, GOP without a linear framebuffer, and the BIOS VBE framebuffer.
 
 **Revision 1.4 (October 15, 2026)** — from the package lifecycle test (`ci/lifecycle/packages/`):
 
