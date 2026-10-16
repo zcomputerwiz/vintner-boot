@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -37,7 +37,7 @@ jobs:
 
       - name: Cache Debian image
         id: cache-debian-image
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2
           key: debian-13-genericcloud-amd64-20261001-2618
@@ -48,7 +48,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: logs-${{ matrix.target }}
           path: |
