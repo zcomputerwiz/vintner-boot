@@ -29,21 +29,6 @@ export MTOOLS_SKIP_CHECK=1
 
 mkdir -p "$OUT" "$MNT"
 
-# Retry rm wrapper for transient file locks on Windows DrvFS / WSL mounts
-# shellcheck disable=SC2032,SC2033
-rm() {
-	local attempts=0
-	while [ "$attempts" -lt 10 ]; do
-		if /bin/rm "$@"; then
-			return 0
-		fi
-		attempts=$((attempts + 1))
-		sleep 0.5
-	done
-	return 1
-}
-export -f rm
-
 # --- Cleanup handler --------------------------------------------------------
 LOOP=""
 cleanup() {
@@ -123,7 +108,7 @@ cloud-localds "$SEED_IMG" "$OUT/cidata/user-data" "$OUT/cidata/meta-data"
 
 # --- 4. Helper functions ----------------------------------------------------
 clean_ansi() {
-	sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' | tr -d '\r'
+	sed -r 's/\x1b\[[0-9;:]*[a-zA-Z]//g' | tr -d '\r'
 }
 
 get_booted_image() {
@@ -137,29 +122,29 @@ get_booted_image() {
 		return
 	fi
 
+	# Whole words of the command line; "vintner.bootstorage=" is matched as a prefix.
+	local words=" $cmdline "
 	# os-1 has vintner.bootstorage= and no vintner.recovery
-	if [[ "$cmdline" =~ vintner\.bootstorage= ]] && [[ ! "$cmdline" =~ vintner\.recovery ]]; then
+	if [[ "$words" == *" vintner.bootstorage="* ]] && [[ "$words" != *" vintner.recovery"* ]]; then
 		echo "os-1"
 		return
 	fi
 
-	# Recovery A has vintner.recovery=1 (or vintner.recovery_test=1 on BIOS) and no vintner.test_slot=b
-	if [[ "$cmdline" =~ vintner\.recovery(_test)?=1 ]] && [[ ! "$cmdline" =~ vintner\.test_slot=b ]]; then
-		if [ "$fw" = "bios" ]; then
-			if grep -q 'vintner: trying recovery-a' "$log"; then
-				echo "recovery-a"
-				return
-			else
-				echo "recovery-a-missing-bios-log"
-				return
-			fi
+	# Recovery: vintner.recovery=1 on UEFI. The BIOS slot.cfg carries
+	# vintner.recovery_test=1 and no vintner.recovery=1, so BIOS recovery A is
+	# vintner.recovery_test=1 after GRUB's "vintner: trying recovery-a".
+	local rec=" vintner.recovery=1 "
+	[ "$fw" = "bios" ] && rec=" vintner.recovery_test=1 "
+	if [[ "$words" == *"$rec"* ]] && [[ "$words" != *" vintner.test_slot=b "* ]]; then
+		if [ "$fw" = "bios" ] && ! clean_ansi < "$log" | grep -qE 'vintner: trying recovery-a($|[^-[:alnum:]])'; then
+			echo "recovery-a-missing-bios-log"
+			return
 		fi
 		echo "recovery-a"
 		return
 	fi
 
-	# Recovery B has vintner.recovery=1 (or vintner.recovery_test=1) and vintner.test_slot=b
-	if [[ "$cmdline" =~ vintner\.recovery(_test)?=1 ]] && [[ "$cmdline" =~ vintner\.test_slot=b ]]; then
+	if [[ "$words" == *"$rec"* ]] && [[ "$words" == *" vintner.test_slot=b "* ]]; then
 		echo "recovery-b"
 		return
 	fi
@@ -202,7 +187,7 @@ get_counter_info() {
 		local os1_tag reca_tag
 		os1_tag=$(echo "$os1_name" | sed -n 's/^vintner-os-1\(\+[0-9]\+-[0-9]\+\)\.efi$/\1/p')
 		reca_tag=$(echo "$reca_name" | sed -n 's/^vintner-recovery-a\(\+[0-9]\+-[0-9]\+\)\.efi$/\1/p')
-		echo "os1_name=${os1_name} os1_tag=${os1_tag} reca_name=${reca_name} reca_tag=${reca_tag}"
+		printf 'os1_name=%q os1_tag=%q reca_name=%q reca_tag=%q\n' "$os1_name" "$os1_tag" "$reca_name" "$reca_tag"
 	else
 		local tmp_env="$OUT/tmp_grubenv"
 		mtype -i "$disk@@$BS_OFFSET" ::/grub/grubenv > "$tmp_env" 2>/dev/null || true
@@ -212,7 +197,7 @@ get_counter_info() {
 		booted=$(editenv "$tmp_env" list 2>/dev/null | sed -n 's/^VINTNER_BOOTED=//p')
 		tra=$(editenv "$tmp_env" list 2>/dev/null | sed -n 's/^VINTNER_T_RA=//p')
 		rm -f "$tmp_env"
-		echo "t1=${t1} booted=${booted} tra=${tra} vars=${vars}"
+		printf 't1=%q booted=%q tra=%q vars=%q\n' "$t1" "$booted" "$tra" "$vars"
 	fi
 }
 
@@ -286,7 +271,6 @@ PYEOF
 			sudo mount "${LOOP}p1" "$MNT"
 			cat <<'SVCEOF' | sudo tee "$MNT/usr/lib/systemd/system/vintner-test-health.service" >/dev/null
 [Unit]
-Description=Failing health check for vintner recovery test
 Before=boot-complete.target
 
 [Service]
@@ -309,6 +293,8 @@ SVCEOF
 	BOOTS_RUN=0
 	ROOT_SHA_BEFORE=""
 	ROOT_SHA_AFTER=""
+	# declare -A keeps an existing array's elements, so clear the previous case's.
+	unset BOOT_IMG BOOT_TERM BOOT_FAIL_LINE BOOT_COUNTERS BOOT_BLESS
 	declare -A BOOT_IMG
 	declare -A BOOT_TERM
 	declare -A BOOT_FAIL_LINE
@@ -330,7 +316,9 @@ SVCEOF
 		END_TIME=$(date +%s)
 		DURATION=$((END_TIME - START_TIME))
 
-		if [ "$DURATION" -ge 115 ]; then
+		# run_qemu does not return timeout's status; a run killed at 120 s spans
+		# at least 120 whole seconds of date +%s.
+		if [ "$DURATION" -ge 120 ]; then
 			BOOT_TERM[$boot]="killed at timeout"
 		else
 			BOOT_TERM[$boot]="powered off"
@@ -350,15 +338,18 @@ SVCEOF
 				BOOT_FAIL_LINE[$boot]=$(clean_ansi < "$BOOT_LOG" | grep -m1 -E 'Gave up waiting for root file system device|mount: mounting .* on /root failed|ALERT! .* does not exist' || true)
 				;;
 			F2)
-				BOOT_FAIL_LINE[$boot]=$(clean_ansi < "$BOOT_LOG" | grep -m1 -E 'Kernel panic - not syncing:.*|Target filesystem doesn'\''t have requested' || true)
+				f2_init=$(clean_ansi < "$BOOT_LOG" | grep -m1 -E 'Target filesystem doesn'\''t have requested|No working init found' || true)
+				f2_panic=$(clean_ansi < "$BOOT_LOG" | grep -m1 'Kernel panic - not syncing' || true)
+				BOOT_FAIL_LINE[$boot]="${f2_init:+$f2_init; kernel panic: ${f2_panic:-none}}"
 				;;
 			F3)
-				BOOT_FAIL_LINE[$boot]=$(clean_ansi < "$BOOT_LOG" | grep -m1 -E 'You are in emergency mode|emergency\.target|Timed out waiting for device' || true)
+				BOOT_FAIL_LINE[$boot]=$(clean_ansi < "$BOOT_LOG" | grep -m1 'You are in emergency mode' || true)
 				;;
 			F4)
-				h_fail=$(clean_ansi < "$BOOT_LOG" | grep -m1 -E 'Failed to start .*vintner-test-health\.service' || true)
-				t_fail=$(clean_ansi < "$BOOT_LOG" | grep -m1 -E '(Failed to start|Dependency failed for) .*boot-complete\.target' || true)
-				BOOT_FAIL_LINE[$boot]="${h_fail:-none}; ${t_fail:-none}"
+				h_fail=$(clean_ansi < "$BOOT_LOG" | grep -m1 'Failed to start vintner-test-health\.service' || true)
+				t_fail=$(clean_ansi < "$BOOT_LOG" | grep -m1 'Dependency failed for boot-complete\.target' || true)
+				BOOT_FAIL_LINE[$boot]=""
+				[ -n "$h_fail" ] && [ -n "$t_fail" ] && BOOT_FAIL_LINE[$boot]="$h_fail; $t_fail"
 				;;
 		esac
 
@@ -456,11 +447,13 @@ SVCEOF
 			counter_seq="B1: T_1=${b1_t1},BOOTED=${b1_booted}; B2: T_1=${b2_t1},BOOTED=${b2_booted}; B3: T_1=${b3_t1},BOOTED=${b3_booted}"
 		fi
 
-		fail_line="${BOOT_FAIL_LINE[1]:-none}"
-		if [ -z "$fail_line" ] || [ "$fail_line" = "none; none" ]; then
-			D2_OK=false
-			D2_EVID_PARTS+=("no failure line recorded")
-		fi
+		fail_line="${BOOT_FAIL_LINE[1]:-}"
+		for b in 1 2 3; do
+			if [ -z "${BOOT_FAIL_LINE[$b]:-}" ]; then
+				D2_OK=false
+				D2_EVID_PARTS+=("boot $b: no failure evidence")
+			fi
+		done
 
 		if [ "$D2_OK" = true ]; then
 			D2_STATUS="PASS"
@@ -506,17 +499,26 @@ SVCEOF
 		# Check D4
 		B4_LOG="$OUT/${case_id}-boot4.log"
 		REC_TEST_LINE=$(clean_ansi < "$B4_LOG" | grep -m1 '^VINTNER-RECOVERY-TEST ' || true)
-		if [ "$case_id" = "F1" ]; then
-			D4_STATUS="OBSERVED"
-			D4_EVID="${REC_TEST_LINE:-none}"
-		else
-			if [[ "$REC_TEST_LINE" =~ root=mounted ]] && [[ "$REC_TEST_LINE" =~ ro=yes ]]; then
-				D4_STATUS="PASS"
-				D4_EVID="$REC_TEST_LINE"
+		REC_RESULT=$(echo "$REC_TEST_LINE" | cut -d' ' -f2,3)
+		D4_EVID="${REC_TEST_LINE:-none}"
+		D4_MANIFEST_OK=true
+		if [ "$FIRMWARE" = "uefi" ]; then
+			# The test UKIs carry no vintner.root=, so recovery must name the base disk's root from the manifest.
+			MANIFEST_LINE="root from the manifest on boot storage: UUID=$ROOT_FS_UUID"
+			# Anchored at the end so the whole UUID is compared.
+			if clean_ansi < "$B4_LOG" | grep -q "$MANIFEST_LINE\$"; then
+				D4_EVID="$MANIFEST_LINE; $D4_EVID"
 			else
-				D4_STATUS="FAIL"
-				D4_EVID="${REC_TEST_LINE:-none}"
+				D4_MANIFEST_OK=false
+				D4_EVID="no \"$MANIFEST_LINE\"; $D4_EVID"
 			fi
+		fi
+		if [ "$case_id" = "F1" ] && [ "$D4_MANIFEST_OK" = true ]; then
+			D4_STATUS="OBSERVED"
+		elif [ "$case_id" != "F1" ] && [ "$D4_MANIFEST_OK" = true ] && [ "$REC_RESULT" = "root=mounted ro=yes" ]; then
+			D4_STATUS="PASS"
+		else
+			D4_STATUS="FAIL"
 		fi
 		printf "D4\t%s\t%s\t%s\n" "$case_id" "$D4_STATUS" "$D4_EVID" >> "$OUT/d4.tsv"
 
