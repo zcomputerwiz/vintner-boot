@@ -2,11 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM, loop devices with partition scanning (`losetup -P`), `debugfs` (e2fsprogs) and outbound network access.
 - **Issued:** 2026-10-16
-- **Status:** waiting on two prerequisites on `main`:
-  - `ci/lib/vintner-base.sh`, the base-disk builder taken out of `ci/lifecycle/packages/run.sh`;
-  - recovery finding the root from the manifest when the command line names none.
-
-  Start when both are on `main`.
+- **Status:** ready. Both prerequisites are on `main`: recovery finds the root from the manifest when the command line names none, and `ci/lib/vintner-base.sh` builds the base disk.
 - **Base branch:** `main`. Work on branch `wo-0004` and open one pull request against `main`.
 
 ## Why
@@ -32,7 +28,7 @@ Nothing yet shows, on both firmwares, that these lead to recovery A after exactl
   - §9, phase 1.
 - `docs/adr/0003-uefi-entry-naming-and-boot-counting.md`: counters, the last try, and why a bad entry sorts after recovery A.
 - `firmware/bios/INTERFACE.md`: the grubenv counters (`xxx`, `xx`, `x`, `0`).
-- `ci/lib/vintner-base.sh` and `ci/lib/vintner-qemu.sh`: build the dual-firmware base disk, with the stock loaders already removed (P0), and run QEMU. Use them; do not copy their code.
+- `ci/lib/vintner-base.sh` and `ci/lib/vintner-qemu.sh`: build the dual-firmware base disk, with the stock loaders already removed (P0), and run QEMU. `vintner-base.sh <uefi|bios> <out-dir>` writes `<out-dir>/base.env` with the paths, partition offsets and UUIDs to source; `ci/lifecycle/packages/run.sh` shows the use. Use them; do not copy their code.
 - `ci/lifecycle/packages/README.md`: what the base disk contains, and the report service that powers the guest off.
 - `recovery/BUILDING.md`: `vintner.recovery_test=1` prints `VINTNER-RECOVERY-TEST root=<absent|mounted|failed> ro=<yes|no> logs=<path>` on `ttyS0` and powers off.
 - `ci/integration/bios-bless/run.sh`: the root partition hash check (C9) to repeat.
