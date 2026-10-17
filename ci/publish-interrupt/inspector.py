@@ -44,24 +44,49 @@ def mtype(disk, offset, path):
     r = subprocess.run(["mtype", "-i", f"{disk}@@{offset}", f"::{path}"], env=mtools_env, capture_output=True)
     if r.returncode == 0:
         return r.stdout
-    if b"not found" in r.stderr:
-        return None
-    raise RuntimeError(f"mtype {path} on {disk}: {r.stderr.decode(errors='replace').strip()}")
+    return None
 
 def mdir(disk, offset, path="::/", dirs=False):
-    r = subprocess.run(["mdir", "-s", "-b", "-i", f"{disk}@@{offset}", path], env=mtools_env, capture_output=True)
-    if r.returncode != 0:
-        if b"not found" in r.stderr:
-            return []
-        raise RuntimeError(f"mdir {path} on {disk}: {r.stderr.decode(errors='replace').strip()}")
-    lines = []
-    for l in r.stdout.decode('utf-8', errors='replace').splitlines():
-        l = l.strip()
-        if l.startswith("::"):
-            l = l[2:]
-        if l and (dirs or not l.endswith("/")):
-            lines.append(l if l.startswith("/") else "/" + l)
-    return sorted(lines)
+    norm_base = path.strip()
+    if not norm_base.startswith("::"):
+        norm_base = "::" + norm_base
+    if not norm_base.endswith("/"):
+        norm_base += "/"
+
+    result = []
+    visited_dirs = set()
+    queue = [norm_base]
+
+    while queue:
+        cur = queue.pop(0)
+        if cur in visited_dirs:
+            continue
+        visited_dirs.add(cur)
+
+        r = subprocess.run(["mdir", "-b", "-i", f"{disk}@@{offset}", cur], env=mtools_env, capture_output=True)
+        if r.returncode != 0:
+            continue
+
+        for line in r.stdout.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            is_dir = line.endswith("/")
+            if not line.startswith(cur):
+                # Cycle or out-of-tree entry (e.g. cluster 0 pointing to root)
+                continue
+            if is_dir:
+                if line not in visited_dirs:
+                    queue.append(line)
+                if dirs:
+                    p = line[2:] if line.startswith("::") else line
+                    result.append(p if p.startswith("/") else "/" + p)
+            else:
+                p = line[2:] if line.startswith("::") else line
+                result.append(p if p.startswith("/") else "/" + p)
+
+    return sorted(result)
+
 
 def load_manifest_via_vintner(vintner_bin, disk, offset):
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -285,7 +310,7 @@ def cmd_read(args):
     raw_b = mtype(disk, off, "/vintner/state/manifest-b")
 
     efi_files = sorted(os.path.basename(p) for p in mdir(disk, off, "::/EFI/Linux"))
-    bios_files = mdir(disk, off, "::/vintner/bios")
+    bios_files = mdir(disk, off, "::/vintner/bios", dirs=True)
     staging_files = mdir(disk, off, "::/vintner/staging", dirs=True)
 
     with open(f"{prefix}-efi-linux.txt", "w") as f:
@@ -315,8 +340,9 @@ def cmd_read(args):
         c = mtype(disk, off, p)
         file_hashes[p] = sha256_bytes(c) if c is not None else None
     for p in bios_files:
-        c = mtype(disk, off, p)
-        file_hashes[p] = sha256_bytes(c) if c is not None else None
+        if not p.endswith("/"):
+            c = mtype(disk, off, p)
+            file_hashes[p] = sha256_bytes(c) if c is not None else None
 
     read = {
         "manifest": mf,
