@@ -16,6 +16,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 )
 
 func cmdBless(args []string) {
@@ -25,6 +26,15 @@ func cmdBless(args []string) {
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
 
 	fs.Parse(args)
+
+	lockPath := publish.DefaultLockPath(*bootStorage)
+	lock, err := publish.AcquireLock(lockPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
+		osExit(1)
+		return
+	}
+	defer lock.Close()
 
 	dir, err := mountBootStorage(*bootStorage, true)
 	if err != nil {
@@ -43,6 +53,7 @@ func cmdBless(args []string) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "vintner bless: failed to load manifest: %v\n", err)
 		osExit(1)
+		return
 	}
 
 	var bootedGen int

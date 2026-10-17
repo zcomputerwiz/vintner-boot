@@ -40,6 +40,12 @@ jobs:
           - name: fallback-bios
             run: recovery/build.sh && ci/recovery-fallback/run.sh bios
             out: ci/out/recovery-fallback/bios
+          - name: publish-uefi
+            run: recovery/build.sh && ci/publish/run.sh uefi
+            out: ci/out/publish/uefi
+          - name: publish-bios
+            run: recovery/build.sh && ci/publish/run.sh bios
+            out: ci/out/publish/bios
 
     steps:
       - name: Check out repository
@@ -52,13 +58,13 @@ jobs:
             python3-pefile python3-virt-firmware sbsigntool cloud-image-utils binutils
 
       - name: Set up Go
-        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios'
+        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios'
         uses: actions/setup-go@v7
         with:
           go-version-file: src/go.mod
 
       - name: Cache Debian image
-        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios'
+        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios'
         uses: actions/cache@v6
         with:
           path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2

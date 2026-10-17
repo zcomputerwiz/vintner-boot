@@ -18,6 +18,8 @@ func main() {
 		cmdBless(os.Args[2:])
 	case "manifest":
 		cmdManifest(os.Args[2:])
+	case "publish":
+		cmdPublish(os.Args[2:])
 	case "reconcile":
 		cmdReconcile(os.Args[2:])
 	case "help", "-h", "--help":
@@ -31,5 +33,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless     Bless the current boot\n  manifest  Manage the installation manifest\n  reconcile Reconcile boot state")
+	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless     Bless the current boot\n  manifest  Manage the installation manifest\n  publish   Publish kernel and initramfs boot image\n  reconcile Reconcile boot state")
 }

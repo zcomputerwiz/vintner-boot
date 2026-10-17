@@ -299,6 +299,8 @@ echo "Guest machine-id: $MACHINE_ID"
 cat <<'EOF' | sudo tee "$MNT/usr/local/bin/vintner-lifecycle-report.sh" >/dev/null
 #!/bin/bash
 set -u
+# No getty on ttyS0 from here on, so nothing hangs up the console mid-report.
+systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
 exec > /dev/ttyS0 2>&1
 
 echo "=== VINTNER-REPORT-BEGIN ==="
@@ -341,7 +343,9 @@ sudo chmod 0755 "$MNT/usr/local/bin/vintner-lifecycle-report.sh"
 cat <<'EOF' | sudo tee "$MNT/etc/systemd/system/vintner-lifecycle-report.service" >/dev/null
 [Unit]
 Description=Vintner lifecycle test report and shutdown
-After=multi-user.target vintner-bless.service cloud-final.service
+# After the gettys: agetty hangs up ttyS0 when it starts, and the report's
+# later writes to it would be lost.
+After=multi-user.target vintner-bless.service cloud-final.service getty.target serial-getty@ttyS0.service
 Requires=multi-user.target
 
 [Service]

@@ -107,6 +107,35 @@ func (e *Env) Unset(name string) {
 	}
 }
 
+// Clone returns a deep copy of the environment.
+func (e *Env) Clone() *Env {
+	c := &Env{
+		keys:   make([]string, len(e.keys)),
+		values: make([]string, len(e.values)),
+	}
+	copy(c.keys, e.keys)
+	copy(c.values, e.values)
+	return c
+}
+
+// EncodedLen returns the length of the environment block text (including header and warning) before padding.
+func (e *Env) EncodedLen() int {
+	var buf bytes.Buffer
+	buf.WriteString(headerLine)
+	buf.WriteString(warningLine)
+
+	for i, k := range e.keys {
+		v := e.values[i]
+		v = strings.ReplaceAll(v, "\\", "\\\\")
+		v = strings.ReplaceAll(v, "\n", "\\\n")
+		buf.WriteString(k)
+		buf.WriteByte('=')
+		buf.WriteString(v)
+		buf.WriteByte('\n')
+	}
+	return buf.Len()
+}
+
 // Write saves the environment block back to path in-place.
 func Write(path string, e *Env) error {
 	var buf bytes.Buffer

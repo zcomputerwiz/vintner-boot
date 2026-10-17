@@ -2,7 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM, loop devices with partition scanning (`losetup -P`), Go 1.24 and outbound network access.
 - **Issued:** 2026-10-16
-- **Status:** ready.
+- **Status:** done: `vintner publish`, the hooks and `ci/publish/`, reviewed and run in CI (`publish-uefi`, `publish-bios`). Results and findings in `ci/publish/README.md`.
 - **Base branch:** `main`. Work on branch `wo-0005` and open one pull request against `main`.
 
 ## Why
