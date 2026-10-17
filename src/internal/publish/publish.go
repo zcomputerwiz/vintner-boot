@@ -187,7 +187,7 @@ func readSection(sec *pe.Section) ([]byte, error) {
 	return bytes.TrimRight(data, "\x00"), nil
 }
 
-func ukiInitrdSHA256(ukiPath string) (string, error) {
+func ukiSectionSHA256(ukiPath, sectionName string) (string, error) {
 	f, err := pe.Open(ukiPath)
 	if err != nil {
 		return "", err
@@ -195,7 +195,7 @@ func ukiInitrdSHA256(ukiPath string) (string, error) {
 	defer f.Close()
 
 	for _, sec := range f.Sections {
-		if sec.Name == ".initrd" {
+		if sec.Name == sectionName {
 			data, err := readSection(sec)
 			if err != nil {
 				return "", err
@@ -204,7 +204,11 @@ func ukiInitrdSHA256(ukiPath string) (string, error) {
 			return hex.EncodeToString(h[:]), nil
 		}
 	}
-	return "", fmt.Errorf("section .initrd not found in %s", ukiPath)
+	return "", fmt.Errorf("section %s not found in %s", sectionName, ukiPath)
+}
+
+func ukiInitrdSHA256(ukiPath string) (string, error) {
+	return ukiSectionSHA256(ukiPath, ".initrd")
 }
 
 func generateOSRelease(origPath, outPath string, gen int, abi string) error {
@@ -478,7 +482,22 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	if newestSameABI != nil && newestSameABI.State != "FAILED" {
 		currentKernelSHA, err := fileSHA256(vmlinuzPath)
-		if err == nil && newestSameABI.ModuleTree != nil && newestSameABI.ModuleTree.KernelSHA256 == currentKernelSHA && newestSameABI.Cmdline == baseCmdline {
+		var expectedKernelSHA string
+		if newestSameABI.ModuleTree != nil {
+			expectedKernelSHA = newestSameABI.ModuleTree.KernelSHA256
+		} else if newestSameABI.BIOS != nil {
+			expectedKernelSHA = newestSameABI.BIOS.Files.Vmlinuz
+		} else {
+			efiDir := filepath.Join(bootStorageDir, "EFI", "Linux")
+			stem := fmt.Sprintf("vintner-os-%d", newestSameABI.Generation)
+			if ukiFile, err := bls.Find(efiDir, stem); err == nil {
+				if peSHA, err := ukiSectionSHA256(filepath.Join(efiDir, ukiFile), ".linux"); err == nil {
+					expectedKernelSHA = peSHA
+				}
+			}
+		}
+
+		if err == nil && expectedKernelSHA != "" && expectedKernelSHA == currentKernelSHA && newestSameABI.Cmdline == baseCmdline {
 			currentInitrdSHA, err := fileSHA256(initrdPath)
 			if err == nil {
 				initrdMatch := false
