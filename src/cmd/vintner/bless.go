@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 )
 
 func cmdBless(args []string) {
@@ -158,6 +160,81 @@ func cmdBless(args []string) {
 	if err := manifest.Save(sDir, m); err != nil {
 		fmt.Fprintf(os.Stderr, "vintner bless: failed to save manifest: %v\n", err)
 		osExit(1)
+		return
+	}
+
+	// Reconcile boot storage after re-arming booted image
+	origJSON, err := json.Marshal(m)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
+		osExit(1)
+		return
+	}
+
+	origStates := make(map[int]string, len(m.Images))
+	for _, img := range m.Images {
+		origStates[img.Generation] = img.State
+	}
+
+	v, err := state.Scan(*bootStorage)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vintner bless: failed to scan boot storage: %v\n", err)
+		osExit(1)
+		return
+	}
+
+	actions, reports := state.Reconcile(m, v)
+
+	for _, r := range reports {
+		printBlessMsg(r)
+	}
+
+	for _, a := range actions {
+		if a.Type == "remove_staging" {
+			p := filepath.Join(*bootStorage, "vintner", "staging", a.Name)
+			if err := os.RemoveAll(p); err != nil {
+				fmt.Fprintf(os.Stderr, "vintner bless: failed to remove %s: %v\n", p, err)
+				osExit(1)
+				return
+			}
+		}
+	}
+
+	for _, img := range m.Images {
+		if oldState, ok := origStates[img.Generation]; ok && oldState != img.State {
+			printBlessMsg(fmt.Sprintf("generation %d: %s -> %s", img.Generation, oldState, img.State))
+		}
+	}
+
+	newJSON, err := json.Marshal(m)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
+		osExit(1)
+		return
+	}
+
+	if string(origJSON) != string(newJSON) {
+		if err := m.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "vintner bless: validation failed after reconcile: %v\n", err)
+			osExit(1)
+			return
+		}
+		if err := manifest.Save(sDir, m); err != nil {
+			fmt.Fprintf(os.Stderr, "vintner bless: failed to save manifest after reconcile: %v\n", err)
+			osExit(1)
+			return
+		}
+	}
+}
+
+func printBlessMsg(msg string) {
+	fmt.Println(msg)
+	if f, err := os.OpenFile("/dev/console", os.O_WRONLY, 0); err == nil {
+		fmt.Fprintln(f, msg)
+		f.Close()
+	} else if f, err := os.OpenFile("/dev/ttyS0", os.O_WRONLY, 0); err == nil {
+		fmt.Fprintln(f, msg)
+		f.Close()
 	}
 }
 
