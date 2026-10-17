@@ -14,6 +14,9 @@ Before=shutdown.target
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/vintner bless
+# State changes found after the bless (a candidate recorded FAILED) are shown
+# on the console as well as in the journal.
+StandardOutput=journal+console
 PrivateMounts=yes
 
 [Install]

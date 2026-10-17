@@ -46,6 +46,12 @@ jobs:
           - name: publish-bios
             run: recovery/build.sh && ci/publish/run.sh bios
             out: ci/out/publish/bios
+          - name: candidate-uefi
+            run: recovery/build.sh && ci/candidate-fallback/run.sh uefi
+            out: ci/out/candidate-fallback/uefi
+          - name: candidate-bios
+            run: recovery/build.sh && ci/candidate-fallback/run.sh bios
+            out: ci/out/candidate-fallback/bios
 
     steps:
       - name: Check out repository

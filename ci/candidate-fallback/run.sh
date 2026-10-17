@@ -1,0 +1,342 @@
+#!/bin/bash
+# Candidate fallback integration test on an installed vintner system (WO-0006).
+#
+# Tests that a bad candidate image falls back to the known-good image after
+# bounded attempts, on both UEFI and BIOS, across panic, health failure,
+# hang and early kill.
+#
+# Deliverables:
+#   ci/candidate-fallback/run.sh <uefi|bios>
+#   ci/candidate-fallback/README.md
+#
+# Requires: root via sudo, KVM, loop devices with partition scanning,
+# mtools, qemu-system-x86, qemu-utils, cloud-image-utils, sfdisk, python3,
+# python3-virt-firmware, golang-go.
+set -euo pipefail
+
+if [ $# -ne 1 ] || { [ "$1" != "uefi" ] && [ "$1" != "bios" ]; }; then
+	echo "Usage: $0 {uefi|bios}" >&2
+	exit 1
+fi
+
+FIRMWARE="$1"
+cd "$(dirname "$0")/../.."
+
+OUT="ci/out/candidate-fallback/$FIRMWARE"
+MNT="$OUT/mnt"
+RESULTS="$OUT/results.tsv"
+BOOTS_SUMMARY="$OUT/boots-summary.txt"
+export MTOOLS_SKIP_CHECK=1
+
+mkdir -p "$OUT" "$MNT"
+: > "$BOOTS_SUMMARY"
+
+# --- Cleanup handler --------------------------------------------------------
+LOOP=""
+cleanup() {
+	local rc=$?
+	if [ -n "${MNT:-}" ] && mountpoint -q "$MNT"; then
+		sudo umount "$MNT" || true
+	fi
+	if [ -n "${LOOP:-}" ]; then
+		sudo losetup -d "$LOOP" || true
+	fi
+	if [ "$rc" != 0 ]; then
+		echo "=== Failure: dumping last 60 lines of each boot log ==="
+		for l in "$OUT"/*.log; do
+			[ -f "$l" ] && { echo "--- last 60 lines of $l ---"; tr -d '\r' < "$l" | tail -n 60; }
+		done
+	fi
+}
+trap cleanup EXIT
+
+# --- 1. Base image build via shared library ---------------------------------
+./ci/lib/vintner-base.sh "$FIRMWARE" "$OUT"
+# shellcheck source=/dev/null # written by vintner-base.sh
+. "$OUT/base.env"
+# shellcheck source=ci/lib/vintner-qemu.sh
+. ci/lib/vintner-qemu.sh
+
+VINTNER_BIN="$OUT/vintner"
+
+# read_disk <disk> <name>: one host read of boot storage (§3), saved as $OUT/<name>.json and listings.
+read_disk() {
+	python3 ci/candidate-fallback/inspector.py read \
+		--disk "$1" \
+		--bs-offset "$BS_OFFSET" \
+		--vintner-bin "$VINTNER_BIN" \
+		--root "$ROOT" \
+		--out-prefix "$OUT/$2"
+}
+
+if [ ! -f "$VINTNER_BIN" ]; then
+	echo "Building static vintner binary on host..."
+	(cd src && CGO_ENABLED=0 go build -o "../$VINTNER_BIN" ./cmd/vintner)
+fi
+
+# --- 2. Prepare golden test disk (Setup §2) ----------------------------------
+echo "=================================================================="
+echo "=== Preparing golden test disk for candidate fallback ($FIRMWARE) ==="
+echo "=================================================================="
+
+PREP_RAW="$OUT/prep.raw"
+PREP_VARS=""
+cp --sparse=always "$BASE_RAW" "$PREP_RAW"
+if [ "$FIRMWARE" = "uefi" ]; then
+	PREP_VARS="$OUT/prep-vars.fd"
+	# shellcheck disable=SC2153
+	cp "$BASE_VARS" "$PREP_VARS"
+fi
+
+# 2a. Install systemd-ukify and systemd-boot-efi in guest via apt-get
+echo "Booting preparation step 1: install systemd-ukify and systemd-boot-efi..."
+PREP_INSTALL_CMD="DEBIAN_FRONTEND=noninteractive apt-get -y install systemd-ukify systemd-boot-efi && apt-mark hold linux-image-cloud-amd64 linux-image-$KERNEL_ABI"
+PREP_INSTALL_SEED=$(make_seed "prep-install" "$PREP_INSTALL_CMD")
+run_qemu "$PREP_RAW" "$PREP_INSTALL_SEED" "$OUT/prep-install.log" 600 "$PREP_VARS"
+
+if ! grep -q "=== OP EXIT: 0 ===" "$OUT/prep-install.log"; then
+	echo "ERROR: Preparation package install failed:" >&2
+	tr -d '\r' < "$OUT/prep-install.log" | tail -n 40 >&2
+	exit 1
+fi
+
+# 2b. Copy the two hooks to guest root
+echo "Copying hooks and updated vintner binary to guest root..."
+echo "Block devices on host before losetup (prep hooks):"
+lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
+LOOP=$(sudo losetup -P -f --show "$PREP_RAW")
+sudo mount "${LOOP}p1" "$MNT"
+
+sudo cp "$VINTNER_BIN" "$MNT/usr/sbin/vintner"
+sudo chmod 0755 "$MNT/usr/sbin/vintner"
+sudo ln -sf /usr/sbin/vintner "$MNT/usr/bin/vintner"
+
+sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/etc/kernel/postinst.d/zz-vintner"
+sudo chmod 0755 "$MNT/etc/kernel/postinst.d/zz-vintner"
+
+sudo mkdir -p "$MNT/etc/initramfs/post-update.d"
+sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
+sudo chmod 0755 "$MNT/etc/initramfs/post-update.d/zz-vintner"
+
+sudo umount "$MNT"
+sudo losetup -d "$LOOP"
+LOOP=""
+
+# 2c. Boot once so that os-1 is blessed GOOD
+echo "Booting preparation step 2: boot once to bless os-1..."
+PREP_BLESS_SEED=$(make_seed "prep-bless" "true")
+run_qemu "$PREP_RAW" "$PREP_BLESS_SEED" "$OUT/prep-bless.log" 180 "$PREP_VARS"
+
+# 2d. Check that prepared disk has exactly one image, os-1, GOOD, and nothing under /vintner/staging/
+python3 ci/candidate-fallback/inspector.py verify-prep \
+	--disk "$PREP_RAW" \
+	--bs-offset "$BS_OFFSET" \
+	--vintner-bin "$VINTNER_BIN"
+
+PREPARED_RAW="$OUT/prepared.raw"
+PREPARED_VARS=""
+cp --sparse=always "$PREP_RAW" "$PREPARED_RAW"
+if [ "$FIRMWARE" = "uefi" ]; then
+	PREPARED_VARS="$OUT/prepared-vars.fd"
+	cp "$PREP_VARS" "$PREPARED_VARS"
+fi
+
+printf "ID\tCase\tStatus\tEvidence\n" > "$RESULTS"
+
+# Dummy seed for plain test boots
+TEST_BOOT_SEED=$(make_seed "test-boot" "true")
+
+# --- 3. Case Definitions and Execution ---------------------------------------
+
+CASES=("G0" "B1" "B2" "B3" "B4")
+
+for CASE in "${CASES[@]}"; do
+	echo "=================================================================="
+	echo "=== Running Case $CASE ($FIRMWARE) ==="
+	echo "=================================================================="
+
+	CASE_DISK="$OUT/${CASE}.raw"
+	CASE_VARS=""
+	cp --sparse=always "$PREPARED_RAW" "$CASE_DISK"
+	if [ "$FIRMWARE" = "uefi" ]; then
+		CASE_VARS="$OUT/${CASE}-vars.fd"
+		cp "$PREPARED_VARS" "$CASE_VARS"
+	fi
+
+	# Nothing from an earlier run may stand in for this run's evidence
+	rm -f "$OUT/${CASE}"-read-* "$OUT/${CASE}"-boot*-meta.json "$OUT/${CASE}"-boot*.log
+
+	# os-1's record before the operation boot is the H6 baseline
+	read_disk "$CASE_DISK" "${CASE}-read-pre"
+
+	# Determine guest operation script for this case (§2)
+	case "$CASE" in
+		G0)
+			OP_SCRIPT=$(cat <<'EOF'
+set -e
+cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-test
+# harmless control file
+SH
+update-initramfs -u -k "$(uname -r)"
+rm -f /etc/initramfs-tools/conf.d/vintner-test
+EOF
+)
+			;;
+		B1)
+			OP_SCRIPT=$(cat <<'EOF'
+set -e
+cat <<'SH' > /etc/initramfs-tools/scripts/init-top/break-test
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in prereqs) prereqs; exit 0;; esac
+echo c > /proc/sysrq-trigger
+SH
+chmod +x /etc/initramfs-tools/scripts/init-top/break-test
+update-initramfs -u -k "$(uname -r)"
+rm -f /etc/initramfs-tools/scripts/init-top/break-test
+EOF
+)
+			;;
+		B2)
+			OP_SCRIPT=$(cat <<'EOF'
+set -e
+cat <<'SH' > /etc/systemd/system/vintner-test-health.service
+[Unit]
+ConditionPathExists=/run/vintner-test-break
+Before=boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/false
+
+[Install]
+RequiredBy=boot-complete.target
+SH
+mkdir -p /etc/systemd/system/boot-complete.target.requires
+ln -sf /etc/systemd/system/vintner-test-health.service /etc/systemd/system/boot-complete.target.requires/vintner-test-health.service
+
+cat <<'SH' > /etc/initramfs-tools/scripts/init-bottom/break-test
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in prereqs) prereqs; exit 0;; esac
+: > /run/vintner-test-break
+SH
+chmod +x /etc/initramfs-tools/scripts/init-bottom/break-test
+update-initramfs -u -k "$(uname -r)"
+rm -f /etc/initramfs-tools/scripts/init-bottom/break-test
+EOF
+)
+			;;
+		B3)
+			OP_SCRIPT=$(cat <<'EOF'
+set -e
+cat <<'SH' > /etc/initramfs-tools/scripts/init-top/break-test
+#!/bin/sh
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case $1 in prereqs) prereqs; exit 0;; esac
+while :; do
+  sleep infinity 2>/dev/null || sleep 86400
+done
+SH
+chmod +x /etc/initramfs-tools/scripts/init-top/break-test
+update-initramfs -u -k "$(uname -r)"
+rm -f /etc/initramfs-tools/scripts/init-top/break-test
+EOF
+)
+			;;
+		B4)
+			OP_SCRIPT=$(cat <<'EOF'
+set -e
+cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-test
+# harmless control file
+SH
+update-initramfs -u -k "$(uname -r)"
+rm -f /etc/initramfs-tools/conf.d/vintner-test
+EOF
+)
+			;;
+	esac
+
+	echo "Booting $CASE Operation Boot: publishing candidate generation 2..."
+	OP_SEED=$(make_seed "${CASE}-op" "$OP_SCRIPT")
+	run_qemu "$CASE_DISK" "$OP_SEED" "$OUT/${CASE}-op.log" 600 "$CASE_VARS"
+
+	if ! grep -q "=== OP EXIT: 0 ===" "$OUT/${CASE}-op.log"; then
+		echo "ERROR: Case $CASE operation failed:" >&2
+		tr -d '\r' < "$OUT/${CASE}-op.log" | tail -n 40 >&2
+		exit 1
+	fi
+
+	# Read after the operation boot: the evaluator checks gen 2 TRYING and os-1 GOOD here,
+	# and it is the previous read for identifying boot 1
+	read_disk "$CASE_DISK" "${CASE}-read-op"
+
+	# Boot 1 to 6
+	for B in 1 2 3 4 5 6; do
+		BOOT_LOG="$OUT/${CASE}-boot${B}.log"
+		META_JSON="$OUT/${CASE}-boot${B}-meta.json"
+		KILL_FLAG=()
+		if [ "$CASE" = "B4" ] && [ "$B" -le 3 ]; then
+			KILL_FLAG=("--kill-on-cmdline")
+		fi
+
+		echo "Booting $CASE Boot $B..."
+		VARS_ARG=()
+		CODE_ARG=()
+		if [ "$FIRMWARE" = "uefi" ]; then
+			VARS_ARG=("--vars" "$CASE_VARS")
+			CODE_ARG=("--code-fd" "$CODE_FD")
+		fi
+
+		python3 ci/candidate-fallback/inspector.py run-boot \
+			--firmware "$FIRMWARE" \
+			--disk "$CASE_DISK" \
+			--seed "$TEST_BOOT_SEED" \
+			--log "$BOOT_LOG" \
+			--case "$CASE" \
+			--boot-num "$B" \
+			"${VARS_ARG[@]}" \
+			"${CODE_ARG[@]}" \
+			--timeout 120 \
+			"${KILL_FLAG[@]}" \
+			--meta-out "$META_JSON"
+
+		read_disk "$CASE_DISK" "${CASE}-read-boot${B}"
+	done
+done
+
+python3 ci/candidate-fallback/inspector.py evaluate \
+	--firmware "$FIRMWARE" \
+	--out-dir "$OUT" \
+	--results-file "$RESULTS"
+
+echo "=================================================================="
+echo "=== Test Results ($FIRMWARE) ==="
+echo "=================================================================="
+cat "$RESULTS"
+
+echo "=== versions.txt ==="
+cat "$VERSIONS"
+
+# Every expected row must be present with its status: a check that never ran is a FAIL.
+EXPECTED="H1:G0:PASS H8:all:PASS"
+for c in B1 B2 B3 B4; do
+	for h in H2 H3 H4 H5 H6; do
+		EXPECTED="$EXPECTED $h:$c:PASS"
+	done
+	EXPECTED="$EXPECTED H7:$c:OBSERVED"
+done
+BAD=$(awk -F'\t' 'NR > 1 && $3 != "PASS" && $3 != "OBSERVED" {print $1 ":" $2 ":" $3}' "$RESULTS" | paste -sd ' ')
+MISSING=""
+for row in $EXPECTED; do
+	awk -F'\t' -v r="$row" '($1 ":" $2 ":" $3) == r {f = 1} END {exit !f}' "$RESULTS" || MISSING="$MISSING $row"
+done
+if [ -n "$BAD" ] || [ -n "$MISSING" ]; then
+	echo "ERROR: Candidate fallback test failed on checks: ${BAD:-none}; missing or not as expected:${MISSING:- none}" >&2
+	exit 1
+fi
+
+echo "All $FIRMWARE candidate fallback checks passed successfully."

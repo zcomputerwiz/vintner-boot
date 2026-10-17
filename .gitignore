@@ -72,3 +72,4 @@ ci/out/
 !go.mod
 !go.sum
 recovery/out/
+__pycache__/
