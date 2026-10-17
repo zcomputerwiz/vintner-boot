@@ -398,10 +398,11 @@ def check_h4(case, cs, fw, labels):
     if rd is None:
         return False, ["boot4 missing"]
     s, c = state_of(rd, 2), counter(rd, fw, 2)
-    m = re.search(r"^generation 2: TRYING -> FAILED$", clean_ansi(cs["boots"][4]["log"]), re.M)
+    # journald forwards the unit's stdout to the console as "[ uptime] vintner[pid]: <line>"
+    m = re.search(r"^\[ *\d+\.\d+\] vintner\[\d+\]: generation 2: TRYING -> FAILED$", clean_ansi(cs["boots"][4]["log"]), re.M)
     ok = s == "FAILED" and c == want_counter(fw, "vintner-os-2+0-3.efi", "0") and m is not None
     ev = [f"gen 2 state={s}", fmt_counter(fw, 2, c),
-          f"console line: {m.group(0)}" if m else "no console line equal to 'generation 2: TRYING -> FAILED' in boot4 log"]
+          f"console line: {m.group(0)}" if m else "no console line equal to '[<uptime>] vintner[<pid>]: generation 2: TRYING -> FAILED' in boot4 log"]
     return ok, ev
 
 def check_h5(case, cs, fw, labels):
