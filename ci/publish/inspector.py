@@ -441,6 +441,7 @@ def main():
             else:
                 e3_evid.append(f"next boot ran {b2_booted}")
 
+            img2 = next((img for img in curr_images if img["generation"] == 2), None)
             if img2 and img2.get("state") == "GOOD" and img2.get("first_good"):
                 e3_evid.append(f"image 2 GOOD (first_good={img2.get('first_good')})")
             else:
