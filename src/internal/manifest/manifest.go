@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/zcomputerwiz/vintner-boot/src/internal/testpoint"
 )
 
 var (
@@ -253,6 +255,7 @@ func Save(stateDir string, m *Manifest) error {
 		f.Close()
 		return err
 	}
+	testpoint.Hit("manifest-written")
 	if err := f.Sync(); err != nil {
 		f.Close()
 		return err

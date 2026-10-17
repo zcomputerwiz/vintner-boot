@@ -52,6 +52,12 @@ jobs:
           - name: candidate-bios
             run: recovery/build.sh && ci/candidate-fallback/run.sh bios
             out: ci/out/candidate-fallback/bios
+          - name: interrupt-uefi
+            run: recovery/build.sh && ci/publish-interrupt/run.sh uefi
+            out: ci/out/publish-interrupt/uefi
+          - name: interrupt-bios
+            run: recovery/build.sh && ci/publish-interrupt/run.sh bios
+            out: ci/out/publish-interrupt/bios
 
     steps:
       - name: Check out repository
