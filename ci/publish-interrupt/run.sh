@@ -182,6 +182,7 @@ fi
 
 # Round 1: publish generation 2 and bless
 echo "GC prep round 1: publishing generation 2..."
+# shellcheck disable=SC2016
 GC_R1_CMD='echo "# gc round 1" > /etc/initramfs-tools/conf.d/vintner-gc.conf && update-initramfs -u -k "$(uname -r)"'
 run_qemu "$GC_RAW" "$(make_seed "gc-r1-op" "$GC_R1_CMD")" "$OUT/gc-r1-op.log" 300 "$GC_VARS"
 echo "GC prep round 1: booting to bless generation 2..."
@@ -189,6 +190,7 @@ run_qemu "$GC_RAW" "$(make_seed "gc-r1-bless" "true")" "$OUT/gc-r1-bless.log" 18
 
 # Round 2: publish generation 3 and bless
 echo "GC prep round 2: publishing generation 3..."
+# shellcheck disable=SC2016
 GC_R2_CMD='echo "# gc round 2" > /etc/initramfs-tools/conf.d/vintner-gc.conf && update-initramfs -u -k "$(uname -r)"'
 run_qemu "$GC_RAW" "$(make_seed "gc-r2-op" "$GC_R2_CMD")" "$OUT/gc-r2-op.log" 300 "$GC_VARS"
 echo "GC prep round 2: booting to bless generation 3..."
