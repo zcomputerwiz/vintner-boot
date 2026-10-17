@@ -4,12 +4,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 )
 
@@ -20,6 +22,21 @@ func cmdReconcile(args []string) {
 	dryRun := fs.Bool("dry-run", false, "print actions but do not perform them")
 
 	fs.Parse(args)
+
+	if !*dryRun {
+		lockPath := publish.DefaultLockPath(*bootStorage)
+		lock, err := publish.AcquireLock(lockPath)
+		if err != nil {
+			if errors.Is(err, publish.ErrLocked) {
+				fmt.Fprintln(os.Stderr, "vintner reconcile: another vintner process is running")
+			} else {
+				fmt.Fprintf(os.Stderr, "vintner reconcile: %v\n", err)
+			}
+			osExit(1)
+			return
+		}
+		defer lock.Close()
+	}
 
 	dir, err := mountBootStorage(*bootStorage, !*dryRun)
 	if err != nil {
