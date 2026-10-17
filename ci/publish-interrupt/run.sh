@@ -263,6 +263,7 @@ for CASE in "${CASES[@]}"; do
 	if [ -n "$TESTPOINT" ]; then
 		OP_SCRIPT=$(cat <<EOF
 set -e
+exec > /dev/ttyS0 2>&1
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} op boot
 SH
@@ -272,6 +273,7 @@ EOF
 	else
 		OP_SCRIPT=$(cat <<EOF
 set -e
+exec > /dev/ttyS0 2>&1
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} op boot
 SH
@@ -322,6 +324,7 @@ EOF
 	echo "[$CASE] Step 3: Recovery publish..."
 	REC_SCRIPT=$(cat <<EOF
 set -e
+exec > /dev/ttyS0 2>&1
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} recovery publish (distinct)
 SH
