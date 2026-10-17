@@ -59,8 +59,60 @@ The script exits 0 when every row passes.
 From the run's `versions.txt`:
 - Host: `systemd-boot-efi` and `systemd-ukify` `257.13-1~deb13u1`; `grub-pc-bin` and `grub-common` `2.12-9+deb13u2`.
 - Guest (os-1): kernel `6.12.111+deb13-cloud-amd64` (`linux-image-cloud-amd64` `6.12.111-1`), `systemd` and `udev` `257.13-1~deb13u1`.
-- Guest (second kernel): `linux-image-6.12.111+deb13-amd64` (`linux-image-amd64` `6.12.111-1`).
+- Guest (second kernel): `linux-image-6.12.113+deb13-amd64` (`linux-image-amd64` `6.12.113-1`).
 
 ## Results
 
-<!-- Results tables will be copied verbatim from the CI run -->
+Run 38994296848, commit `a5cef9b` on branch `wo-0005` (PR #44).
+Copied verbatim from each job's `results.tsv`.
+
+### UEFI (`publish-uefi`)
+
+| ID | Case | Status | Evidence |
+|---|---|---|---|
+| E1 | C0 | PASS | next_gen=2; images=[1]; EFI/Linux unchanged (3 files); vintner/bios unchanged (9 entries); staging empty; VINTNER_ORDER=1; booted=os-1 |
+| E2 | K1 | PASS | state=TRYING; abi=6.12.113+deb13-amd64 pkg=linux-image-6.12.113+deb13-amd64; module_tree matches guest; UEFI UKI verified (vintner-os-2+3-0.efi); BIOS files verified (3/3); VINTNER_ORDER=2 1; VINTNER_T_2=xxx; staging empty; NeverAutoRemove verified: ['linux-image-6.12.111+deb13-cloud-amd64', 'linux-image-6.12.113+deb13-amd64'] |
+| E3 | K1 | PASS | next boot ran os-2; image 2 GOOD (first_good=2026-10-17T02:20:53Z) |
+| E4 | K1 | PASS | os-1 state=GOOD stale=false; os-1 UKI file intact (vintner-os-1+3-0.efi); os-1 BIOS files intact; os-1 in VINTNER_ORDER; VINTNER_T_1=xxx |
+| E2 | K2 | PASS | state=TRYING; abi=6.12.111+deb13-cloud-amd64 pkg=linux-image-6.12.111+deb13-cloud-amd64; module_tree matches guest; UEFI UKI verified (vintner-os-2+3-0.efi); BIOS files verified (3/3); VINTNER_ORDER=2 1; VINTNER_T_2=xxx; staging empty; NeverAutoRemove verified: ['linux-image-6.12.111+deb13-cloud-amd64'] |
+| E3 | K2 | PASS | next boot ran os-2; image 2 GOOD (first_good=2026-10-17T02:21:26Z) |
+| E4 | K2 | PASS | os-1 state=GOOD stale=false; os-1 UKI file intact (vintner-os-1+3-0.efi); os-1 BIOS files intact; os-1 in VINTNER_ORDER; VINTNER_T_1=xxx |
+| E5 | K3 | PASS | exactly generations [1, 2, 3] present; next_generation=4; extra publish printed 'unchanged' |
+| E6 | U1 | PASS | exit=0; 'unchanged' printed; listings identical |
+| E7 | G1 | PASS | kept generations=[3, 4, 5]; removed records/UKIs/BIOS dirs/counters gone; NeverAutoRemove lists ['linux-image-6.12.111+deb13-cloud-amd64'] |
+| E8 | R1 | PASS | gen 2 stale=true; gen 2 files present on boot storage; gen 3 state=TRYING; os-1 state=GOOD; reboot ran os-3 |
+| E9 | all | PASS | C0(B1:os-1); C0(B2:os-1); K1(B1:os-1); K1(B2:os-2); K2(B1:os-1); K2(B2:os-2); K3(B1:os-1); K3(B2:os-3); U1(B1:os-1); G1(BR1op:os-1); G1(BR1rb:os-2); G1(BR2op:os-2); G1(BR2rb:os-3); G1(BR3op:os-3); G1(BR3rb:os-4); G1(BR4op:os-4); G1(BR4rb:os-5); R1(B1:os-1); R1(B2:os-3) |
+
+### BIOS (`publish-bios`)
+
+| ID | Case | Status | Evidence |
+|---|---|---|---|
+| E1 | C0 | PASS | next_gen=2; images=[1]; EFI/Linux unchanged (3 files); vintner/bios unchanged (9 entries); staging empty; VINTNER_ORDER=1; booted=os-1 |
+| E2 | K1 | PASS | state=TRYING; abi=6.12.113+deb13-amd64 pkg=linux-image-6.12.113+deb13-amd64; module_tree matches guest; UEFI UKI verified (vintner-os-2+3-0.efi); BIOS files verified (3/3); VINTNER_ORDER=2 1; VINTNER_T_2=xxx; staging empty; NeverAutoRemove verified: ['linux-image-6.12.111+deb13-cloud-amd64', 'linux-image-6.12.113+deb13-amd64'] |
+| E3 | K1 | PASS | next boot ran os-2; image 2 GOOD (first_good=2026-10-17T02:21:00Z) |
+| E4 | K1 | PASS | os-1 state=GOOD stale=false; os-1 UKI file intact (vintner-os-1+3-0.efi); os-1 BIOS files intact; os-1 in VINTNER_ORDER; VINTNER_T_1=xxx |
+| E2 | K2 | PASS | state=TRYING; abi=6.12.111+deb13-cloud-amd64 pkg=linux-image-6.12.111+deb13-cloud-amd64; module_tree matches guest; UEFI UKI verified (vintner-os-2+3-0.efi); BIOS files verified (3/3); VINTNER_ORDER=2 1; VINTNER_T_2=xxx; staging empty; NeverAutoRemove verified: ['linux-image-6.12.111+deb13-cloud-amd64'] |
+| E3 | K2 | PASS | next boot ran os-2; image 2 GOOD (first_good=2026-10-17T02:21:28Z) |
+| E4 | K2 | PASS | os-1 state=GOOD stale=false; os-1 UKI file intact (vintner-os-1+3-0.efi); os-1 BIOS files intact; os-1 in VINTNER_ORDER; VINTNER_T_1=xxx |
+| E5 | K3 | PASS | exactly generations [1, 2, 3] present; next_generation=4; extra publish printed 'unchanged' |
+| E6 | U1 | PASS | exit=0; 'unchanged' printed; listings identical |
+| E7 | G1 | PASS | kept generations=[3, 4, 5]; removed records/UKIs/BIOS dirs/counters gone; NeverAutoRemove lists ['linux-image-6.12.111+deb13-cloud-amd64'] |
+| E8 | R1 | PASS | gen 2 stale=true; gen 2 files present on boot storage; gen 3 state=TRYING; os-1 state=GOOD; reboot ran os-3 |
+| E9 | all | PASS | C0(B1:os-1); C0(B2:os-1); K1(B1:os-1); K1(B2:os-2); K2(B1:os-1); K2(B2:os-2); K3(B1:os-1); K3(B2:os-3); U1(B1:os-1); G1(BR1op:os-1); G1(BR1rb:os-2); G1(BR2op:os-2); G1(BR2rb:os-3); G1(BR3op:os-3); G1(BR3rb:os-4); G1(BR4op:os-4); G1(BR4rb:os-5); R1(B1:os-1); R1(B2:os-3) |
+
+## Findings
+
+1. **Debian hook execution order during K1 (from apt log):**
+   When `linux-image-6.12.113+deb13-amd64` was configured:
+   - First, Debian ran `/etc/kernel/postinst.d/initramfs-tools`. This invoked `update-initramfs: Generating /boot/initrd.img-6.12.113+deb13-amd64`, which triggered the post-update hook `/etc/initramfs/post-update.d/zz-vintner 6.12.113+deb13-amd64`. This was the **first** run of `vintner publish`; since both `/boot/vmlinuz-6.12.113+deb13-amd64` and the newly generated `/boot/initrd.img-6.12.113+deb13-amd64` were present on disk, generation 2 was staged and published.
+   - Next, Debian ran `/etc/kernel/postinst.d/zz-update-grub` (`grub-mkconfig`).
+   - Next, Debian ran `/etc/kernel/postinst.d/zz-vintner 6.12.113+deb13-amd64`. This was the **second** run of `vintner publish`. In Step 6, the publisher checked the newest image with the same ABI (generation 2), compared kernel SHA-256, command line, and initramfs (all identical), printed `"unchanged"`, and updated the APT retained kernel list without creating a duplicate image.
+
+2. **Publish execution count:**
+   During K1, `vintner publish` ran **2 times**. Exactly **1** of those runs printed `"unchanged"`.
+
+3. **Cloud kernel metapackage upgrade:**
+   Debian 13 trixie published kernel version `6.12.113-1`. Because the golden disk base originally had `linux-image-cloud-amd64 6.12.111-1`, running `apt-get install linux-image-amd64` without pinning or holding would cause APT to upgrade `linux-image-cloud-amd64` to `6.12.113-1`, installing `linux-image-6.12.113+deb13-cloud-amd64` and creating an extra generation 3. Holding `linux-image-cloud-amd64` and `linux-image-6.12.111+deb13-cloud-amd64` with `apt-mark hold` during golden disk preparation ensures that only the requested second kernel (`linux-image-amd64`) is installed.
+
+4. **Step 6 unchanged check on images with `module_tree: null`:**
+   Images created at install time (such as `os-1` from `vintner-base.sh`) have `module_tree: null`. In Step 6 of `vintner publish`, when `module_tree` is nil, kernel SHA-256 is checked against `BIOS.Files.Vmlinuz` (or UKI `.linux` section) instead of assuming a non-nil `ModuleTree`, ensuring that no-op publishing (`vintner publish --kernel $(uname -r)`) on `os-1` in Case U1 correctly recognizes identical inputs and prints `"unchanged"`.
