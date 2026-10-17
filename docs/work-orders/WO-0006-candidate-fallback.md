@@ -2,7 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM, loop devices with partition scanning (`losetup -P`), Go 1.24 and outbound network access.
 - **Issued:** 2026-10-17
-- **Status:** waiting on WO-0005 (the publisher and `ci/publish/`) being on `main`. Start when it is.
+- **Status:** ready.
 - **Base branch:** `main`. Work on branch `wo-0006` and open one pull request against `main`.
 
 ## Why
