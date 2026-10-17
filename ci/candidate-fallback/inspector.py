@@ -197,30 +197,59 @@ def cmd_run_boot(args):
 def identify_booted(log_path, firmware, prev_efi_files, curr_efi_files, prev_grubenv, curr_grubenv):
     text = read_log(log_path)
 
-    # 1. Did report run?
-    m_rep = re.search(r"^LOADER_ENTRY_SELECTED:[ \t]*(.+)$", text, re.M)
-    if m_rep:
-        val = m_rep.group(1).strip()
-        val = re.sub(r"^[\\/]*EFI[\\/]Linux[\\/]", "", val)
-        val = re.sub(r"(\+\d+(-\d+)?)?\.efi$", "", val)
-        if val == "vintner-os-1":
-            return "os-1"
-        if val == "vintner-os-2":
-            return "os-2"
-        if "recovery-a" in val:
-            return "recovery-a"
-        if "recovery-b" in val:
-            return "recovery-b"
-        return val
-
-    # 2. Check for recovery markers in cmdline
+    # 1. Check for recovery markers in cmdline
     if "vintner.recovery=1" in text or "vintner.recovery_test=1" in text:
         if "vintner.test_slot=b" in text:
             return "recovery-b"
         return "recovery-a"
 
-    # 3. UEFI without report
+    # 2. BIOS: per §3, "BIOS, GRUB's last vintner: trying <gen> line"
+    if firmware == "bios":
+        tries = re.findall(r"vintner:\s+trying\s+(\S+)", text)
+        if tries:
+            val = tries[-1].strip()
+            if val in ("os-1", "1"):
+                return "os-1"
+            if val in ("os-2", "2"):
+                return "os-2"
+            if "recovery-a" in val or val in ("ra", "a"):
+                return "recovery-a"
+            if "recovery-b" in val or val in ("rb", "b"):
+                return "recovery-b"
+            return val
+
+        # Fallbacks if GRUB output was cut off
+        if prev_grubenv and curr_grubenv:
+            if prev_grubenv.get("VINTNER_T_2") != curr_grubenv.get("VINTNER_T_2"):
+                return "os-2"
+            if prev_grubenv.get("VINTNER_T_1") != curr_grubenv.get("VINTNER_T_1"):
+                return "os-1"
+
+        if "vintner.bootstorage=" in text:
+            if prev_grubenv and prev_grubenv.get("VINTNER_T_2") not in (None, "", "0"):
+                return "os-2"
+            return "os-1"
+
+        return "unknown"
+
+    # 3. UEFI: per §3, "UEFI, the report's LOADER_ENTRY_SELECTED where the report ran,
+    # otherwise the kernel's Command line: and the UKI that systemd-boot renamed"
     if firmware == "uefi":
+        m_rep = re.search(r"^LOADER_ENTRY_SELECTED:[ \t]*(.+)$", text, re.M)
+        if m_rep:
+            val = m_rep.group(1).strip()
+            val = re.sub(r"^[\\/]*EFI[\\/]Linux[\\/]", "", val)
+            val = re.sub(r"(\+\d+(-\d+)?)?\.efi$", "", val)
+            if val == "vintner-os-1":
+                return "os-1"
+            if val == "vintner-os-2":
+                return "os-2"
+            if "recovery-a" in val:
+                return "recovery-a"
+            if "recovery-b" in val:
+                return "recovery-b"
+            return val
+
         # Check systemd-boot renamed UKI counter
         # e.g. gen 2 went from +3-0 -> +2-1, or +2-1 -> +1-2, or +1-2 -> +0-3
         prev_gen2 = [f for f in prev_efi_files if "vintner-os-2" in f]
@@ -236,21 +265,9 @@ def identify_booted(log_path, firmware, prev_efi_files, curr_efi_files, prev_gru
         # Fallback to kernel Command line
         m_cmd = re.search(r"Command line:.*vintner\.bootstorage=", text)
         if m_cmd:
-            # If gen 2 was TRYING and tries left > 0 before boot, it was selected
             return "os-2"
 
-    # 4. BIOS without report
-    if firmware == "bios":
-        # Check GRUB trying line
-        tries = re.findall(r"vintner: trying (\S+)", text)
-        if tries:
-            return tries[-1]
-        # Check grubenv counter change
-        if prev_grubenv and curr_grubenv:
-            if prev_grubenv.get("VINTNER_T_2") != curr_grubenv.get("VINTNER_T_2"):
-                return "os-2"
-            if prev_grubenv.get("VINTNER_T_1") != curr_grubenv.get("VINTNER_T_1"):
-                return "os-1"
+        return "unknown"
 
     return "unknown"
 

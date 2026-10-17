@@ -201,9 +201,9 @@ cat <<'SH' > /etc/initramfs-tools/scripts/init-bottom/break-test
 PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case $1 in prereqs) prereqs; exit 0;; esac
-touch /run/vintner-test-break
+: > /run/vintner-test-break
 if [ -d "${rootmnt:-}/run" ]; then
-  touch "${rootmnt}/run/vintner-test-break"
+  : > "${rootmnt}/run/vintner-test-break"
 fi
 SH
 chmod +x /etc/initramfs-tools/scripts/init-bottom/break-test
@@ -219,7 +219,9 @@ cat <<'SH' > /etc/initramfs-tools/scripts/init-top/break-test
 PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case $1 in prereqs) prereqs; exit 0;; esac
-sleep infinity
+while :; do
+  sleep infinity 2>/dev/null || sleep 86400
+done
 SH
 chmod +x /etc/initramfs-tools/scripts/init-top/break-test
 update-initramfs -u -k "$(uname -r)"
