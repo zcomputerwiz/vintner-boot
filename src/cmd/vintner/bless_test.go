@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -330,6 +332,68 @@ func TestBlessIdempotent(t *testing.T) {
 	// Since manifest is already updated, bless will update it again with new LastGood, but logic is idempotent
 }
 
+// snapshotTree maps every file under root, except the manifest copies and
+// the lock, to its SHA-256, so a test can show what else a command changed.
+func snapshotTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		if d.IsDir() {
+			if rel == filepath.Join("vintner", "state") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if rel == "publish.lock" {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		files[rel] = calcSHA256(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// blessOutput runs cmdBless and returns the lines it printed on stdout.
+func blessOutput(t *testing.T, args []string) []string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	done := make(chan []byte)
+	go func() {
+		b, _ := io.ReadAll(r)
+		done <- b
+	}()
+	func() {
+		defer func() { os.Stdout = old; w.Close() }()
+		cmdBless(args)
+	}()
+	return strings.Split(strings.TrimRight(string(<-done), "\n"), "\n")
+}
+
+func hasLine(lines []string, want string) bool {
+	for _, l := range lines {
+		if l == want {
+			return true
+		}
+	}
+	return false
+}
+
 func calcSHA256(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
@@ -462,7 +526,19 @@ func TestBlessCandidateZeroCounterUEFI(t *testing.T) {
 		t.Fatalf("unexpected exit: %d", code)
 	}
 
-	cmdBless([]string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+	before := snapshotTree(t, bootStorage)
+	out := blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+
+	if !hasLine(out, "generation 2: TRYING -> FAILED") {
+		t.Errorf("transition not printed; output %q", out)
+	}
+	// Nothing on boot storage changes except the re-arm (and the manifest).
+	want := maps.Clone(before)
+	want["EFI/Linux/vintner-os-1+3-0.efi"] = want["EFI/Linux/vintner-os-1+2-1.efi"]
+	delete(want, "EFI/Linux/vintner-os-1+2-1.efi")
+	if got := snapshotTree(t, bootStorage); !maps.Equal(got, want) {
+		t.Errorf("boot storage: got %v, want %v", got, want)
+	}
 
 	// Check os-1: re-armed to +3-0 and GOOD
 	img1 := getManifestGen(t, stateDir, 1)
@@ -554,7 +630,19 @@ func TestBlessCandidateZeroCounterBIOS(t *testing.T) {
 		t.Fatalf("unexpected exit: %d", code)
 	}
 
-	cmdBless([]string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+	before := snapshotTree(t, bootStorage)
+	out := blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+
+	if !hasLine(out, "generation 2: TRYING -> FAILED") {
+		t.Errorf("transition not printed; output %q", out)
+	}
+	// Nothing on boot storage changes except grubenv (checked below) and the manifest.
+	got := snapshotTree(t, bootStorage)
+	delete(before, "grub/grubenv")
+	delete(got, "grub/grubenv")
+	if !maps.Equal(got, before) {
+		t.Errorf("boot storage: got %v, want %v", got, before)
+	}
 
 	// Check os-1: re-armed to xxx and GOOD
 	img1 := getManifestGen(t, stateDir, 1)
@@ -631,7 +719,20 @@ func TestBlessCandidateWithTriesLeft(t *testing.T) {
 		t.Fatalf("unexpected exit: %d", code)
 	}
 
-	cmdBless([]string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+	before := snapshotTree(t, bootStorage)
+	out := blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+
+	for _, l := range out {
+		if strings.HasPrefix(l, "generation ") {
+			t.Errorf("unexpected transition %q", l)
+		}
+	}
+	want := maps.Clone(before)
+	want["EFI/Linux/vintner-os-1+3-0.efi"] = want["EFI/Linux/vintner-os-1+2-1.efi"]
+	delete(want, "EFI/Linux/vintner-os-1+2-1.efi")
+	if got := snapshotTree(t, bootStorage); !maps.Equal(got, want) {
+		t.Errorf("boot storage: got %v, want %v", got, want)
+	}
 
 	// Check os-1: re-armed to +3-0 and GOOD
 	img1 := getManifestGen(t, stateDir, 1)

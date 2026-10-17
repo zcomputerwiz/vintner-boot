@@ -171,10 +171,7 @@ func cmdBless(args []string) {
 		return
 	}
 
-	origStates := make(map[int]string, len(m.Images))
-	for _, img := range m.Images {
-		origStates[img.Generation] = img.State
-	}
+	origImages := append([]manifest.Image(nil), m.Images...)
 
 	v, err := state.Scan(*bootStorage)
 	if err != nil {
@@ -186,7 +183,7 @@ func cmdBless(args []string) {
 	actions, reports := state.Reconcile(m, v)
 
 	for _, r := range reports {
-		printBlessMsg(r)
+		fmt.Println(r)
 	}
 
 	for _, a := range actions {
@@ -200,9 +197,15 @@ func cmdBless(args []string) {
 		}
 	}
 
+	newStates := make(map[int]string, len(m.Images))
 	for _, img := range m.Images {
-		if oldState, ok := origStates[img.Generation]; ok && oldState != img.State {
-			printBlessMsg(fmt.Sprintf("generation %d: %s -> %s", img.Generation, oldState, img.State))
+		newStates[img.Generation] = img.State
+	}
+	for _, img := range origImages {
+		if s, ok := newStates[img.Generation]; !ok {
+			fmt.Printf("generation %d: %s -> removed\n", img.Generation, img.State)
+		} else if s != img.State {
+			fmt.Printf("generation %d: %s -> %s\n", img.Generation, img.State, s)
 		}
 	}
 
@@ -224,17 +227,6 @@ func cmdBless(args []string) {
 			osExit(1)
 			return
 		}
-	}
-}
-
-func printBlessMsg(msg string) {
-	fmt.Println(msg)
-	if f, err := os.OpenFile("/dev/console", os.O_WRONLY, 0); err == nil {
-		fmt.Fprintln(f, msg)
-		f.Close()
-	} else if f, err := os.OpenFile("/dev/ttyS0", os.O_WRONLY, 0); err == nil {
-		fmt.Fprintln(f, msg)
-		f.Close()
 	}
 }
 
