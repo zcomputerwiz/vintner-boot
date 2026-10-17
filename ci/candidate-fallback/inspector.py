@@ -10,8 +10,20 @@ import subprocess
 import hashlib
 import tempfile
 import argparse
+from datetime import datetime
 
 mtools_env = dict(os.environ, MTOOLS_SKIP_CHECK="1")
+
+CASES = ["G0", "B1", "B2", "B3", "B4"]
+BOOTS = range(1, 7)
+EXPECTED_LABELS = {"G0": ["os-2"] * 6}
+EXPECTED_LABELS.update({c: ["os-2"] * 3 + ["os-1"] * 3 for c in CASES[1:]})
+B4_KILLED = "killed 1s after Command line"
+UKI_RE = re.compile(r"vintner-os-(\d+)(\+\d+(-\d+)?)?\.efi")
+# Whole-value maps from what the loader reports to a boot label.
+LOADER_STEMS = {"vintner-os-1": "os-1", "vintner-os-2": "os-2",
+                "vintner-recovery-a": "recovery-a", "vintner-recovery-b": "recovery-b"}
+GRUB_DIRS = {"os-1": "os-1", "os-2": "os-2", "recovery-a": "recovery-a", "recovery-b": "recovery-b"}
 
 def clean_ansi(text):
     return re.sub(r"\x1b\[[0-9;:]*[a-zA-Z]", "", text).replace("\r", "")
@@ -45,18 +57,6 @@ def mdir(disk, offset, path="::/", dirs=False):
             lines.append(l if l.startswith("/") else "/" + l)
     return sorted(lines)
 
-def parse_grubenv(content):
-    if content is None or not content.startswith(b"# GRUB Environment Block\n"):
-        return None
-    res = {}
-    for line in content.split(b"\n"):
-        if line.startswith(b"#") or not line:
-            continue
-        if b"=" in line:
-            k, v = line.split(b"=", 1)
-            res[k.decode('utf-8', errors='replace')] = v.decode('utf-8', errors='replace')
-    return res
-
 def load_manifest_via_vintner(vintner_bin, disk, offset):
     with tempfile.TemporaryDirectory() as tmpdir:
         a = mtype(disk, offset, "/vintner/state/manifest-a")
@@ -75,6 +75,7 @@ def load_manifest_via_vintner(vintner_bin, disk, offset):
         return json.loads(res.stdout)
 
 def emit(results_file, check_id, case, status, evidence):
+    evidence = re.sub(r"[\t\r\n]", " ", evidence)
     row = f"{check_id}\t{case}\t{status}\t{evidence}"
     with open(results_file, "a") as f:
         f.write(row + "\n")
@@ -127,641 +128,439 @@ def cmd_run_boot(args):
             "-drive", f"if=pflash,format=raw,unit=1,file={args.vars}",
         ])
 
+    def exited(rc):
+        # QEMU exits 0 when the guest powers off (or reboots, with -no-reboot).
+        return "poweroff" if rc == 0 else f"qemu exited with status {rc}"
+
+    def kill():
+        proc.terminate()
+        try:
+            proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
     start_time = time.time()
     proc = subprocess.Popen(cmd)
-    how_ended = "unknown"
-
-    if args.kill_on_cmdline:
-        # B4: monitor log for "Command line:", wait 1 second, then kill
-        found_cmdline = False
-        while True:
-            if proc.poll() is not None:
-                how_ended = "poweroff"
-                break
-            if time.time() - start_time > args.timeout:
-                proc.kill()
-                proc.wait()
+    try:
+        if args.kill_on_cmdline:
+            # B4: watch the log for the kernel's "Command line:", wait 1 second, then kill
+            how_ended = None
+            while how_ended is None:
+                rc = proc.poll()
+                if rc is not None:
+                    how_ended = exited(rc) + " before Command line"
+                elif time.time() - start_time > args.timeout:
+                    kill()
+                    how_ended = f"killed after {args.timeout}s timeout"
+                else:
+                    with open(log_path, "rb") as f:
+                        if b"Command line:" in f.read():
+                            time.sleep(1.0)
+                            rc = proc.poll()
+                            if rc is not None:
+                                how_ended = f"exited before kill ({exited(rc)})"
+                            else:
+                                kill()
+                                how_ended = B4_KILLED
+                    time.sleep(0.05)
+        else:
+            try:
+                how_ended = exited(proc.wait(timeout=args.timeout))
+            except subprocess.TimeoutExpired:
+                kill()
                 how_ended = f"killed after {args.timeout}s timeout"
-                break
-
-            try:
-                with open(log_path, "rb") as f:
-                    content = f.read()
-                    if b"Command line:" in content:
-                        found_cmdline = True
-                        break
-            except Exception:
-                pass
-            time.sleep(0.05)
-
-        if found_cmdline:
-            time.sleep(1.0)
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            how_ended = "killed 1s after Command line"
-    else:
-        try:
-            proc.wait(timeout=args.timeout)
-            how_ended = "poweroff"
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            how_ended = f"killed after {args.timeout}s timeout"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
     duration = round(time.time() - start_time, 2)
-    log_text = read_log(log_path)
-    lines = [l.strip() for l in log_text.splitlines() if l.strip()]
+    lines = [l.strip() for l in read_log(log_path).splitlines() if l.strip()]
     last_line = lines[-1] if lines else "(empty log)"
 
     meta = {
         "how_ended": how_ended,
+        "returncode": proc.returncode,
         "last_line": last_line,
         "duration": duration,
     }
-
     if args.meta_out:
         with open(args.meta_out, "w") as f:
             json.dump(meta, f, indent=2)
 
-    print(f"[{args.case}] Boot {args.boot_num} ended: {how_ended} ({duration}s), last_line: {last_line}")
+    print(f"[{args.case}] Boot {args.boot_num} ended: {how_ended} (returncode {proc.returncode}, {duration}s), last_line: {last_line}")
 
-# --- 3. record-boot-state ----------------------------------------------------
-def identify_booted(log_path, firmware, prev_efi_files, curr_efi_files, prev_grubenv, curr_grubenv):
-    text = read_log(log_path)
+# --- 3. read: one read of boot storage on the host (§3) ----------------------
+def cmd_read(args):
+    disk, off, prefix = args.disk, args.bs_offset, args.out_prefix
+    mf = load_manifest_via_vintner(args.vintner_bin, disk, off)
+    efi_files = sorted(os.path.basename(p) for p in mdir(disk, off, "::/EFI/Linux"))
+    bios_files = mdir(disk, off, "::/vintner/bios")
+    with open(f"{prefix}-efi-linux.txt", "w") as f:
+        f.write("".join(n + "\n" for n in efi_files))
+    with open(f"{prefix}-bios.txt", "w") as f:
+        f.write("".join(p + "\n" for p in bios_files))
 
-    # 1. Check for recovery markers in cmdline
-    if "vintner.recovery=1" in text or "vintner.recovery_test=1" in text:
-        if "vintner.test_slot=b" in text:
-            return "recovery-b"
-        return "recovery-a"
+    # grubenv through grub-editenv from the trixie root vintner-base.sh unpacked (not installed on the runner)
+    grubenv = None
+    raw_env = mtype(disk, off, "/grub/grubenv")
+    if raw_env is not None:
+        with open(f"{prefix}-grubenv", "wb") as f:
+            f.write(raw_env)
+        lib = os.path.join(args.root, "usr/lib/x86_64-linux-gnu")
+        out = subprocess.run([os.path.join(lib, "ld-linux-x86-64.so.2"), "--library-path", lib,
+                              os.path.join(args.root, "usr/bin/grub-editenv"), f"{prefix}-grubenv", "list"],
+                             capture_output=True, text=True, check=True).stdout
+        with open(f"{prefix}-grubenv.txt", "w") as f:
+            f.write(out)
+        grubenv = dict(l.partition("=")[::2] for l in out.splitlines() if "=" in l)
 
-    # 2. BIOS: per §3, "BIOS, GRUB's last vintner: trying <gen> line"
-    if firmware == "bios":
-        tries = re.findall(r"vintner:\s+trying\s+(\S+)", text)
-        if tries:
-            val = tries[-1].strip()
-            if val in ("os-1", "1"):
-                return "os-1"
-            if val in ("os-2", "2"):
-                return "os-2"
-            if "recovery-a" in val or val in ("ra", "a"):
-                return "recovery-a"
-            if "recovery-b" in val or val in ("rb", "b"):
-                return "recovery-b"
-            return val
+    # Every os-1 file on boot storage, hashed: its UKI(s) and its BIOS slot directory
+    os1_paths = [f"/EFI/Linux/{n}" for n in efi_files if (m := UKI_RE.fullmatch(n)) and m.group(1) == "1"]
+    os1_paths += [p for p in bios_files if os.path.dirname(p) == "/vintner/bios/os-1"]
+    os1_hashes = {}
+    for p in os1_paths:
+        content = mtype(disk, off, p)
+        os1_hashes[p] = sha256_bytes(content) if content is not None else None
 
-        # Fallbacks if GRUB output was cut off
-        if prev_grubenv and curr_grubenv:
-            if prev_grubenv.get("VINTNER_T_2") != curr_grubenv.get("VINTNER_T_2"):
-                return "os-2"
-            if prev_grubenv.get("VINTNER_T_1") != curr_grubenv.get("VINTNER_T_1"):
-                return "os-1"
-
-        if "vintner.bootstorage=" in text:
-            if prev_grubenv and prev_grubenv.get("VINTNER_T_2") not in (None, "", "0"):
-                return "os-2"
-            return "os-1"
-
-        return "unknown"
-
-    # 3. UEFI: per §3, "UEFI, the report's LOADER_ENTRY_SELECTED where the report ran,
-    # otherwise the kernel's Command line: and the UKI that systemd-boot renamed"
-    if firmware == "uefi":
-        m_rep = re.search(r"^LOADER_ENTRY_SELECTED:[ \t]*(.+)$", text, re.M)
-        if m_rep:
-            val = m_rep.group(1).strip()
-            val = re.sub(r"^[\\/]*EFI[\\/]Linux[\\/]", "", val)
-            val = re.sub(r"(\+\d+(-\d+)?)?\.efi$", "", val)
-            if val == "vintner-os-1":
-                return "os-1"
-            if val == "vintner-os-2":
-                return "os-2"
-            if "recovery-a" in val:
-                return "recovery-a"
-            if "recovery-b" in val:
-                return "recovery-b"
-            return val
-
-        # Check systemd-boot renamed UKI counter
-        # e.g. gen 2 went from +3-0 -> +2-1, or +2-1 -> +1-2, or +1-2 -> +0-3
-        prev_gen2 = [f for f in prev_efi_files if "vintner-os-2" in f]
-        curr_gen2 = [f for f in curr_efi_files if "vintner-os-2" in f]
-        if prev_gen2 and curr_gen2 and prev_gen2 != curr_gen2:
-            return "os-2"
-
-        prev_gen1 = [f for f in prev_efi_files if "vintner-os-1" in f]
-        curr_gen1 = [f for f in curr_efi_files if "vintner-os-1" in f]
-        if prev_gen1 and curr_gen1 and prev_gen1 != curr_gen1:
-            return "os-1"
-
-        # Fallback to kernel Command line
-        m_cmd = re.search(r"Command line:.*vintner\.bootstorage=", text)
-        if m_cmd:
-            return "os-2"
-
-        return "unknown"
-
-    return "unknown"
-
-def cmd_record_boot_state(args):
-    state_file = args.state_file
-    if os.path.exists(state_file):
-        with open(state_file, "r") as f:
-            case_state = json.load(f)
-    else:
-        case_state = {"boots": []}
-
-    # Load manifest
-    mf = load_manifest_via_vintner(args.vintner_bin, args.disk, args.bs_offset)
-    images_by_gen = {img["generation"]: img for img in mf.get("images", [])}
-
-    # EFI files
-    efi_files = []
-    if args.firmware == "uefi":
-        raw_list = mdir(args.disk, args.bs_offset, "::/EFI/Linux")
-        efi_files = [os.path.basename(f) for f in raw_list]
-
-    # Grubenv
-    grubenv_vars = {}
-    if args.firmware == "bios":
-        raw_env = mtype(args.disk, args.bs_offset, "/grub/grubenv")
-        grubenv_vars = parse_grubenv(raw_env) or {}
-
-    # Read os-1 files SHA256 for H6
-    os1_uki_hash = ""
-    os1_bios_hashes = {}
-    if args.firmware == "uefi":
-        for f in efi_files:
-            if f.startswith("vintner-os-1"):
-                content = mtype(args.disk, args.bs_offset, f"/EFI/Linux/{f}")
-                if content:
-                    os1_uki_hash = sha256_bytes(content)
-                break
-    else:
-        for fname in ["vmlinuz", "initrd.img", "slot.cfg"]:
-            content = mtype(args.disk, args.bs_offset, f"/vintner/bios/os-1/{fname}")
-            if content:
-                os1_bios_hashes[fname] = sha256_bytes(content)
-
-    # Read meta from runner
-    meta = {}
-    if args.meta_json and os.path.exists(args.meta_json):
-        with open(args.meta_json, "r") as f:
-            meta = json.load(f)
-
-    # Identify booted
-    prev_efi = case_state["boots"][-1]["efi_files"] if case_state["boots"] else []
-    prev_env = case_state["boots"][-1]["grubenv"] if case_state["boots"] else {}
-    booted = identify_booted(args.boot_log, args.firmware, prev_efi, efi_files, prev_env, grubenv_vars)
-
-    boot_record = {
-        "boot_num": args.boot_num,
-        "booted": booted,
-        "how_ended": meta.get("how_ended", "unknown"),
-        "last_line": meta.get("last_line", ""),
-        "duration": meta.get("duration", 0),
-        "manifest_images": images_by_gen,
+    read = {
+        "images": {str(img["generation"]): img for img in mf.get("images", [])},
         "efi_files": efi_files,
-        "grubenv": grubenv_vars,
-        "os1_uki_hash": os1_uki_hash,
-        "os1_bios_hashes": os1_bios_hashes,
-        "log_path": args.boot_log,
+        "bios_files": bios_files,
+        "grubenv": grubenv,
+        "os1_hashes": os1_hashes,
     }
+    with open(f"{prefix}.json", "w") as f:
+        json.dump(read, f, indent=2)
+    print(f"read {prefix}: gens {sorted(read['images'])}; /EFI/Linux {efi_files}; grubenv {grubenv}")
 
-    case_state["boots"].append(boot_record)
-    with open(state_file, "w") as f:
-        json.dump(case_state, f, indent=2)
+# --- 4. Evaluation: a pure function from the recorded state to result rows ---
+def uki_names(read, gen):
+    return sorted(n for n in read["efi_files"] if (m := UKI_RE.fullmatch(n)) and int(m.group(1)) == gen)
 
-    print(f"[{args.case}] Recorded state for Boot {args.boot_num}: booted {booted}")
+def counter(read, firmware, gen):
+    # The generation's counter where its firmware keeps it: UKI file names (UEFI) or VINTNER_T_<gen> (BIOS).
+    if firmware == "uefi":
+        return uki_names(read, gen)
+    if read.get("grubenv") is None:
+        return "(grubenv unreadable)"
+    return read["grubenv"].get(f"VINTNER_T_{gen}")
 
-# --- 4. evaluate-case --------------------------------------------------------
-def cmd_evaluate_case(args):
-    with open(args.state_file, "r") as f:
-        case_state = json.load(f)
+def fmt_counter(firmware, gen, val):
+    return f"gen {gen} UKIs={val}" if firmware == "uefi" else f"VINTNER_T_{gen}={val}"
 
-    boots = {b["boot_num"]: b for b in case_state["boots"]}
-    firmware = args.firmware
-    case = args.case
-    results_file = args.results_file
+def want_counter(firmware, uefi_name, bios_value):
+    return [uefi_name] if firmware == "uefi" else bios_value
 
-    # Load initial state before boots (from initial state JSON)
-    with open(args.initial_state, "r") as f:
-        initial = json.load(f)
+def booted_absent(read):
+    env = read.get("grubenv")
+    if env is None:
+        return False, "grubenv unreadable"
+    if "VINTNER_BOOTED" in env:
+        return False, f"VINTNER_BOOTED={env['VINTNER_BOOTED']}"
+    return True, "VINTNER_BOOTED absent"
 
-    initial_os1_last_good = initial.get("os1_last_good", "")
-    initial_os1_uki_hash = initial.get("os1_uki_hash", "")
-    initial_os1_bios_hashes = initial.get("os1_bios_hashes", {})
+def state_of(read, gen):
+    img = read["images"].get(str(gen))
+    return img.get("state") if img else "missing"
 
-    if case == "G0":
-        # H1: Boot 1 is generation 2, blessed: generation 2 GOOD, UEFI vintner-os-2+3-0.efi,
-        # BIOS VINTNER_T_2=xxx; every later boot is generation 2 as well; recovery never boots
-        h1_ok = True
-        h1_evid = []
+def parse_time(s):
+    try:
+        return datetime.fromisoformat(s[:-1] + "+00:00" if s.endswith("Z") else s)
+    except (AttributeError, TypeError, ValueError):
+        return None
 
-        b1 = boots.get(1)
-        if not b1:
-            h1_ok = False
-            h1_evid.append("boot 1 missing")
-        else:
-            if b1["booted"] != "os-2":
-                h1_ok = False
-                h1_evid.append(f"boot 1 booted {b1['booted']}, expected os-2")
-            else:
-                h1_evid.append("boot 1 booted os-2")
+def present(bt):
+    # A boot is present only with its read, its run metadata and its serial log.
+    return bool(bt) and bt.get("read") is not None and bt.get("meta") is not None and bt.get("log") is not None
 
-            img2 = b1["manifest_images"].get("2")
-            if not img2 or img2.get("state") != "GOOD":
-                h1_ok = False
-                h1_evid.append(f"gen 2 state={img2.get('state') if img2 else 'missing'}, expected GOOD")
-            else:
-                h1_evid.append("gen 2 state=GOOD")
+def identify_booted(log, firmware, prev, curr):
+    text = clean_ansi(log)
 
-            if firmware == "uefi":
-                if "vintner-os-2+3-0.efi" not in b1["efi_files"]:
-                    h1_ok = False
-                    h1_evid.append(f"vintner-os-2+3-0.efi missing, files={b1['efi_files']}")
-                else:
-                    h1_evid.append("counter=+3-0")
-            else:
-                t2 = b1["grubenv"].get("VINTNER_T_2")
-                booted_var = b1["grubenv"].get("VINTNER_BOOTED")
-                if t2 != "xxx":
-                    h1_ok = False
-                    h1_evid.append(f"VINTNER_T_2={t2}, expected xxx")
-                if booted_var is not None:
-                    h1_ok = False
-                    h1_evid.append(f"VINTNER_BOOTED={booted_var}, expected unset")
-                if t2 == "xxx" and booted_var is None:
-                    h1_evid.append("counter=xxx; booted_unset=True")
+    # Recovery: whole tokens of the kernel's command line
+    for line in re.findall(r"Command line: (.*)$", text, re.M):
+        toks = line.split()
+        if "vintner.recovery=1" in toks or "vintner.recovery_test=1" in toks:
+            if "vintner.test_slot=b" in toks:
+                return "recovery-b"
+            return "recovery-a" if "vintner.recovery_test=1" in toks else "recovery"
 
-        # Later boots (2 to 6)
-        later_ok = True
-        for b_num in range(2, 7):
-            b_info = boots.get(b_num)
-            if not b_info:
-                continue
-            if b_info["booted"] != "os-2":
-                later_ok = False
-                h1_evid.append(f"boot {b_num} booted {b_info['booted']}, expected os-2")
-            if "recovery" in b_info["booted"]:
-                h1_ok = False
-                h1_evid.append(f"boot {b_num} booted recovery: {b_info['booted']}")
+    if firmware == "bios":
+        # GRUB's last "vintner: trying <dir>" line; <dir> is the slot directory (firmware/bios/grub.cfg)
+        tries = re.findall(r"vintner: trying (\S+)", text)
+        if not tries:
+            return "unknown"
+        return GRUB_DIRS.get(tries[-1], f"grub={tries[-1]}")
 
-        if later_ok and len(boots) >= 2:
-            h1_evid.append(f"boots 2-{len(boots)} booted os-2")
-        elif not later_ok:
-            h1_ok = False
+    # UEFI (a): the report's LOADER_ENTRY_SELECTED
+    m = re.search(r"^LOADER_ENTRY_SELECTED:[ \t]*(.*?)[ \t]*$", text, re.M)
+    if m and m.group(1):
+        val = m.group(1)
+        stem = re.fullmatch(r"(.+?)(\+\d+(-\d+)?)?\.efi", val)
+        return LOADER_STEMS.get(stem.group(1) if stem else val, f"entry={val}")
 
-        emit(results_file, "H1", "G0", "PASS" if h1_ok else "FAIL", "; ".join(h1_evid))
+    # UEFI (b): exactly one ordinary generation whose UKI file name changed since the previous read
+    if prev is None or curr is None:
+        return "unknown"
+    def by_gen(read):
+        res = {}
+        for n in read["efi_files"]:
+            mm = UKI_RE.fullmatch(n)
+            if mm:
+                res.setdefault(int(mm.group(1)), []).append(n)
+        return {g: sorted(v) for g, v in res.items()}
+    p, c = by_gen(prev), by_gen(curr)
+    changed = [g for g in sorted(set(p) | set(c)) if p.get(g) != c.get(g)]
+    return f"os-{changed[0]}" if len(changed) == 1 else "unknown"
 
-    else:
-        # Broken cases B1 to B4
+def boot_labels(cs, firmware):
+    labels, prev = {}, cs.get("op")
+    for b in BOOTS:
+        bt = cs["boots"].get(b)
+        labels[b] = identify_booted(bt["log"], firmware, prev, bt["read"]) if present(bt) else "missing"
+        prev = bt.get("read") if bt else None
+    return labels
 
-        # H2: Boots 1 to 3 are generation 2. Its counter after each: UEFI +2-1, +1-2, +0-3; BIOS xx, x, 0
-        h2_ok = True
-        h2_evid = []
-        expected_counters = {
-            1: {"uefi": "vintner-os-2+2-1.efi", "bios": "xx"},
-            2: {"uefi": "vintner-os-2+1-2.efi", "bios": "x"},
-            3: {"uefi": "vintner-os-2+0-3.efi", "bios": "0"},
-        }
+def boot_read(cs, b):
+    bt = cs["boots"].get(b)
+    return bt["read"] if present(bt) else None
 
-        for b_num in (1, 2, 3):
-            b_info = boots.get(b_num)
-            if not b_info:
-                h2_ok = False
-                h2_evid.append(f"boot {b_num} missing")
-                continue
+def op_check(cs, firmware):
+    # What the operation boot must have left: gen 2 a fresh TRYING candidate, os-1 GOOD and armed.
+    op = cs.get("op")
+    if op is None:
+        return ["read missing"]
+    errs = []
+    for gen, want_state, uefi_name in ((2, "TRYING", "vintner-os-2+3-0.efi"), (1, "GOOD", "vintner-os-1+3-0.efi")):
+        s = state_of(op, gen)
+        if s != want_state:
+            errs.append(f"gen {gen} state={s}, expected {want_state}")
+        c = counter(op, firmware, gen)
+        if c != want_counter(firmware, uefi_name, "xxx"):
+            errs.append(fmt_counter(firmware, gen, c))
+    lg = (op["images"].get("1") or {}).get("last_good")
+    if parse_time(lg) is None:
+        errs.append(f"os-1 last_good={lg}, not a timestamp")
+    return errs
 
-            if b_info["booted"] != "os-2":
-                h2_ok = False
-                h2_evid.append(f"boot {b_num} booted {b_info['booted']}, expected os-2")
+def check_h1(case, cs, fw, labels):
+    ok = all(labels[b] == "os-2" for b in BOOTS)
+    ev = ["boots 1-6: " + ",".join(labels[b] for b in BOOTS)]
+    rd = boot_read(cs, 1)
+    if rd is None:
+        return False, ev + ["boot1 read missing"]
+    s, c = state_of(rd, 2), counter(rd, fw, 2)
+    ok &= s == "GOOD" and c == want_counter(fw, "vintner-os-2+3-0.efi", "xxx")
+    ev += [f"boot1 gen 2 state={s}", "boot1 " + fmt_counter(fw, 2, c)]
+    if fw == "bios":
+        absent, e = booted_absent(rd)
+        ok &= absent
+        ev.append("boot1 " + e)
+    return ok, ev
 
-            if firmware == "uefi":
-                exp_file = expected_counters[b_num]["uefi"]
-                if exp_file not in b_info["efi_files"]:
-                    h2_ok = False
-                    h2_evid.append(f"b{b_num} missing {exp_file}, files={b_info['efi_files']}")
-                else:
-                    h2_evid.append(f"b{b_num}=+{3-b_num}-{b_num}")
-            else:
-                exp_t = expected_counters[b_num]["bios"]
-                act_t = b_info["grubenv"].get("VINTNER_T_2")
-                if act_t != exp_t:
-                    h2_ok = False
-                    h2_evid.append(f"b{b_num} VINTNER_T_2={act_t}, expected {exp_t}")
-                else:
-                    h2_evid.append(f"b{b_num}={act_t}")
-
-        emit(results_file, "H2", case, "PASS" if h2_ok else "FAIL", "; ".join(h2_evid))
-
-        # H3: Boot 4 is generation 1 (os-1), not recovery A or B, and is blessed:
-        # os-1 GOOD with last_good later than before the case, UEFI vintner-os-1+3-0.efi,
-        # BIOS VINTNER_T_1=xxx and no VINTNER_BOOTED
-        h3_ok = True
-        h3_evid = []
-        b4 = boots.get(4)
-        if not b4:
-            h3_ok = False
-            h3_evid.append("boot 4 missing")
-        else:
-            if b4["booted"] != "os-1":
-                h3_ok = False
-                h3_evid.append(f"boot 4 booted {b4['booted']}, expected os-1")
-            else:
-                h3_evid.append("boot 4 booted os-1")
-
-            img1 = b4["manifest_images"].get("1")
-            if not img1 or img1.get("state") != "GOOD":
-                h3_ok = False
-                h3_evid.append(f"os-1 state={img1.get('state') if img1 else 'missing'}, expected GOOD")
-            else:
-                h3_evid.append("os-1 state=GOOD")
-
-            lg_after = img1.get("last_good", "") if img1 else ""
-            if not lg_after or lg_after <= initial_os1_last_good:
-                h3_ok = False
-                h3_evid.append(f"last_good after ({lg_after}) not later than before ({initial_os1_last_good})")
-            else:
-                h3_evid.append(f"last_good={lg_after} (updated)")
-
-            if firmware == "uefi":
-                if "vintner-os-1+3-0.efi" not in b4["efi_files"]:
-                    h3_ok = False
-                    h3_evid.append(f"vintner-os-1+3-0.efi missing in {b4['efi_files']}")
-                else:
-                    h3_evid.append("rearmed=+3-0")
-            else:
-                t1 = b4["grubenv"].get("VINTNER_T_1")
-                booted_var = b4["grubenv"].get("VINTNER_BOOTED")
-                if t1 != "xxx":
-                    h3_ok = False
-                    h3_evid.append(f"VINTNER_T_1={t1}, expected xxx")
-                if booted_var is not None:
-                    h3_ok = False
-                    h3_evid.append(f"VINTNER_BOOTED={booted_var}, expected unset")
-                if t1 == "xxx" and booted_var is None:
-                    h3_evid.append("rearmed=xxx; booted_unset=True")
-
-        emit(results_file, "H3", case, "PASS" if h3_ok else "FAIL", "; ".join(h3_evid))
-
-        # H4: After boot 4: generation 2 is FAILED in the manifest, its UEFI file is still
-        # vintner-os-2+0-3.efi and its BIOS counter still 0; vintner bless printed the transition on serial console
-        h4_ok = True
-        h4_evid = []
-        if not b4:
-            h4_ok = False
-            h4_evid.append("boot 4 missing")
-        else:
-            img2 = b4["manifest_images"].get("2")
-            if not img2 or img2.get("state") != "FAILED":
-                h4_ok = False
-                h4_evid.append(f"gen 2 state={img2.get('state') if img2 else 'missing'}, expected FAILED")
-            else:
-                h4_evid.append("gen 2 state=FAILED")
-
-            if firmware == "uefi":
-                if "vintner-os-2+0-3.efi" not in b4["efi_files"]:
-                    h4_ok = False
-                    h4_evid.append(f"vintner-os-2+0-3.efi missing in {b4['efi_files']}")
-                else:
-                    h4_evid.append("uefi_file=vintner-os-2+0-3.efi")
-            else:
-                t2 = b4["grubenv"].get("VINTNER_T_2")
-                if t2 != "0":
-                    h4_ok = False
-                    h4_evid.append(f"VINTNER_T_2={t2}, expected 0")
-                else:
-                    h4_evid.append("bios_t=0")
-
-            b4_log = read_log(b4["log_path"])
-            m_trans = re.search(r"generation 2: TRYING -> FAILED", b4_log)
-            if not m_trans:
-                h4_ok = False
-                h4_evid.append("transition 'generation 2: TRYING -> FAILED' not printed in b4 log")
-            else:
-                h4_evid.append("printed=generation 2: TRYING -> FAILED")
-
-        emit(results_file, "H4", case, "PASS" if h4_ok else "FAIL", "; ".join(h4_evid))
-
-        # H5: Boots 5 and 6 are os-1 again; generation 2 is never tried again (its counter and name do not change)
-        h5_ok = True
-        h5_evid = []
-        b5 = boots.get(5)
-        b6 = boots.get(6)
-        if not b5 or not b6:
-            h5_ok = False
-            h5_evid.append("boots 5 or 6 missing")
-        else:
-            if b5["booted"] != "os-1":
-                h5_ok = False
-                h5_evid.append(f"boot 5 booted {b5['booted']}, expected os-1")
-            else:
-                h5_evid.append("b5=os-1")
-
-            if b6["booted"] != "os-1":
-                h5_ok = False
-                h5_evid.append(f"boot 6 booted {b6['booted']}, expected os-1")
-            else:
-                h5_evid.append("b6=os-1")
-
-            if firmware == "uefi":
-                for b_chk, b_lbl in [(b5, "b5"), (b6, "b6")]:
-                    if "vintner-os-2+0-3.efi" not in b_chk["efi_files"]:
-                        h5_ok = False
-                        h5_evid.append(f"{b_lbl} gen 2 uefi file changed or missing: {b_chk['efi_files']}")
-                if h5_ok:
-                    h5_evid.append("gen2 uefi file remained vintner-os-2+0-3.efi")
-            else:
-                for b_chk, b_lbl in [(b5, "b5"), (b6, "b6")]:
-                    if b_chk["grubenv"].get("VINTNER_T_2") != "0":
-                        h5_ok = False
-                        h5_evid.append(f"{b_lbl} VINTNER_T_2={b_chk['grubenv'].get('VINTNER_T_2')}, expected 0")
-                if h5_ok:
-                    h5_evid.append("gen2 counter remained 0")
-
-        emit(results_file, "H5", case, "PASS" if h5_ok else "FAIL", "; ".join(h5_evid))
-
-        # H6: os-1's UKI and BIOS files have the hashes its record had before the case, at every read
-        h6_ok = True
-        h6_evid = []
-        for b_num in range(1, 7):
-            b_info = boots.get(b_num)
-            if not b_info:
-                continue
-            if firmware == "uefi":
-                curr_h = b_info.get("os1_uki_hash", "")
-                if not curr_h or curr_h != initial_os1_uki_hash:
-                    h6_ok = False
-                    h6_evid.append(f"b{b_num} os-1 uki hash mismatch: {curr_h} != {initial_os1_uki_hash}")
-            else:
-                curr_bh = b_info.get("os1_bios_hashes", {})
-                if curr_bh != initial_os1_bios_hashes:
-                    h6_ok = False
-                    h6_evid.append(f"b{b_num} os-1 bios hashes mismatch: {curr_bh} != {initial_os1_bios_hashes}")
-
-        if h6_ok:
-            if firmware == "uefi":
-                h6_evid.append(f"os-1 UKI intact across all boots (sha256={initial_os1_uki_hash[:16]}...)")
-            else:
-                h6_evid.append("os-1 BIOS files intact across all boots")
-
-        emit(results_file, "H6", case, "PASS" if h6_ok else "FAIL", "; ".join(h6_evid))
-
-        # H7: How boots 1 to 3 ended, and each case's serial evidence for why:
-        # B1 the panic line, B2 the failed vintner-test-health.service and boot-complete.target lines,
-        # B3 the last line before the kill, B4 the last line before each kill. OBSERVED
-        h7_ok = True
-        h7_evid = []
-        ends = []
-        for b_num in (1, 2, 3):
-            b_info = boots.get(b_num)
-            ends.append(f"B{b_num}: {b_info['how_ended'] if b_info else 'missing'}")
-        h7_evid.append("; ".join(ends))
-
-        # Serial evidence extraction
-        if case == "B1":
-            # Panic line in logs
-            panic_found = []
-            for b_num in (1, 2, 3):
-                b_info = boots.get(b_num)
-                if b_info:
-                    log_content = read_log(b_info["log_path"])
-                    m_p = re.search(r"(Kernel panic.*|sysrq.*triggered.*|SysRq : Trigger.*)", log_content, re.IGNORECASE)
-                    if m_p:
-                        panic_found.append(f"b{b_num}: {m_p.group(1).strip()}")
-            if panic_found:
-                h7_evid.append("; ".join(panic_found))
-            else:
-                h7_ok = False
-                h7_evid.append("missing panic line in logs")
-
-        elif case == "B2":
-            # Failed vintner-test-health.service and boot-complete.target
-            b2_details = []
-            for b_num in (1, 2, 3):
-                b_info = boots.get(b_num)
-                if b_info:
-                    log_content = read_log(b_info["log_path"])
-                    m_svc = re.search(r".*(Failed to start vintner-test-health\.service|vintner-test-health\.service.*failed).*", log_content)
-                    m_tgt = re.search(r".*(Dependency failed for boot-complete\.target|boot-complete\.target.*failed).*", log_content)
-                    parts = []
-                    if m_svc: parts.append(m_svc.group(0).strip())
-                    if m_tgt: parts.append(m_tgt.group(0).strip())
-                    if parts:
-                        b2_details.append(f"b{b_num}: {'; '.join(parts)}")
-                    else:
-                        h7_ok = False
-                        b2_details.append(f"b{b_num}: missing failure lines")
-            h7_evid.append("; ".join(b2_details))
-
-        elif case == "B3":
-            # Last line before 120s kill
-            b3_tails = []
-            for b_num in (1, 2, 3):
-                b_info = boots.get(b_num)
-                if b_info:
-                    b3_tails.append(f"b{b_num} last_line: {b_info['last_line']}")
-            h7_evid.append("; ".join(b3_tails))
-
-        elif case == "B4":
-            # Last line before each kill
-            b4_tails = []
-            for b_num in (1, 2, 3):
-                b_info = boots.get(b_num)
-                if b_info:
-                    b4_tails.append(f"b{b_num} last_line: {b_info['last_line']}")
-            h7_evid.append("; ".join(b4_tails))
-
-        emit(results_file, "H7", case, "OBSERVED" if h7_ok else "FAIL", "; ".join(h7_evid))
-
-# --- 5. evaluate-h8 ----------------------------------------------------------
-def cmd_evaluate_h8(args):
-    results_file = args.results_file
-    all_ok = True
-    evid_parts = []
-
-    for state_path in args.state_files:
-        if not os.path.exists(state_path):
+def check_h2(case, cs, fw, labels):
+    ok, ev = True, []
+    for b, uefi_name, bios_value in ((1, "vintner-os-2+2-1.efi", "xx"), (2, "vintner-os-2+1-2.efi", "x"),
+                                     (3, "vintner-os-2+0-3.efi", "0")):
+        rd = boot_read(cs, b)
+        if rd is None:
+            ok = False
+            ev.append(f"boot{b} missing")
             continue
-        with open(state_path, "r") as f:
-            case_state = json.load(f)
-        case_name = os.path.basename(state_path).replace("-state.json", "")
-        for b in case_state.get("boots", []):
-            if "recovery" in b.get("booted", ""):
-                all_ok = False
-                evid_parts.append(f"{case_name} b{b['boot_num']} booted recovery: {b['booted']}")
+        c = counter(rd, fw, 2)
+        ok &= labels[b] == "os-2" and c == want_counter(fw, uefi_name, bios_value)
+        ev.append(f"boot{b} {labels[b]} {fmt_counter(fw, 2, c)}")
+    return ok, ev
 
-    if all_ok:
-        evidence = "no boot ran recovery A or B across all cases"
-    else:
-        evidence = "; ".join(evid_parts)
+def check_h3(case, cs, fw, labels):
+    rd, op = boot_read(cs, 4), cs.get("op")
+    if rd is None or op is None:
+        return False, ["boot4 missing" if rd is None else "read after the operation boot missing"]
+    s, c = state_of(rd, 1), counter(rd, fw, 1)
+    before = (op["images"].get("1") or {}).get("last_good")
+    after = (rd["images"].get("1") or {}).get("last_good")
+    tb, ta = parse_time(before), parse_time(after)
+    try:
+        later = tb is not None and ta is not None and ta > tb
+    except TypeError:
+        later = False
+    ok = labels[4] == "os-1" and s == "GOOD" and later and c == want_counter(fw, "vintner-os-1+3-0.efi", "xxx")
+    ev = [f"boot4 {labels[4]}", f"os-1 state={s}", f"last_good before={before} after={after}", fmt_counter(fw, 1, c)]
+    if fw == "bios":
+        absent, e = booted_absent(rd)
+        ok &= absent
+        ev.append(e)
+    return ok, ev
 
-    emit(results_file, "H8", "all", "PASS" if all_ok else "FAIL", evidence)
+def check_h4(case, cs, fw, labels):
+    rd = boot_read(cs, 4)
+    if rd is None:
+        return False, ["boot4 missing"]
+    s, c = state_of(rd, 2), counter(rd, fw, 2)
+    m = re.search(r"^generation 2: TRYING -> FAILED$", clean_ansi(cs["boots"][4]["log"]), re.M)
+    ok = s == "FAILED" and c == want_counter(fw, "vintner-os-2+0-3.efi", "0") and m is not None
+    ev = [f"gen 2 state={s}", fmt_counter(fw, 2, c),
+          f"console line: {m.group(0)}" if m else "no console line equal to 'generation 2: TRYING -> FAILED' in boot4 log"]
+    return ok, ev
 
-def cmd_record_initial_state(args):
-    mf = load_manifest_via_vintner(args.vintner_bin, args.disk, args.bs_offset)
-    os1 = next((img for img in mf.get("images", []) if img["generation"] == 1), None)
-    if not os1:
-        sys.exit(f"record-initial-state: os-1 missing from manifest on {args.disk}")
+def check_h5(case, cs, fw, labels):
+    rd4 = boot_read(cs, 4)
+    if rd4 is None:
+        return False, ["boot4 missing"]
+    ok = True
+    ev = [f"boot4 gen 2 UKIs={uki_names(rd4, 2)} VINTNER_T_2={(rd4.get('grubenv') or {}).get('VINTNER_T_2')} state={state_of(rd4, 2)}"]
+    for b in (5, 6):
+        rd = boot_read(cs, b)
+        if rd is None:
+            ok = False
+            ev.append(f"boot{b} missing")
+            continue
+        same_names = uki_names(rd, 2) == uki_names(rd4, 2)
+        same_t = fw != "bios" or counter(rd, fw, 2) == counter(rd4, fw, 2)
+        same_rec = rd["images"].get("2") == rd4["images"].get("2")
+        ok &= labels[b] == "os-1" and same_names and same_t and same_rec and state_of(rd, 2) == "FAILED"
+        ev.append(f"boot{b} {labels[b]} gen 2 UKIs={uki_names(rd, 2)} VINTNER_T_2={(rd.get('grubenv') or {}).get('VINTNER_T_2')} "
+                  f"state={state_of(rd, 2)} record {'equal to' if same_rec else 'differs from'} boot4")
+    return ok, ev
 
-    os1_uki_hash = ""
-    os1_bios_hashes = {}
-    if args.firmware == "uefi":
-        raw_list = mdir(args.disk, args.bs_offset, "::/EFI/Linux")
-        for f in raw_list:
-            fname = os.path.basename(f)
-            if fname.startswith("vintner-os-1"):
-                content = mtype(args.disk, args.bs_offset, f"/EFI/Linux/{fname}")
-                if content:
-                    os1_uki_hash = sha256_bytes(content)
-                break
-    else:
-        for fname in ["vmlinuz", "initrd.img", "slot.cfg"]:
-            content = mtype(args.disk, args.bs_offset, f"/vintner/bios/os-1/{fname}")
-            if content:
-                os1_bios_hashes[fname] = sha256_bytes(content)
+def check_h6(case, cs, fw, labels):
+    pre = cs.get("pre")
+    rec = pre["images"].get("1") if pre else None
+    if not rec:
+        return False, ["os-1 record before the operation boot missing"]
+    if not rec.get(fw):
+        return False, [f"os-1 record has no {fw} half: {sorted(rec)}"]
+    expected = []  # (path or None for the UKI, label, sha256 from the record)
+    if rec.get("uefi"):
+        expected.append((None, "uefi.sha256", rec["uefi"].get("sha256")))
+    if rec.get("bios"):
+        for name, sha in sorted((rec["bios"].get("files") or {}).items()):
+            expected.append((f"{rec['bios'].get('dir')}/{name}", f"bios.files[{name}]", sha))
+    ok, bad = True, []
+    if rec.get("bios") and not rec["bios"].get("files"):
+        ok = False
+        bad.append(f"record bios.files={rec['bios'].get('files')}, empty")
+    for _, label, sha in expected:
+        if not re.fullmatch(r"[0-9a-f]{64}", sha or ""):
+            ok = False
+            bad.append(f"record {label}={sha}, not a SHA-256")
+    reads = [("op", cs.get("op"))] + [(f"boot{b}", boot_read(cs, b)) for b in BOOTS]
+    uki_seen = set()
+    for rname, rd in reads:
+        if rd is None:
+            ok = False
+            bad.append(f"{rname}: read missing")
+            continue
+        ukis = uki_names(rd, 1)
+        for path, label, sha in expected:
+            if path is None:
+                if len(ukis) != 1:
+                    ok = False
+                    bad.append(f"{rname}: os-1 UKIs={ukis}, expected exactly one")
+                    continue
+                path = f"/EFI/Linux/{ukis[0]}"
+                uki_seen.add(ukis[0])
+            got = rd["os1_hashes"].get(path)
+            if got != sha:
+                ok = False
+                bad.append(f"{rname}: {path} sha256={got}, record {label}={sha}")
+    ev = [f"record {label}={sha}" for _, label, sha in expected]
+    if uki_seen:
+        ev.append(f"os-1 UKI names read: {sorted(uki_seen)}")
+    ev.append(f"reads compared: {','.join(r for r, _ in reads)}")
+    return ok, ev + bad
 
-    initial = {
-        "os1_last_good": os1.get("last_good", ""),
-        "os1_uki_hash": os1_uki_hash,
-        "os1_bios_hashes": os1_bios_hashes,
-    }
-    with open(args.out_file, "w") as f:
-        json.dump(initial, f, indent=2)
-    print(f"[{args.case}] Recorded initial state: last_good={initial['os1_last_good']}")
+def check_h7(case, cs, fw, labels):
+    ok, ends, detail = True, [], []
+    for b in (1, 2, 3):
+        bt = cs["boots"].get(b)
+        if not present(bt):
+            ok = False
+            ends.append(f"boot{b}: missing")
+            continue
+        how = bt["meta"].get("how_ended")
+        ends.append(f"boot{b}: {how}")
+        text = clean_ansi(bt["log"])
+        lines = [l.strip() for l in text.splitlines() if l.strip()]
+        if not how or not lines:
+            ok = False
+            detail.append(f"boot{b}: {'no how_ended in meta' if not how else 'empty log'}")
+            continue
+        if case == "B1":
+            m = re.search(r"^.*Kernel panic - not syncing: .*$", text, re.M)
+            ok &= m is not None
+            detail.append(f"boot{b}: {m.group(0).strip()}" if m else f"boot{b}: no panic line")
+        elif case == "B2":
+            for pat in (r"^.*Failed to start vintner-test-health\.service( - .*)?\.$",
+                        r"^.*Dependency failed for boot-complete\.target( - .*)?\.$"):
+                m = re.search(pat, text, re.M)
+                ok &= m is not None
+                detail.append(f"boot{b}: {m.group(0).strip()}" if m else f"boot{b}: no line matching {pat}")
+        else:
+            detail.append(f"boot{b} last line: {lines[-1]}")
+            if case == "B4" and how != B4_KILLED:
+                ok = False
+    return ok, ends + detail
+
+def check_h8(state, all_labels):
+    ok, ev = True, []
+    for case in CASES:
+        labels = [all_labels[case][b] for b in BOOTS]
+        ok &= labels == EXPECTED_LABELS[case]
+        ev.append(f"{case} {','.join(labels)}")
+    return ("H8", "all", "PASS" if ok else "FAIL", "; ".join(ev))
+
+def evaluate(state):
+    fw = state["firmware"]
+    rows, all_labels = [], {}
+    for case in CASES:
+        cs = state["cases"].get(case) or {"boots": {}}
+        all_labels[case] = labels = boot_labels(cs, fw)
+        op_errs = op_check(cs, fw)
+        checks = [("H1", check_h1)] if case == "G0" else \
+            [("H2", check_h2), ("H3", check_h3), ("H4", check_h4), ("H5", check_h5), ("H6", check_h6), ("H7", check_h7)]
+        for cid, fn in checks:
+            ok, ev = fn(case, cs, fw, labels)
+            if op_errs:
+                ok = False
+                ev = ["after the operation boot: " + ", ".join(op_errs)] + ev
+            status = ("OBSERVED" if cid == "H7" else "PASS") if ok else "FAIL"
+            rows.append((cid, case, status, "; ".join(ev)))
+    rows.append(check_h8(state, all_labels))
+    return rows
+
+def load_state(out_dir, firmware):
+    def load_json(p):
+        if not os.path.isfile(p):
+            return None
+        with open(p) as f:
+            return json.load(f)
+    def load_text(p):
+        return open(p, errors="replace").read() if os.path.isfile(p) else None
+    return {"firmware": firmware, "cases": {c: {
+        "pre": load_json(f"{out_dir}/{c}-read-pre.json"),
+        "op": load_json(f"{out_dir}/{c}-read-op.json"),
+        "boots": {b: {"read": load_json(f"{out_dir}/{c}-read-boot{b}.json"),
+                      "meta": load_json(f"{out_dir}/{c}-boot{b}-meta.json"),
+                      "log": load_text(f"{out_dir}/{c}-boot{b}.log")} for b in BOOTS},
+    } for c in CASES}}
+
+def cmd_evaluate(args):
+    for row in evaluate(load_state(args.out_dir, args.firmware)):
+        emit(args.results_file, *row)
 
 # --- Main CLI ----------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Candidate fallback integration test inspector")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
-    # verify-prep
     p_prep = subparsers.add_parser("verify-prep")
     p_prep.add_argument("--disk", required=True)
     p_prep.add_argument("--bs-offset", type=int, required=True)
     p_prep.add_argument("--vintner-bin", required=True)
     p_prep.set_defaults(func=cmd_verify_prep)
 
-    # record-initial-state
-    p_init = subparsers.add_parser("record-initial-state")
-    p_init.add_argument("--firmware", choices=["uefi", "bios"], required=True)
-    p_init.add_argument("--case", required=True)
-    p_init.add_argument("--disk", required=True)
-    p_init.add_argument("--bs-offset", type=int, required=True)
-    p_init.add_argument("--vintner-bin", required=True)
-    p_init.add_argument("--out-file", required=True)
-    p_init.set_defaults(func=cmd_record_initial_state)
-
-    # run-boot
     p_run = subparsers.add_parser("run-boot")
     p_run.add_argument("--firmware", choices=["uefi", "bios"], required=True)
     p_run.add_argument("--disk", required=True)
@@ -773,36 +572,22 @@ def main():
     p_run.add_argument("--code-fd", default="")
     p_run.add_argument("--timeout", type=int, default=120)
     p_run.add_argument("--kill-on-cmdline", action="store_true")
-    p_run.add_argument("--meta-out", default="")
+    p_run.add_argument("--meta-out", required=True)
     p_run.set_defaults(func=cmd_run_boot)
 
-    # record-boot-state
-    p_rec = subparsers.add_parser("record-boot-state")
-    p_rec.add_argument("--firmware", choices=["uefi", "bios"], required=True)
-    p_rec.add_argument("--case", required=True)
-    p_rec.add_argument("--boot-num", type=int, required=True)
-    p_rec.add_argument("--disk", required=True)
-    p_rec.add_argument("--bs-offset", type=int, required=True)
-    p_rec.add_argument("--vintner-bin", required=True)
-    p_rec.add_argument("--boot-log", required=True)
-    p_rec.add_argument("--meta-json", default="")
-    p_rec.add_argument("--state-file", required=True)
-    p_rec.set_defaults(func=cmd_record_boot_state)
+    p_read = subparsers.add_parser("read")
+    p_read.add_argument("--disk", required=True)
+    p_read.add_argument("--bs-offset", type=int, required=True)
+    p_read.add_argument("--vintner-bin", required=True)
+    p_read.add_argument("--root", required=True, help="trixie root unpacked by vintner-base.sh, for grub-editenv")
+    p_read.add_argument("--out-prefix", required=True)
+    p_read.set_defaults(func=cmd_read)
 
-    # evaluate-case
-    p_eval = subparsers.add_parser("evaluate-case")
+    p_eval = subparsers.add_parser("evaluate")
     p_eval.add_argument("--firmware", choices=["uefi", "bios"], required=True)
-    p_eval.add_argument("--case", required=True)
-    p_eval.add_argument("--state-file", required=True)
-    p_eval.add_argument("--initial-state", required=True)
+    p_eval.add_argument("--out-dir", required=True)
     p_eval.add_argument("--results-file", required=True)
-    p_eval.set_defaults(func=cmd_evaluate_case)
-
-    # evaluate-h8
-    p_h8 = subparsers.add_parser("evaluate-h8")
-    p_h8.add_argument("--results-file", required=True)
-    p_h8.add_argument("state_files", nargs="+")
-    p_h8.set_defaults(func=cmd_evaluate_h8)
+    p_eval.set_defaults(func=cmd_evaluate)
 
     args = parser.parse_args()
     args.func(args)

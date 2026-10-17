@@ -58,6 +58,17 @@ trap cleanup EXIT
 . ci/lib/vintner-qemu.sh
 
 VINTNER_BIN="$OUT/vintner"
+
+# read_disk <disk> <name>: one host read of boot storage (§3), saved as $OUT/<name>.json and listings.
+read_disk() {
+	python3 ci/candidate-fallback/inspector.py read \
+		--disk "$1" \
+		--bs-offset "$BS_OFFSET" \
+		--vintner-bin "$VINTNER_BIN" \
+		--root "$ROOT" \
+		--out-prefix "$OUT/$2"
+}
+
 if [ ! -f "$VINTNER_BIN" ]; then
 	echo "Building static vintner binary on host..."
 	(cd src && CGO_ENABLED=0 go build -o "../$VINTNER_BIN" ./cmd/vintner)
@@ -152,10 +163,17 @@ for CASE in "${CASES[@]}"; do
 		cp "$PREPARED_VARS" "$CASE_VARS"
 	fi
 
+	# Nothing from an earlier run may stand in for this run's evidence
+	rm -f "$OUT/${CASE}"-read-* "$OUT/${CASE}"-boot*-meta.json "$OUT/${CASE}"-boot*.log
+
+	# os-1's record before the operation boot is the H6 baseline
+	read_disk "$CASE_DISK" "${CASE}-read-pre"
+
 	# Determine guest operation script for this case (§2)
 	case "$CASE" in
 		G0)
 			OP_SCRIPT=$(cat <<'EOF'
+set -e
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-test
 # harmless control file
 SH
@@ -166,6 +184,7 @@ EOF
 			;;
 		B1)
 			OP_SCRIPT=$(cat <<'EOF'
+set -e
 cat <<'SH' > /etc/initramfs-tools/scripts/init-top/break-test
 #!/bin/sh
 PREREQ=""
@@ -181,6 +200,7 @@ EOF
 			;;
 		B2)
 			OP_SCRIPT=$(cat <<'EOF'
+set -e
 cat <<'SH' > /etc/systemd/system/vintner-test-health.service
 [Unit]
 ConditionPathExists=/run/vintner-test-break
@@ -202,9 +222,6 @@ PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case $1 in prereqs) prereqs; exit 0;; esac
 : > /run/vintner-test-break
-if [ -d "${rootmnt:-}/run" ]; then
-  : > "${rootmnt}/run/vintner-test-break"
-fi
 SH
 chmod +x /etc/initramfs-tools/scripts/init-bottom/break-test
 update-initramfs -u -k "$(uname -r)"
@@ -214,6 +231,7 @@ EOF
 			;;
 		B3)
 			OP_SCRIPT=$(cat <<'EOF'
+set -e
 cat <<'SH' > /etc/initramfs-tools/scripts/init-top/break-test
 #!/bin/sh
 PREREQ=""
@@ -231,6 +249,7 @@ EOF
 			;;
 		B4)
 			OP_SCRIPT=$(cat <<'EOF'
+set -e
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-test
 # harmless control file
 SH
@@ -251,18 +270,9 @@ EOF
 		exit 1
 	fi
 
-	# Record initial state after candidate published
-	INITIAL_JSON="$OUT/${CASE}-initial.json"
-	python3 ci/candidate-fallback/inspector.py record-initial-state \
-		--firmware "$FIRMWARE" \
-		--case "$CASE" \
-		--disk "$CASE_DISK" \
-		--bs-offset "$BS_OFFSET" \
-		--vintner-bin "$VINTNER_BIN" \
-		--out-file "$INITIAL_JSON"
-
-	STATE_JSON="$OUT/${CASE}-state.json"
-	rm -f "$STATE_JSON"
+	# Read after the operation boot: the evaluator checks gen 2 TRYING and os-1 GOOD here,
+	# and it is the previous read for identifying boot 1
+	read_disk "$CASE_DISK" "${CASE}-read-op"
 
 	# Boot 1 to 6
 	for B in 1 2 3 4 5 6; do
@@ -294,46 +304,39 @@ EOF
 			"${KILL_FLAG[@]}" \
 			--meta-out "$META_JSON"
 
-		python3 ci/candidate-fallback/inspector.py record-boot-state \
-			--firmware "$FIRMWARE" \
-			--case "$CASE" \
-			--boot-num "$B" \
-			--disk "$CASE_DISK" \
-			--bs-offset "$BS_OFFSET" \
-			--vintner-bin "$VINTNER_BIN" \
-			--boot-log "$BOOT_LOG" \
-			--meta-json "$META_JSON" \
-			--state-file "$STATE_JSON"
+		read_disk "$CASE_DISK" "${CASE}-read-boot${B}"
 	done
-
-	# Evaluate checks for this case
-	python3 ci/candidate-fallback/inspector.py evaluate-case \
-		--firmware "$FIRMWARE" \
-		--case "$CASE" \
-		--state-file "$STATE_JSON" \
-		--initial-state "$INITIAL_JSON" \
-		--results-file "$RESULTS"
 done
 
-# Evaluate H8 across all cases
-STATE_FILES=()
-for CASE in "${CASES[@]}"; do
-	STATE_FILES+=("$OUT/${CASE}-state.json")
-done
-
-python3 ci/candidate-fallback/inspector.py evaluate-h8 \
-	--results-file "$RESULTS" \
-	"${STATE_FILES[@]}"
+python3 ci/candidate-fallback/inspector.py evaluate \
+	--firmware "$FIRMWARE" \
+	--out-dir "$OUT" \
+	--results-file "$RESULTS"
 
 echo "=================================================================="
 echo "=== Test Results ($FIRMWARE) ==="
 echo "=================================================================="
 cat "$RESULTS"
 
-# Fail if any non-OBSERVED check failed or missing
-if grep -q -E $'\tFAIL\t' "$RESULTS"; then
-	echo "FAIL: One or more checks failed" >&2
+echo "=== versions.txt ==="
+cat "$VERSIONS"
+
+# Every expected row must be present with its status: a check that never ran is a FAIL.
+EXPECTED="H1:G0:PASS H8:all:PASS"
+for c in B1 B2 B3 B4; do
+	for h in H2 H3 H4 H5 H6; do
+		EXPECTED="$EXPECTED $h:$c:PASS"
+	done
+	EXPECTED="$EXPECTED H7:$c:OBSERVED"
+done
+BAD=$(awk -F'\t' 'NR > 1 && $3 != "PASS" && $3 != "OBSERVED" {print $1 ":" $2 ":" $3}' "$RESULTS" | paste -sd ' ')
+MISSING=""
+for row in $EXPECTED; do
+	awk -F'\t' -v r="$row" '($1 ":" $2 ":" $3) == r {f = 1} END {exit !f}' "$RESULTS" || MISSING="$MISSING $row"
+done
+if [ -n "$BAD" ] || [ -n "$MISSING" ]; then
+	echo "ERROR: Candidate fallback test failed on checks: ${BAD:-none}; missing or not as expected:${MISSING:- none}" >&2
 	exit 1
 fi
 
-echo "All checks passed successfully."
+echo "All $FIRMWARE candidate fallback checks passed successfully."
