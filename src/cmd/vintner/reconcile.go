@@ -4,7 +4,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -27,11 +26,7 @@ func cmdReconcile(args []string) {
 		lockPath := publish.DefaultLockPath(*bootStorage)
 		lock, err := publish.AcquireLock(lockPath)
 		if err != nil {
-			if errors.Is(err, publish.ErrLocked) {
-				fmt.Fprintln(os.Stderr, "vintner reconcile: another vintner process is running")
-			} else {
-				fmt.Fprintf(os.Stderr, "vintner reconcile: %v\n", err)
-			}
+			fmt.Fprintf(os.Stderr, "vintner reconcile: %v\n", err)
 			osExit(1)
 			return
 		}

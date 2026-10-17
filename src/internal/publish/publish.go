@@ -181,10 +181,11 @@ func readSection(sec *pe.Section) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SizeOfRawData is file-aligned; VirtualSize is the content's length.
 	if sec.VirtualSize > 0 && sec.VirtualSize < uint32(len(data)) {
 		data = data[:sec.VirtualSize]
 	}
-	return bytes.TrimRight(data, "\x00"), nil
+	return data, nil
 }
 
 func ukiSectionSHA256(ukiPath, sectionName string) (string, error) {
@@ -337,9 +338,6 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	}
 	lock, err := AcquireLock(lockPath)
 	if err != nil {
-		if errors.Is(err, ErrLocked) {
-			return nil, ErrLocked
-		}
 		return nil, fmt.Errorf("acquire lock %s: %w", lockPath, err)
 	}
 	defer lock.Close()
@@ -409,8 +407,11 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 	if len(actions) > 0 || len(reports) > 0 {
-		if err := m.Validate(); err == nil {
-			_ = manifest.Save(stateDir, m)
+		if err := m.Validate(); err != nil {
+			return nil, fmt.Errorf("manifest after reconcile: %w", err)
+		}
+		if err := manifest.Save(stateDir, m); err != nil {
+			return nil, fmt.Errorf("save manifest after reconcile: %w", err)
 		}
 	}
 
@@ -558,6 +559,17 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	}
 	defer os.RemoveAll(buildDir)
 
+	// Snapshot the inputs: /boot can change under a running publish (update-initramfs
+	// replaces the initramfs without our lock), and every format must carry the same bytes.
+	srcVmlinuz := filepath.Join(buildDir, "vmlinuz")
+	srcInitrd := filepath.Join(buildDir, "initrd.img")
+	if err := copyFile(vmlinuzPath, srcVmlinuz); err != nil {
+		return nil, fmt.Errorf("copy kernel to build dir: %w", err)
+	}
+	if err := copyFile(initrdPath, srcInitrd); err != nil {
+		return nil, fmt.Errorf("copy initramfs to build dir: %w", err)
+	}
+
 	var ukiBuiltPath string
 	var ukiSHA string
 	var ukiSize int
@@ -576,8 +588,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 		ukiBuiltPath = filepath.Join(buildDir, fmt.Sprintf("vintner-os-%d.efi", g))
 		err = ukiBuilder.Build(ctx, UKIRequest{
-			LinuxPath:     vmlinuzPath,
-			InitrdPath:    initrdPath,
+			LinuxPath:     srcVmlinuz,
+			InitrdPath:    srcInitrd,
 			StubPath:      stubPath,
 			OSReleasePath: osReleaseTmp,
 			Cmdline:       baseCmdline,
@@ -610,11 +622,11 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("write slot.cfg: %w", err)
 		}
 
-		vmlinuzSHA, err = fileSHA256(vmlinuzPath)
+		vmlinuzSHA, err = fileSHA256(srcVmlinuz)
 		if err != nil {
 			return nil, fmt.Errorf("hash vmlinuz: %w", err)
 		}
-		initrdSHA, err = fileSHA256(initrdPath)
+		initrdSHA, err = fileSHA256(srcInitrd)
 		if err != nil {
 			return nil, fmt.Errorf("hash initrd: %w", err)
 		}
@@ -623,8 +635,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("hash slot.cfg: %w", err)
 		}
 
-		fiV, _ := os.Stat(vmlinuzPath)
-		fiI, _ := os.Stat(initrdPath)
+		fiV, _ := os.Stat(srcVmlinuz)
+		fiI, _ := os.Stat(srcInitrd)
 		fiS, _ := os.Stat(slotCfgBuiltPath)
 		if fiV != nil {
 			biosSize += fiV.Size()
@@ -685,11 +697,6 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
-	manifestAPath := filepath.Join(stateDir, "manifest-a")
-	manifestBPath := filepath.Join(stateDir, "manifest-b")
-	preManifestA, _ := os.ReadFile(manifestAPath)
-	preManifestB, _ := os.ReadFile(manifestBPath)
-
 	m.Images = append(m.Images, newImg)
 	m.NextGeneration = g + 1
 
@@ -723,18 +730,17 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 		_ = syncDir(stagingDir)
 
-		// Restore pre-publish manifest files to leave boot storage byte-identical
-		if preManifestA != nil {
-			_ = os.WriteFile(manifestAPath, preManifestA, 0644)
-		} else {
-			_ = os.Remove(manifestAPath)
+		// Remove the STAGED record with an ordinary Save. next_generation stays
+		// advanced, so generation g is never reused.
+		for i := range m.Images {
+			if m.Images[i].Generation == g {
+				m.Images = append(m.Images[:i], m.Images[i+1:]...)
+				break
+			}
 		}
-		if preManifestB != nil {
-			_ = os.WriteFile(manifestBPath, preManifestB, 0644)
-		} else {
-			_ = os.Remove(manifestBPath)
+		if err := manifest.Save(stateDir, m); err != nil {
+			return fmt.Errorf("staging verification failed: %v; removing the record: %w", reason, err)
 		}
-		_ = syncDir(stateDir)
 		return fmt.Errorf("staging verification failed: %w", reason)
 	}
 
@@ -750,10 +756,10 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		if err := os.MkdirAll(stagedSlotDir, 0755); err != nil {
 			return nil, cleanupStagingAndRefuse(err)
 		}
-		if err := copyFile(vmlinuzPath, filepath.Join(stagedSlotDir, "vmlinuz")); err != nil {
+		if err := copyFile(srcVmlinuz, filepath.Join(stagedSlotDir, "vmlinuz")); err != nil {
 			return nil, cleanupStagingAndRefuse(err)
 		}
-		if err := copyFile(initrdPath, filepath.Join(stagedSlotDir, "initrd.img")); err != nil {
+		if err := copyFile(srcInitrd, filepath.Join(stagedSlotDir, "initrd.img")); err != nil {
 			return nil, cleanupStagingAndRefuse(err)
 		}
 		if err := copyFile(slotCfgBuiltPath, filepath.Join(stagedSlotDir, "slot.cfg")); err != nil {
@@ -909,19 +915,21 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 		// 2. on BIOS, remove from VINTNER_ORDER and unset counter in one grubenv write
 		if isBIOS {
 			env, err := grubenv.Read(grubenvPath)
-			if err == nil {
-				order, _ := env.Get("VINTNER_ORDER")
-				fields := strings.Fields(order)
-				var newFields []string
-				remStr := strconv.Itoa(remGen)
-				for _, f := range fields {
-					if f != remStr {
-						newFields = append(newFields, f)
-					}
+			if err != nil {
+				return nil, fmt.Errorf("gc generation %d: read grubenv: %w", remGen, err)
+			}
+			order, _ := env.Get("VINTNER_ORDER")
+			var newFields []string
+			remStr := strconv.Itoa(remGen)
+			for _, f := range strings.Fields(order) {
+				if f != remStr {
+					newFields = append(newFields, f)
 				}
-				env.Set("VINTNER_ORDER", strings.Join(newFields, " "))
-				env.Unset(fmt.Sprintf("VINTNER_T_%d", remGen))
-				_ = grubenv.Write(grubenvPath, env)
+			}
+			env.Set("VINTNER_ORDER", strings.Join(newFields, " "))
+			env.Unset(fmt.Sprintf("VINTNER_T_%d", remGen))
+			if err := grubenv.Write(grubenvPath, env); err != nil {
+				return nil, fmt.Errorf("gc generation %d: write grubenv: %w", remGen, err)
 			}
 		}
 

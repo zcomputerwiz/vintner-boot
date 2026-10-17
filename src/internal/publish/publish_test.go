@@ -543,7 +543,7 @@ func TestPublishRefusals(t *testing.T) {
 			KernelABI:        "test",
 			BootStorageDir:   bootStorageDir,
 			RootDir:          rootDir,
-			LockFile:         filepath.Join(bootStorageDir, "publish.lock"),
+			LockFile:         filepath.Join(rootDir, "run", "publish.lock"),
 			CmdlineContent:   m.Images[0].Cmdline,
 			PackageQuery:     mockPackageQuery{pkg: "p", ver: "1"},
 			UKIBuilder:       badBuilder,
@@ -553,11 +553,31 @@ func TestPublishRefusals(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected refusal on verification mismatch")
 		}
+		// The STAGED record was saved before staging, so the refusal removes it with
+		// another Save: only the manifest copies change, and the generation is spent.
 		afterSnap := snapshotDir(t, bootStorageDir)
-		for k, v := range beforeSnap {
-			if afterSnap[k] != v {
-				t.Errorf("boot storage modified at %s", k)
+		for k, v := range afterSnap {
+			if strings.HasPrefix(k, "vintner/state/") {
+				continue
 			}
+			if beforeSnap[k] != v {
+				t.Errorf("boot storage file added or changed: %s", k)
+			}
+		}
+		for k := range beforeSnap {
+			if _, ok := afterSnap[k]; !ok && !strings.HasPrefix(k, "vintner/state/") {
+				t.Errorf("boot storage file removed: %s", k)
+			}
+		}
+		got, err := manifest.Load(filepath.Join(bootStorageDir, "vintner", "state"))
+		if err != nil {
+			t.Fatalf("manifest after refusal: %v", err)
+		}
+		if len(got.Images) != len(m.Images) || got.Images[0].Generation != m.Images[0].Generation {
+			t.Errorf("images after refusal = %+v, want only generation %d", got.Images, m.Images[0].Generation)
+		}
+		if got.NextGeneration != m.NextGeneration+1 {
+			t.Errorf("next_generation = %d, want %d", got.NextGeneration, m.NextGeneration+1)
 		}
 	})
 }

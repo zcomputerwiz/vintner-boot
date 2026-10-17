@@ -15,7 +15,7 @@ type FileLock struct {
 	file *os.File
 }
 
-// AcquireLock creates parent directories and acquires an exclusive flock on lockPath.
+// AcquireLock creates parent directories and waits for an exclusive flock on lockPath.
 func AcquireLock(lockPath string) (*FileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
 		return nil, err
@@ -24,11 +24,14 @@ func AcquireLock(lockPath string) (*FileLock, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
-			return nil, ErrLocked
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+		if !errors.Is(err, syscall.EINTR) {
+			break
 		}
+	}
+	if err != nil {
+		_ = f.Close()
 		return nil, err
 	}
 	return &FileLock{file: f}, nil

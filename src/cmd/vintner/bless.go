@@ -30,11 +30,7 @@ func cmdBless(args []string) {
 	lockPath := publish.DefaultLockPath(*bootStorage)
 	lock, err := publish.AcquireLock(lockPath)
 	if err != nil {
-		if errors.Is(err, publish.ErrLocked) {
-			fmt.Fprintln(os.Stderr, "vintner bless: another vintner process is running")
-		} else {
-			fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
-		}
+		fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
 		osExit(1)
 		return
 	}

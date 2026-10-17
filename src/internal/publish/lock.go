@@ -3,13 +3,9 @@
 package publish
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 )
-
-// ErrLocked is returned when the lock is already held by another vintner process.
-var ErrLocked = errors.New("another vintner process is running")
 
 // DefaultLockPath returns the path to the publish lock file.
 // On live systems, this is /run/vintner/publish.lock.
