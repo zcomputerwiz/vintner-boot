@@ -60,6 +60,15 @@ trap cleanup EXIT
 # shellcheck source=ci/lib/vintner-qemu.sh
 . ci/lib/vintner-qemu.sh
 
+# record_boot <case> <boot> <log> [op]: lists the boot for E9; "op" marks a case
+# operation boot, which E9 also requires to report "=== OP EXIT: 0 ===".
+record_boot() {
+	local booted
+	booted=$(python3 ci/publish/inspector.py get-booted --log "$3" --firmware "$FIRMWARE")
+	printf '%s(B%s)\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >> "$BOOTS_SUMMARY"
+	echo "[$1] Boot $2 finished: booted $booted"
+}
+
 VINTNER_BIN="$OUT/vintner"
 if [ ! -f "$VINTNER_BIN" ]; then
 	echo "Building static vintner binary on host..."
@@ -81,9 +90,10 @@ fi
 
 # 2a. Install systemd-ukify and systemd-boot-efi in guest via apt-get
 echo "Booting preparation step 1: install systemd-ukify and systemd-boot-efi..."
-PREP_INSTALL_CMD="DEBIAN_FRONTEND=noninteractive apt-get -y install systemd-ukify systemd-boot-efi && apt-mark hold linux-image-cloud-amd64 linux-image-6.12.111+deb13-cloud-amd64"
+PREP_INSTALL_CMD="DEBIAN_FRONTEND=noninteractive apt-get -y install systemd-ukify systemd-boot-efi && apt-mark hold linux-image-cloud-amd64 linux-image-$KERNEL_ABI"
 PREP_INSTALL_SEED=$(make_seed "prep-install" "$PREP_INSTALL_CMD")
 run_qemu "$PREP_RAW" "$PREP_INSTALL_SEED" "$OUT/prep-install.log" 600 "$PREP_VARS"
+record_boot "prep" 1 "$OUT/prep-install.log"
 
 if ! grep -q "=== OP EXIT: 0 ===" "$OUT/prep-install.log"; then
 	echo "ERROR: Preparation package install failed:" >&2
@@ -117,6 +127,7 @@ LOOP=""
 echo "Booting preparation step 2: boot once to bless os-1..."
 PREP_BLESS_SEED=$(make_seed "prep-bless" "true")
 run_qemu "$PREP_RAW" "$PREP_BLESS_SEED" "$OUT/prep-bless.log" 180 "$PREP_VARS"
+record_boot "prep" 2 "$OUT/prep-bless.log"
 
 # 2d. Check that prepared disk has exactly one image, os-1, GOOD, and nothing under /vintner/staging/
 python3 ci/publish/inspector.py verify-prep \
@@ -133,17 +144,6 @@ if [ "$FIRMWARE" = "uefi" ]; then
 fi
 
 printf "ID\tCase\tStatus\tEvidence\n" > "$RESULTS"
-
-# Helper to log boot image
-record_boot() {
-	local case_name="$1"
-	local boot_num="$2"
-	local log_path="$3"
-	local booted
-	booted=$(python3 ci/publish/inspector.py get-booted --log "$log_path" --firmware "$FIRMWARE")
-	echo "$case_name(B$boot_num:$booted)" >> "$BOOTS_SUMMARY"
-	echo "[$case_name] Boot $boot_num finished: booted $booted"
-}
 
 # --- 3. Cases Execution -----------------------------------------------------
 
@@ -196,7 +196,7 @@ EOF
 K1_SEED1=$(make_seed "K1-b1" "$K1_CMD")
 echo "Booting K1 Boot 1..."
 run_qemu "$K1_DISK" "$K1_SEED1" "$OUT/K1-boot1.log" 600 "$K1_VARS"
-record_boot "K1" 1 "$OUT/K1-boot1.log"
+record_boot "K1" 1 "$OUT/K1-boot1.log" op
 
 K1_B1_DISK="$OUT/K1-b1.raw"
 cp --sparse=always "$K1_DISK" "$K1_B1_DISK"
@@ -243,7 +243,7 @@ K2_CMD='echo "COMPRESS=gzip" >> /etc/initramfs-tools/conf.d/vintner-test && upda
 K2_SEED1=$(make_seed "K2-b1" "$K2_CMD")
 echo "Booting K2 Boot 1..."
 run_qemu "$K2_DISK" "$K2_SEED1" "$OUT/K2-boot1.log" 300 "$K2_VARS"
-record_boot "K2" 1 "$OUT/K2-boot1.log"
+record_boot "K2" 1 "$OUT/K2-boot1.log" op
 
 K2_B1_DISK="$OUT/K2-b1.raw"
 cp --sparse=always "$K2_DISK" "$K2_B1_DISK"
@@ -285,17 +285,21 @@ cp --sparse=always "$PREPARED_RAW" "$K3_DISK"
 [ "$FIRMWARE" = "uefi" ] && { K3_VARS="$OUT/K3-vars.fd"; cp "$PREPARED_VARS" "$K3_VARS"; }
 
 K3_CMD=$(cat <<'EOF'
+set -e
 echo "# k3 change 1" >> /etc/initramfs-tools/conf.d/vintner-test
 update-initramfs -u -k "$(uname -r)"
 echo "# k3 change 2" >> /etc/initramfs-tools/conf.d/vintner-test
 update-initramfs -u -k "$(uname -r)"
-vintner publish --kernel "$(uname -r)" 2>&1 | tee /dev/ttyS0
+PUB_RC=0
+vintner publish --kernel "$(uname -r)" > /tmp/pub.out || PUB_RC=$?
+{ echo "=== PUBLISH-BEGIN ==="; cat /tmp/pub.out; echo "=== PUBLISH-END ==="; echo "PUBLISH_EXIT=$PUB_RC"; } > /dev/ttyS0
+exit "$PUB_RC"
 EOF
 )
 K3_SEED1=$(make_seed "K3-b1" "$K3_CMD")
 echo "Booting K3 Boot 1..."
 run_qemu "$K3_DISK" "$K3_SEED1" "$OUT/K3-boot1.log" 300 "$K3_VARS"
-record_boot "K3" 1 "$OUT/K3-boot1.log"
+record_boot "K3" 1 "$OUT/K3-boot1.log" op
 
 K3_SEED2=$(make_seed "K3-b2" "true")
 echo "Booting K3 Boot 2..."
@@ -326,18 +330,18 @@ cp --sparse=always "$PREPARED_RAW" "$U1_DISK"
 U1_CMD=$(cat <<'EOF'
 systemctl is-active --quiet vintner-bless.service || systemctl start vintner-bless.service
 mkdir -p /tmp/bs
-BS_DEV=$(blkid -t LABEL=BOOTSTORAGE -o device || blkid -t TYPE=vfat -o device | head -n 1)
-mount -t vfat "$BS_DEV" /tmp/bs
-find /tmp/bs -type f -exec sha256sum {} + | sort > /tmp/bs-before
-umount /tmp/bs
-vintner publish --kernel "$(uname -r)" > /tmp/pub-u1.log 2>&1
-mount -t vfat "$BS_DEV" /tmp/bs
-find /tmp/bs -type f -exec sha256sum {} + | sort > /tmp/bs-after
-umount /tmp/bs
-if ! diff -u /tmp/bs-before /tmp/bs-after; then
-  echo "DIFF_FAILED" > /dev/ttyS0
-fi
-cat /tmp/pub-u1.log > /dev/ttyS0
+BS_DEV=$(blkid -t LABEL=BOOTSTORAGE -o device)
+# list_bs <BEFORE|AFTER>: every file on boot storage with its SHA-256, between markers on the serial console
+list_bs() {
+  mount -t vfat "$BS_DEV" /tmp/bs || { echo "BOOT STORAGE MOUNT FAILED ($1): device '$BS_DEV'" > /dev/ttyS0; exit 1; }
+  { echo "=== LISTING-$1-BEGIN ==="; find /tmp/bs -type f -exec sha256sum {} + | sort; echo "=== LISTING-$1-END ==="; } > /dev/ttyS0
+  umount /tmp/bs
+}
+list_bs BEFORE
+vintner publish --kernel "$(uname -r)" > /tmp/pub.out
+PUB_RC=$?
+{ echo "=== PUBLISH-BEGIN ==="; cat /tmp/pub.out; echo "=== PUBLISH-END ==="; echo "PUBLISH_EXIT=$PUB_RC"; } > /dev/ttyS0
+list_bs AFTER
 EOF
 )
 U1_SEED1=$(make_seed "U1-b1" "$U1_CMD")
@@ -370,32 +374,33 @@ for round in 1 2 3 4; do
 	G1_CMD="echo \"# g1 r$round\" >> /etc/initramfs-tools/conf.d/vintner-test && update-initramfs -u -k \"\$(uname -r)\""
 	G1_SEED_OP=$(make_seed "G1-r${round}-op" "$G1_CMD")
 	run_qemu "$G1_DISK" "$G1_SEED_OP" "$OUT/G1-r${round}-op.log" 300 "$G1_VARS"
-	record_boot "G1" "R${round}op" "$OUT/G1-r${round}-op.log"
+	record_boot "G1" "R${round}op" "$OUT/G1-r${round}-op.log" op
 
 	echo "--- G1 Round $round: reboot ---"
 	G1_SEED_RB=$(make_seed "G1-r${round}-rb" "true")
 	run_qemu "$G1_DISK" "$G1_SEED_RB" "$OUT/G1-r${round}-rb.log" 180 "$G1_VARS"
 	record_boot "G1" "R${round}rb" "$OUT/G1-r${round}-rb.log"
+
+	echo "Block devices on host before losetup (G1 round $round inspect):"
+	lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
+	LOOP=$(sudo losetup -P -f --show "$G1_DISK")
+	sudo mount -o ro "${LOOP}p1" "$MNT"
+
+	python3 ci/publish/inspector.py inspect-case \
+		--firmware "$FIRMWARE" \
+		--case "G1" \
+		--round "$round" \
+		--disk "$G1_DISK" \
+		--bs-offset "$BS_OFFSET" \
+		--vintner-bin "$VINTNER_BIN" \
+		--prepared-disk "$PREPARED_RAW" \
+		--root-mount "$MNT" \
+		--results-file "$RESULTS"
+
+	sudo umount "$MNT"
+	sudo losetup -d "$LOOP"
+	LOOP=""
 done
-
-echo "Block devices on host before losetup (G1 inspect):"
-lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
-LOOP=$(sudo losetup -P -f --show "$G1_DISK")
-sudo mount -o ro "${LOOP}p1" "$MNT"
-
-python3 ci/publish/inspector.py inspect-case \
-	--firmware "$FIRMWARE" \
-	--case "G1" \
-	--disk "$G1_DISK" \
-	--bs-offset "$BS_OFFSET" \
-	--vintner-bin "$VINTNER_BIN" \
-	--prepared-disk "$PREPARED_RAW" \
-	--root-mount "$MNT" \
-	--results-file "$RESULTS"
-
-sudo umount "$MNT"
-sudo losetup -d "$LOOP"
-LOOP=""
 
 # === Case R1: Replaced/purged kernel package ===
 echo "=================================================================="
@@ -407,8 +412,11 @@ cp --sparse=always "$PREPARED_RAW" "$R1_DISK"
 [ "$FIRMWARE" = "uefi" ] && { R1_VARS="$OUT/R1-vars.fd"; cp "$PREPARED_VARS" "$R1_VARS"; }
 
 R1_CMD=$(cat <<'EOF'
+set -eo pipefail
 DEBIAN_FRONTEND=noninteractive apt-get -y install linux-image-amd64
-NEW_PKG=$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' | grep -v "$(uname -r)" | head -n 1)
+NEW_ABI=$(printf '%s\n' /boot/vmlinuz-* | sed -n 's|^/boot/vmlinuz-||p' | grep -vxF "$(uname -r)")
+NEW_PKG=$(dpkg-query -S "/boot/vmlinuz-$NEW_ABI" | cut -d: -f1)
+echo "PURGED_PACKAGE=$NEW_PKG" > /dev/ttyS0
 DEBIAN_FRONTEND=noninteractive apt-get -y purge "$NEW_PKG"
 echo "COMPRESS=gzip" >> /etc/initramfs-tools/conf.d/vintner-test
 update-initramfs -u -k "$(uname -r)"
@@ -417,7 +425,7 @@ EOF
 R1_SEED1=$(make_seed "R1-b1" "$R1_CMD")
 echo "Booting R1 Boot 1..."
 run_qemu "$R1_DISK" "$R1_SEED1" "$OUT/R1-boot1.log" 600 "$R1_VARS"
-record_boot "R1" 1 "$OUT/R1-boot1.log"
+record_boot "R1" 1 "$OUT/R1-boot1.log" op
 
 R1_B1_DISK="$OUT/R1-b1.raw"
 cp --sparse=always "$R1_DISK" "$R1_B1_DISK"
@@ -441,6 +449,7 @@ python3 ci/publish/inspector.py inspect-case \
 
 # === Check E9: Summary across all boots ===
 python3 ci/publish/inspector.py record-e9 \
+	--firmware "$FIRMWARE" \
 	--results-file "$RESULTS" \
 	--summary-file "$BOOTS_SUMMARY"
 
@@ -453,8 +462,13 @@ echo "=== versions.txt ==="
 cat "$VERSIONS"
 
 FAILURES=$(awk -F'\t' '$3=="FAIL"{print $1 "-" $2}' "$RESULTS")
-if [ -n "$FAILURES" ]; then
-	echo "ERROR: Publisher test failed on checks: $FAILURES" >&2
+# Every expected row must be present with PASS: a check that never ran is a FAIL.
+NOT_PASSED=""
+for row in E1:C0 E2:K1 E3:K1 E4:K1 E2:K2 E3:K2 E4:K2 E5:K3 E6:U1 E7:G1r1 E7:G1r2 E7:G1r3 E7:G1r4 E8:R1 E9:all; do
+	awk -F'\t' -v r="$row" '($1 ":" $2) == r && $3 == "PASS" {f = 1} END {exit !f}' "$RESULTS" || NOT_PASSED="$NOT_PASSED $row"
+done
+if [ -n "$FAILURES" ] || [ -n "$NOT_PASSED" ]; then
+	echo "ERROR: Publisher test failed on checks: ${FAILURES:-none}; missing or not PASS:${NOT_PASSED:- none}" >&2
 	exit 1
 fi
 
