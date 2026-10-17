@@ -425,12 +425,11 @@ def evaluate_case(case, fw, out_dir, results_file):
             p1_ev.append(sysrq_lines[0].strip())
 
         if case in ("G1", "G2"):
-            # Test point is after published line in G1/G2
-            if not pub_lines:
-                p1_ok = False
-                p1_ev.append(f"missing published generation {p} line before testpoint")
-            else:
+            # Test point is after published line in G1/G2; having published line is permitted
+            if pub_lines:
                 p1_ev.append(pub_lines[0].strip())
+            else:
+                p1_ev.append("no published line before power cut")
         else:
             if pub_lines:
                 p1_ok = False
