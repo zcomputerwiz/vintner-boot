@@ -119,7 +119,7 @@ PREP_BLESS_SEED=$(make_seed "prep-bless" "true")
 run_qemu "$PREP_RAW" "$PREP_BLESS_SEED" "$OUT/prep-bless.log" 180 "$PREP_VARS"
 
 # 2d. Check that prepared disk has exactly one image, os-1, GOOD, and nothing under /vintner/staging/
-python3 ci/publish/inspect.py verify-prep \
+python3 ci/publish/inspector.py verify-prep \
 	--disk "$PREP_RAW" \
 	--bs-offset "$BS_OFFSET" \
 	--vintner-bin "$VINTNER_BIN"
@@ -140,7 +140,7 @@ record_boot() {
 	local boot_num="$2"
 	local log_path="$3"
 	local booted
-	booted=$(python3 ci/publish/inspect.py get-booted --log "$log_path" --firmware "$FIRMWARE")
+	booted=$(python3 ci/publish/inspector.py get-booted --log "$log_path" --firmware "$FIRMWARE")
 	echo "$case_name(B$boot_num:$booted)" >> "$BOOTS_SUMMARY"
 	echo "[$case_name] Boot $boot_num finished: booted $booted"
 }
@@ -166,7 +166,7 @@ echo "Booting C0 Boot 2..."
 run_qemu "$C0_DISK" "$C0_SEED2" "$OUT/C0-boot2.log" 180 "$C0_VARS"
 record_boot "C0" 2 "$OUT/C0-boot2.log"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "C0" \
 	--disk "$C0_DISK" \
@@ -206,7 +206,7 @@ lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 LOOP=$(sudo losetup -P -f --show "$K1_DISK")
 sudo mount -o ro "${LOOP}p1" "$MNT"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "K1" \
 	--disk "$K1_DISK" \
@@ -252,7 +252,7 @@ lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 LOOP=$(sudo losetup -P -f --show "$K2_DISK")
 sudo mount -o ro "${LOOP}p1" "$MNT"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "K2" \
 	--disk "$K2_DISK" \
@@ -296,7 +296,7 @@ echo "Booting K3 Boot 2..."
 run_qemu "$K3_DISK" "$K3_SEED2" "$OUT/K3-boot2.log" 180 "$K3_VARS"
 record_boot "K3" 2 "$OUT/K3-boot2.log"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "K3" \
 	--disk "$K3_DISK" \
@@ -339,7 +339,7 @@ echo "Booting U1 Boot 1..."
 run_qemu "$U1_DISK" "$U1_SEED1" "$OUT/U1-boot1.log" 180 "$U1_VARS"
 record_boot "U1" 1 "$OUT/U1-boot1.log"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "U1" \
 	--disk "$U1_DISK" \
@@ -377,7 +377,7 @@ lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 LOOP=$(sudo losetup -P -f --show "$G1_DISK")
 sudo mount -o ro "${LOOP}p1" "$MNT"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "G1" \
 	--disk "$G1_DISK" \
@@ -421,7 +421,7 @@ echo "Booting R1 Boot 2..."
 run_qemu "$R1_DISK" "$R1_SEED2" "$OUT/R1-boot2.log" 180 "$R1_VARS"
 record_boot "R1" 2 "$OUT/R1-boot2.log"
 
-python3 ci/publish/inspect.py inspect-case \
+python3 ci/publish/inspector.py inspect-case \
 	--firmware "$FIRMWARE" \
 	--case "R1" \
 	--disk "$R1_DISK" \
@@ -434,7 +434,7 @@ python3 ci/publish/inspect.py inspect-case \
 	--results-file "$RESULTS"
 
 # === Check E9: Summary across all boots ===
-python3 ci/publish/inspect.py record-e9 \
+python3 ci/publish/inspector.py record-e9 \
 	--results-file "$RESULTS" \
 	--summary-file "$BOOTS_SUMMARY"
 

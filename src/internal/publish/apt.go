@@ -55,6 +55,7 @@ func UpdateRetainedKernels(rootDir string, packages []string) error {
 	if err != nil {
 		return fmt.Errorf("create temp apt config: %w", err)
 	}
+	_ = tmpFile.Chmod(0644)
 	tmpName := tmpFile.Name()
 	defer func() {
 		_ = os.Remove(tmpName)
