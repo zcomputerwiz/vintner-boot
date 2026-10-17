@@ -140,7 +140,7 @@ record_boot() {
 	local boot_num="$2"
 	local log_path="$3"
 	local booted
-	booted=$(python3 -c "import sys; sys.path.insert(0, 'ci/publish'); from inspect import get_booted; print(get_booted(sys.argv[1], sys.argv[2]))" "$log_path" "$FIRMWARE")
+	booted=$(python3 ci/publish/inspect.py get-booted --log "$log_path" --firmware "$FIRMWARE")
 	echo "$case_name(B$boot_num:$booted)" >> "$BOOTS_SUMMARY"
 	echo "[$case_name] Boot $boot_num finished: booted $booted"
 }
@@ -283,7 +283,7 @@ echo "# k3 change 1" >> /etc/initramfs-tools/conf.d/vintner-test
 update-initramfs -u -k "$(uname -r)"
 echo "# k3 change 2" >> /etc/initramfs-tools/conf.d/vintner-test
 update-initramfs -u -k "$(uname -r)"
-vintner publish --kernel "$(uname -r)"
+vintner publish --kernel "$(uname -r)" 2>&1 | tee /dev/ttyS0
 EOF
 )
 K3_SEED1=$(make_seed "K3-b1" "$K3_CMD")
@@ -329,9 +329,9 @@ mount -t vfat "$BS_DEV" /tmp/bs
 find /tmp/bs -type f -exec sha256sum {} + | sort > /tmp/bs-after
 umount /tmp/bs
 if ! diff -u /tmp/bs-before /tmp/bs-after; then
-  echo "DIFF_FAILED"
+  echo "DIFF_FAILED" > /dev/ttyS0
 fi
-cat /tmp/pub-u1.log
+cat /tmp/pub-u1.log > /dev/ttyS0
 EOF
 )
 U1_SEED1=$(make_seed "U1-b1" "$U1_CMD")

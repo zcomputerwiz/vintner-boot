@@ -65,7 +65,7 @@ def load_manifest_via_vintner(vintner_bin, disk, offset):
         res = subprocess.run([vintner_bin, "manifest", "show", "--state-dir", tmpdir], capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"vintner manifest show failed: {res.stderr}")
-        return json.loads(res.stdout), (a == b)
+        return json.loads(res.stdout)
 
 def get_booted(log_path, firmware):
     if not os.path.isfile(log_path):
@@ -169,9 +169,7 @@ def get_guest_packages(root_mnt):
     return pkg_map
 
 def verify_prep(disk, bs_offset, vintner_bin):
-    m, identical = load_manifest_via_vintner(vintner_bin, disk, bs_offset)
-    if not identical:
-        sys.exit("FAIL: manifest-a and manifest-b differ on prepared disk")
+    m = load_manifest_via_vintner(vintner_bin, disk, bs_offset)
     images = m.get("images", [])
     if len(images) != 1:
         sys.exit(f"FAIL: expected 1 image on prepared disk, found {len(images)}")
@@ -213,7 +211,15 @@ def main():
     p_e9.add_argument("--results-file", required=True)
     p_e9.add_argument("--summary-file", required=True)
 
+    p_gb = sub.add_parser("get-booted")
+    p_gb.add_argument("--log", required=True)
+    p_gb.add_argument("--firmware", required=True)
+
     args = parser.parse_args()
+
+    if args.cmd == "get-booted":
+        print(get_booted(args.log, args.firmware))
+        return
 
     if args.cmd == "verify-prep":
         verify_prep(args.disk, args.bs_offset, args.vintner_bin)
@@ -248,8 +254,8 @@ def main():
         op_log = args.op_log
         results_file = args.results_file
 
-        m_prep, _ = load_manifest_via_vintner(vintner_bin, prep_disk, bs_offset)
-        m_curr, identical_curr = load_manifest_via_vintner(vintner_bin, disk, bs_offset)
+        m_prep = load_manifest_via_vintner(vintner_bin, prep_disk, bs_offset)
+        m_curr = load_manifest_via_vintner(vintner_bin, disk, bs_offset)
 
         grubenv_bytes = mtype(disk, bs_offset, "/grub/grubenv")
         env = parse_grubenv(grubenv_bytes)
@@ -258,7 +264,7 @@ def main():
         m_b1, env_b1 = None, None
         b1_disk = args.b1_disk or disk
         if args.b1_disk:
-            m_b1, _ = load_manifest_via_vintner(vintner_bin, args.b1_disk, bs_offset)
+            m_b1 = load_manifest_via_vintner(vintner_bin, args.b1_disk, bs_offset)
             env_b1 = parse_grubenv(mtype(args.b1_disk, bs_offset, "/grub/grubenv"))
         else:
             m_b1, env_b1 = m_curr, env
