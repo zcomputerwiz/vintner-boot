@@ -47,77 +47,75 @@ CI runs it as `candidate-uefi` and `candidate-bios` in `.github/workflows/qemu-t
 
 ## Versions
 
-From CI run [39009077426](https://github.com/zcomputerwiz/vintner-boot/actions/runs/39009077426)'s `versions.txt`:
+From CI run [39030690669](https://github.com/zcomputerwiz/vintner-boot/actions/runs/39030690669)'s `versions.txt`:
 - **Recovery packages:** `linux-image-6.12.107+deb13-amd64` `6.12.107-1`, `busybox-static` `1:1.37.0-6+b9`, `systemd-boot-efi` `257.13-1~deb13u1`, `systemd-ukify` `257.13-1~deb13u1`, `grub-pc-bin` `2.12-9+deb13u2`, `grub-common` `2.12-9+deb13u2`.
 - **Guest (os-1):** kernel `6.12.111+deb13-cloud-amd64` (`linux-image-cloud-amd64` `6.12.111-1`), `systemd` and `udev` `257.13-1~deb13u1`.
 
 ## Results
 
-These tables come from the harness before review, which had weaker checks than the one described above; the next CI run replaces them.
-
-Verbatim results from GitHub Actions CI run [39009077426](https://github.com/zcomputerwiz/vintner-boot/actions/runs/39009077426) (commit `8f5bf75`).
+Verbatim `results.tsv` from GitHub Actions CI run [39030690669](https://github.com/zcomputerwiz/vintner-boot/actions/runs/39030690669) (commit `4bc8598`). Both firmwares exit 0: every PASS/FAIL row is present and passes.
 
 ### UEFI (`candidate-uefi`)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| H1 | G0 | PASS | boot 1 booted os-2; gen 2 state=GOOD; counter=+3-0; boots 2-6 booted os-2 |
-| H2 | B1 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
-| H3 | B1 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:23:49Z (updated); rearmed=+3-0 |
-| H4 | B1 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
-| H5 | B1 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
-| H6 | B1 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
-| H7 | B1 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1: Kernel panic - not syncing: sysrq triggered crash; b2: Kernel panic - not syncing: sysrq triggered crash; b3: Kernel panic - not syncing: sysrq triggered crash |
-| H2 | B2 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
-| H3 | B2 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:24:57Z (updated); rearmed=+3-0 |
-| H4 | B2 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
-| H5 | B2 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
-| H6 | B2 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
-| H7 | B2 | OBSERVED | B1: poweroff; B2: poweroff; B3: poweroff; b1: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b2: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b3: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
-| H2 | B3 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
-| H3 | B3 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:31:43Z (updated); rearmed=+3-0 |
-| H4 | B3 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
-| H5 | B3 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
-| H6 | B3 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
-| H7 | B3 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1 last_line: Loading, please wait...; b2 last_line: Loading, please wait...; b3 last_line: Loading, please wait... |
-| H2 | B4 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
-| H3 | B4 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:32:35Z (updated); rearmed=+3-0 |
-| H4 | B4 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
-| H5 | B4 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
-| H6 | B4 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
-| H7 | B4 | OBSERVED | B1: killed 1s after Command line; B2: killed 1s after Command line; B3: killed 1s after Command line; b1 last_line: [    1.056266] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 247); b2 last_line: [    1.033684] Asymmetric key parser 'x509' registered; b3 last_line: [    1.074731] Loading compiled-in X.509 certificates |
-| H8 | all | PASS | no boot ran recovery A or B across all cases |
+| H1 | G0 | PASS | boots 1-6: os-2,os-2,os-2,os-2,os-2,os-2; boot1 gen 2 state=GOOD; boot1 gen 2 UKIs=['vintner-os-2+3-0.efi'] |
+| H2 | B1 | PASS | boot1 os-2 gen 2 UKIs=['vintner-os-2+2-1.efi']; boot2 os-2 gen 2 UKIs=['vintner-os-2+1-2.efi']; boot3 os-2 gen 2 UKIs=['vintner-os-2+0-3.efi'] |
+| H3 | B1 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:02:20Z after=2026-10-17T12:08:36Z; gen 1 UKIs=['vintner-os-1+3-0.efi'] |
+| H4 | B1 | PASS | gen 2 state=FAILED; gen 2 UKIs=['vintner-os-2+0-3.efi']; console line: [    6.899635] vintner[594]: generation 2: TRYING -> FAILED |
+| H5 | B1 | PASS | boot4 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4 |
+| H6 | B1 | PASS | record uefi.sha256=5f4867fc8fb10229f39920de7ebfcc0abf1f66040964ccbc103d16d394f37dd0; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=347ae406fdc2a7f8aef681c2c757e764eca7129768008be95e5b6a3aba49ef6b; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B1 | OBSERVED | boot1: killed after 120s timeout; boot2: killed after 120s timeout; boot3: killed after 120s timeout; boot1: [    1.211594] Kernel panic - not syncing: sysrq triggered crash; boot2: [    1.207387] Kernel panic - not syncing: sysrq triggered crash; boot3: [    1.182463] Kernel panic - not syncing: sysrq triggered crash |
+| H2 | B2 | PASS | boot1 os-2 gen 2 UKIs=['vintner-os-2+2-1.efi']; boot2 os-2 gen 2 UKIs=['vintner-os-2+1-2.efi']; boot3 os-2 gen 2 UKIs=['vintner-os-2+0-3.efi'] |
+| H3 | B2 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:09:07Z after=2026-10-17T12:09:45Z; gen 1 UKIs=['vintner-os-1+3-0.efi'] |
+| H4 | B2 | PASS | gen 2 state=FAILED; gen 2 UKIs=['vintner-os-2+0-3.efi']; console line: [    6.254146] vintner[579]: generation 2: TRYING -> FAILED |
+| H5 | B2 | PASS | boot4 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4 |
+| H6 | B2 | PASS | record uefi.sha256=5f4867fc8fb10229f39920de7ebfcc0abf1f66040964ccbc103d16d394f37dd0; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=347ae406fdc2a7f8aef681c2c757e764eca7129768008be95e5b6a3aba49ef6b; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B2 | OBSERVED | boot1: poweroff; boot2: poweroff; boot3: poweroff; boot1: [FAILED] Failed to start vintner-test-health.service.; boot1: [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; boot2: [FAILED] Failed to start vintner-test-health.service.; boot2: [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; boot3: [FAILED] Failed to start vintner-test-health.service.; boot3: [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
+| H2 | B3 | PASS | boot1 os-2 gen 2 UKIs=['vintner-os-2+2-1.efi']; boot2 os-2 gen 2 UKIs=['vintner-os-2+1-2.efi']; boot3 os-2 gen 2 UKIs=['vintner-os-2+0-3.efi'] |
+| H3 | B3 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:10:16Z after=2026-10-17T12:16:31Z; gen 1 UKIs=['vintner-os-1+3-0.efi'] |
+| H4 | B3 | PASS | gen 2 state=FAILED; gen 2 UKIs=['vintner-os-2+0-3.efi']; console line: [    7.141067] vintner[590]: generation 2: TRYING -> FAILED |
+| H5 | B3 | PASS | boot4 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4 |
+| H6 | B3 | PASS | record uefi.sha256=5f4867fc8fb10229f39920de7ebfcc0abf1f66040964ccbc103d16d394f37dd0; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=347ae406fdc2a7f8aef681c2c757e764eca7129768008be95e5b6a3aba49ef6b; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B3 | OBSERVED | boot1: killed after 120s timeout; boot2: killed after 120s timeout; boot3: killed after 120s timeout; boot1 last line: Loading, please wait...; boot2 last line: Loading, please wait...; boot3 last line: Loading, please wait... |
+| H2 | B4 | PASS | boot1 os-2 gen 2 UKIs=['vintner-os-2+2-1.efi']; boot2 os-2 gen 2 UKIs=['vintner-os-2+1-2.efi']; boot3 os-2 gen 2 UKIs=['vintner-os-2+0-3.efi'] |
+| H3 | B4 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:17:01Z after=2026-10-17T12:17:24Z; gen 1 UKIs=['vintner-os-1+3-0.efi'] |
+| H4 | B4 | PASS | gen 2 state=FAILED; gen 2 UKIs=['vintner-os-2+0-3.efi']; console line: [    6.582535] vintner[587]: generation 2: TRYING -> FAILED |
+| H5 | B4 | PASS | boot4 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+0-3.efi'] VINTNER_T_2=xxx state=FAILED record equal to boot4 |
+| H6 | B4 | PASS | record uefi.sha256=5f4867fc8fb10229f39920de7ebfcc0abf1f66040964ccbc103d16d394f37dd0; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=347ae406fdc2a7f8aef681c2c757e764eca7129768008be95e5b6a3aba49ef6b; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B4 | OBSERVED | boot1: killed 1s after Command line; boot2: killed 1s after Command line; boot3: killed 1s after Command line; boot1 last line: [    1.060933] ACPI: \_SB_.GSIG: Enabled at IRQ 22; boot2 last line: [    1.044069] Freeing initrd memory: 18216K; boot3 last line: [    1.051879] ACPI: \_SB_.GSIF: Enable |
+| H8 | all | PASS | G0 os-2,os-2,os-2,os-2,os-2,os-2; B1 os-2,os-2,os-2,os-1,os-1,os-1; B2 os-2,os-2,os-2,os-1,os-1,os-1; B3 os-2,os-2,os-2,os-1,os-1,os-1; B4 os-2,os-2,os-2,os-1,os-1,os-1 |
 
 ### BIOS (`candidate-bios`)
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| H1 | G0 | PASS | boot 1 booted os-2; gen 2 state=GOOD; counter=xxx; booted_unset=True; boots 2-6 booted os-2 |
-| H2 | B1 | PASS | b1=xx; b2=x; b3=0 |
-| H3 | B1 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:22:42Z (updated); rearmed=xxx; booted_unset=True |
-| H4 | B1 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
-| H5 | B1 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
-| H6 | B1 | PASS | os-1 BIOS files intact across all boots |
-| H7 | B1 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1: Kernel panic - not syncing: sysrq triggered crash; b2: Kernel panic - not syncing: sysrq triggered crash; b3: Kernel panic - not syncing: sysrq triggered crash |
-| H2 | B2 | PASS | b1=xx; b2=x; b3=0 |
-| H3 | B2 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:23:38Z (updated); rearmed=xxx; booted_unset=True |
-| H4 | B2 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
-| H5 | B2 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
-| H6 | B2 | PASS | os-1 BIOS files intact across all boots |
-| H7 | B2 | OBSERVED | B1: poweroff; B2: poweroff; B3: poweroff; b1: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b2: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b3: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
-| H2 | B3 | PASS | b1=xx; b2=x; b3=0 |
-| H3 | B3 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:30:18Z (updated); rearmed=xxx; booted_unset=True |
-| H4 | B3 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
-| H5 | B3 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
-| H6 | B3 | PASS | os-1 BIOS files intact across all boots |
-| H7 | B3 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1 last_line: Loading, please wait...; b2 last_line: Loading, please wait...; b3 last_line: Loading, please wait... |
-| H2 | B4 | PASS | b1=xx; b2=x; b3=0 |
-| H3 | B4 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:31:03Z (updated); rearmed=xxx; booted_unset=True |
-| H4 | B4 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
-| H5 | B4 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
-| H6 | B4 | PASS | os-1 BIOS files intact across all boots |
-| H7 | B4 | OBSERVED | B1: killed 1s after Command line; B2: killed 1s after Command line; B3: killed 1s after Command line; b1 last_line: [    0.963434] ata6: SATA max UDMA/133 abar m4096@0xfeb82000 port 0xfeb82380 irq 30 lpm-pol 1; b2 last_line: [    0.939090] ata6: SATA max UDMA/133 abar m4096@0xfeb82000 port 0xfeb82380 irq 30 lpm-pol 1; b3 last_line: [    0.995283] ata6: SATA max UDMA/133 abar m4096@0xfeb82000 port 0xfeb82380 irq 30 lpm-pol 1 |
-| H8 | all | PASS | no boot ran recovery A or B across all cases |
+| H1 | G0 | PASS | boots 1-6: os-2,os-2,os-2,os-2,os-2,os-2; boot1 gen 2 state=GOOD; boot1 VINTNER_T_2=xxx; boot1 VINTNER_BOOTED absent |
+| H2 | B1 | PASS | boot1 os-2 VINTNER_T_2=xx; boot2 os-2 VINTNER_T_2=x; boot3 os-2 VINTNER_T_2=0 |
+| H3 | B1 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:02:14Z after=2026-10-17T12:08:29Z; VINTNER_T_1=xxx; VINTNER_BOOTED absent |
+| H4 | B1 | PASS | gen 2 state=FAILED; VINTNER_T_2=0; console line: [    7.114519] vintner[590]: generation 2: TRYING -> FAILED |
+| H5 | B1 | PASS | boot4 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4 |
+| H6 | B1 | PASS | record uefi.sha256=2058fbf2210bcd11fca1cc4d2f8066cc11913124c064d07a3a2368342e596c25; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=80e29a2591b3436f1ae6f1778c4837026bbe176f05195eea6e579ee3797f5779; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B1 | OBSERVED | boot1: killed after 120s timeout; boot2: killed after 120s timeout; boot3: killed after 120s timeout; boot1: [    1.064719] Kernel panic - not syncing: sysrq triggered crash; boot2: [    1.101202] Kernel panic - not syncing: sysrq triggered crash; boot3: [    1.065015] Kernel panic - not syncing: sysrq triggered crash |
+| H2 | B2 | PASS | boot1 os-2 VINTNER_T_2=xx; boot2 os-2 VINTNER_T_2=x; boot3 os-2 VINTNER_T_2=0 |
+| H3 | B2 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:09:00Z after=2026-10-17T12:09:38Z; VINTNER_T_1=xxx; VINTNER_BOOTED absent |
+| H4 | B2 | PASS | gen 2 state=FAILED; VINTNER_T_2=0; console line: [    6.875157] vintner[583]: generation 2: TRYING -> FAILED |
+| H5 | B2 | PASS | boot4 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4 |
+| H6 | B2 | PASS | record uefi.sha256=2058fbf2210bcd11fca1cc4d2f8066cc11913124c064d07a3a2368342e596c25; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=80e29a2591b3436f1ae6f1778c4837026bbe176f05195eea6e579ee3797f5779; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B2 | OBSERVED | boot1: poweroff; boot2: poweroff; boot3: poweroff; boot1: [FAILED] Failed to start vintner-test-health.service.; boot1: [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; boot2: [FAILED] Failed to start vintner-test-health.service.; boot2: [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; boot3: [FAILED] Failed to start vintner-test-health.service.; boot3: [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
+| H2 | B3 | PASS | boot1 os-2 VINTNER_T_2=xx; boot2 os-2 VINTNER_T_2=x; boot3 os-2 VINTNER_T_2=0 |
+| H3 | B3 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:10:09Z after=2026-10-17T12:16:23Z; VINTNER_T_1=xxx; VINTNER_BOOTED absent |
+| H4 | B3 | PASS | gen 2 state=FAILED; VINTNER_T_2=0; console line: [    7.060865] vintner[583]: generation 2: TRYING -> FAILED |
+| H5 | B3 | PASS | boot4 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4 |
+| H6 | B3 | PASS | record uefi.sha256=2058fbf2210bcd11fca1cc4d2f8066cc11913124c064d07a3a2368342e596c25; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=80e29a2591b3436f1ae6f1778c4837026bbe176f05195eea6e579ee3797f5779; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B3 | OBSERVED | boot1: killed after 120s timeout; boot2: killed after 120s timeout; boot3: killed after 120s timeout; boot1 last line: Loading, please wait...; boot2 last line: Loading, please wait...; boot3 last line: Loading, please wait... |
+| H2 | B4 | PASS | boot1 os-2 VINTNER_T_2=xx; boot2 os-2 VINTNER_T_2=x; boot3 os-2 VINTNER_T_2=0 |
+| H3 | B4 | PASS | boot4 os-1; os-1 state=GOOD; last_good before=2026-10-17T12:16:55Z after=2026-10-17T12:17:17Z; VINTNER_T_1=xxx; VINTNER_BOOTED absent |
+| H4 | B4 | PASS | gen 2 state=FAILED; VINTNER_T_2=0; console line: [    6.756671] vintner[586]: generation 2: TRYING -> FAILED |
+| H5 | B4 | PASS | boot4 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED; boot5 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4; boot6 os-1 gen 2 UKIs=['vintner-os-2+3-0.efi'] VINTNER_T_2=0 state=FAILED record equal to boot4 |
+| H6 | B4 | PASS | record uefi.sha256=2058fbf2210bcd11fca1cc4d2f8066cc11913124c064d07a3a2368342e596c25; record bios.files[initrd.img]=3281c1f690a8547d5a8999a27851b34410c80b9e5ce66de8879a26a8d1aaa03b; record bios.files[slot.cfg]=80e29a2591b3436f1ae6f1778c4837026bbe176f05195eea6e579ee3797f5779; record bios.files[vmlinuz]=c4c152af83f6bebb3342ebe6655b64bbeddde273c38a39565af9ba34fb4ada99; os-1 UKI names read: ['vintner-os-1+3-0.efi']; reads compared: op,boot1,boot2,boot3,boot4,boot5,boot6 |
+| H7 | B4 | OBSERVED | boot1: killed 1s after Command line; boot2: killed 1s after Command line; boot3: killed 1s after Command line; boot1 last line: Loading, please wait...; boot2 last line: [    1.071292] Run /init as init process; boot3 last line: [    1.040535] RAS: Correctable Errors collector initialized. |
+| H8 | all | PASS | G0 os-2,os-2,os-2,os-2,os-2,os-2; B1 os-2,os-2,os-2,os-1,os-1,os-1; B2 os-2,os-2,os-2,os-1,os-1,os-1; B3 os-2,os-2,os-2,os-1,os-1,os-1; B4 os-2,os-2,os-2,os-1,os-1,os-1 |
 
 ## Findings
 
