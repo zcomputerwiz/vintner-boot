@@ -42,10 +42,82 @@ CI runs it as `candidate-uefi` and `candidate-bios` in `.github/workflows/qemu-t
 
 ## Versions
 
-From the run's `versions.txt`:
-
-(To be populated from CI run)
+From CI run [39009077426](https://github.com/zcomputerwiz/vintner-boot/actions/runs/39009077426)'s `versions.txt`:
+- **Recovery packages:** `linux-image-6.12.107+deb13-amd64` `6.12.107-1`, `busybox-static` `1:1.37.0-6+b9`, `systemd-boot-efi` `257.13-1~deb13u1`, `systemd-ukify` `257.13-1~deb13u1`, `grub-pc-bin` `2.12-9+deb13u2`, `grub-common` `2.12-9+deb13u2`.
+- **Guest (os-1):** kernel `6.12.111+deb13-cloud-amd64` (`linux-image-cloud-amd64` `6.12.111-1`), `systemd` and `udev` `257.13-1~deb13u1`.
 
 ## Results
 
-(To be populated with verbatim results from CI run)
+Verbatim results from GitHub Actions CI run [39009077426](https://github.com/zcomputerwiz/vintner-boot/actions/runs/39009077426) (commit `8f5bf75`).
+
+### UEFI (`candidate-uefi`)
+
+| ID | Case | Status | Evidence |
+|---|---|---|---|
+| H1 | G0 | PASS | boot 1 booted os-2; gen 2 state=GOOD; counter=+3-0; boots 2-6 booted os-2 |
+| H2 | B1 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
+| H3 | B1 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:23:49Z (updated); rearmed=+3-0 |
+| H4 | B1 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
+| H5 | B1 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
+| H6 | B1 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
+| H7 | B1 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1: Kernel panic - not syncing: sysrq triggered crash; b2: Kernel panic - not syncing: sysrq triggered crash; b3: Kernel panic - not syncing: sysrq triggered crash |
+| H2 | B2 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
+| H3 | B2 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:24:57Z (updated); rearmed=+3-0 |
+| H4 | B2 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
+| H5 | B2 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
+| H6 | B2 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
+| H7 | B2 | OBSERVED | B1: poweroff; B2: poweroff; B3: poweroff; b1: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b2: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b3: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
+| H2 | B3 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
+| H3 | B3 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:31:43Z (updated); rearmed=+3-0 |
+| H4 | B3 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
+| H5 | B3 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
+| H6 | B3 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
+| H7 | B3 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1 last_line: Loading, please wait...; b2 last_line: Loading, please wait...; b3 last_line: Loading, please wait... |
+| H2 | B4 | PASS | b1=+2-1; b2=+1-2; b3=+0-3 |
+| H3 | B4 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:32:35Z (updated); rearmed=+3-0 |
+| H4 | B4 | PASS | gen 2 state=FAILED; uefi_file=vintner-os-2+0-3.efi; printed=generation 2: TRYING -> FAILED |
+| H5 | B4 | PASS | b5=os-1; b6=os-1; gen2 uefi file remained vintner-os-2+0-3.efi |
+| H6 | B4 | PASS | os-1 UKI intact across all boots (sha256=a9001d3cd52cfa64...) |
+| H7 | B4 | OBSERVED | B1: killed 1s after Command line; B2: killed 1s after Command line; B3: killed 1s after Command line; b1 last_line: [    1.056266] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 247); b2 last_line: [    1.033684] Asymmetric key parser 'x509' registered; b3 last_line: [    1.074731] Loading compiled-in X.509 certificates |
+| H8 | all | PASS | no boot ran recovery A or B across all cases |
+
+### BIOS (`candidate-bios`)
+
+| ID | Case | Status | Evidence |
+|---|---|---|---|
+| H1 | G0 | PASS | boot 1 booted os-2; gen 2 state=GOOD; counter=xxx; booted_unset=True; boots 2-6 booted os-2 |
+| H2 | B1 | PASS | b1=xx; b2=x; b3=0 |
+| H3 | B1 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:22:42Z (updated); rearmed=xxx; booted_unset=True |
+| H4 | B1 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
+| H5 | B1 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
+| H6 | B1 | PASS | os-1 BIOS files intact across all boots |
+| H7 | B1 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1: Kernel panic - not syncing: sysrq triggered crash; b2: Kernel panic - not syncing: sysrq triggered crash; b3: Kernel panic - not syncing: sysrq triggered crash |
+| H2 | B2 | PASS | b1=xx; b2=x; b3=0 |
+| H3 | B2 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:23:38Z (updated); rearmed=xxx; booted_unset=True |
+| H4 | B2 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
+| H5 | B2 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
+| H6 | B2 | PASS | os-1 BIOS files intact across all boots |
+| H7 | B2 | OBSERVED | B1: poweroff; B2: poweroff; B3: poweroff; b1: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b2: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check.; b3: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
+| H2 | B3 | PASS | b1=xx; b2=x; b3=0 |
+| H3 | B3 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:30:18Z (updated); rearmed=xxx; booted_unset=True |
+| H4 | B3 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
+| H5 | B3 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
+| H6 | B3 | PASS | os-1 BIOS files intact across all boots |
+| H7 | B3 | OBSERVED | B1: killed after 120s timeout; B2: killed after 120s timeout; B3: killed after 120s timeout; b1 last_line: Loading, please wait...; b2 last_line: Loading, please wait...; b3 last_line: Loading, please wait... |
+| H2 | B4 | PASS | b1=xx; b2=x; b3=0 |
+| H3 | B4 | PASS | boot 4 booted os-1; os-1 state=GOOD; last_good=2026-10-17T06:31:03Z (updated); rearmed=xxx; booted_unset=True |
+| H4 | B4 | PASS | gen 2 state=FAILED; bios_t=0; printed=generation 2: TRYING -> FAILED |
+| H5 | B4 | PASS | b5=os-1; b6=os-1; gen2 counter remained 0 |
+| H6 | B4 | PASS | os-1 BIOS files intact across all boots |
+| H7 | B4 | OBSERVED | B1: killed 1s after Command line; B2: killed 1s after Command line; B3: killed 1s after Command line; b1 last_line: [    0.963434] ata6: SATA max UDMA/133 abar m4096@0xfeb82000 port 0xfeb82380 irq 30 lpm-pol 1; b2 last_line: [    0.939090] ata6: SATA max UDMA/133 abar m4096@0xfeb82000 port 0xfeb82380 irq 30 lpm-pol 1; b3 last_line: [    0.995283] ata6: SATA max UDMA/133 abar m4096@0xfeb82000 port 0xfeb82380 irq 30 lpm-pol 1 |
+| H8 | all | PASS | no boot ran recovery A or B across all cases |
+
+## Findings
+
+1. **B1 (Kernel Panic) behavior:**
+   When the kernel panics via SysRq-c in the initramfs (`init-top`), the kernel halts execution after printing `---[ end Kernel panic - not syncing: sysrq triggered crash ]---` and does not power off or reboot (no `panic=` reboot timeout is set on the kernel command line). The VM remains halted until terminated by the 120-second timeout.
+2. **klibc utilities in Debian initramfs:**
+   - Debian's initramfs uses `klibc-utils`. `touch` does not exist in klibc, so files must be created via shell redirection (`: > /path/to/file`).
+   - klibc's `sleep` command only parses decimal numbers (`seconds[.fraction]`) and exits with error code 1 on non-numeric inputs like `infinity`. An infinite delay in initramfs requires a shell loop (`while :; do sleep infinity 2>/dev/null || sleep 86400; done`).
+3. **Serial console logging from systemd units:**
+   Because `vintner-bless.service` has `Type=oneshot` and no `StandardOutput=console`, messages logged by `vintner bless` to stdout/stderr are captured by systemd-journald and do not reach `/dev/console` / `ttyS0` by default. To ensure the transition `generation 2: TRYING -> FAILED` appears in the serial console log for verification (Check H4), `vintner bless` writes directly to `/dev/console` (falling back to `/dev/ttyS0` if needed) when running as root.
