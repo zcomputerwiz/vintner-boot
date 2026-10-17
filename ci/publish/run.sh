@@ -81,7 +81,7 @@ fi
 
 # 2a. Install systemd-ukify and systemd-boot-efi in guest via apt-get
 echo "Booting preparation step 1: install systemd-ukify and systemd-boot-efi..."
-PREP_INSTALL_CMD="DEBIAN_FRONTEND=noninteractive apt-get -y install systemd-ukify systemd-boot-efi"
+PREP_INSTALL_CMD="DEBIAN_FRONTEND=noninteractive apt-get -y install systemd-ukify systemd-boot-efi && apt-mark hold linux-image-cloud-amd64 linux-image-6.12.111+deb13-cloud-amd64"
 PREP_INSTALL_SEED=$(make_seed "prep-install" "$PREP_INSTALL_CMD")
 run_qemu "$PREP_RAW" "$PREP_INSTALL_SEED" "$OUT/prep-install.log" 600 "$PREP_VARS"
 
@@ -186,7 +186,13 @@ K1_VARS=""
 cp --sparse=always "$PREPARED_RAW" "$K1_DISK"
 [ "$FIRMWARE" = "uefi" ] && { K1_VARS="$OUT/K1-vars.fd"; cp "$PREPARED_VARS" "$K1_VARS"; }
 
-K1_CMD="DEBIAN_FRONTEND=noninteractive apt-get -y install linux-image-amd64"
+K1_CMD=$(cat <<'EOF'
+DEBIAN_FRONTEND=noninteractive apt-get -y install linux-image-amd64
+RC=$?
+cat /tmp/op.log > /dev/ttyS0
+exit $RC
+EOF
+)
 K1_SEED1=$(make_seed "K1-b1" "$K1_CMD")
 echo "Booting K1 Boot 1..."
 run_qemu "$K1_DISK" "$K1_SEED1" "$OUT/K1-boot1.log" 600 "$K1_VARS"

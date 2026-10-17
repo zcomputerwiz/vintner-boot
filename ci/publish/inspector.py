@@ -98,43 +98,39 @@ def get_booted(log_path, firmware):
         return "none"
 
 def compute_module_tree(root_mnt, abi):
-    mod_dir = os.path.join(root_mnt, "lib", "modules", abi)
-    if not os.path.isdir(mod_dir):
-        return ""
-    files = sorted([f for f in os.listdir(mod_dir) if os.path.isfile(os.path.join(mod_dir, f))])
-    h = hashlib.sha256()
-    for f in files:
-        f_path = os.path.join(mod_dir, f)
-        with open(f_path, "rb") as fp:
-            f_sha = hashlib.sha256(fp.read()).hexdigest()
-        h.update(f.encode('utf-8') + b"\x00" + f_sha.encode('ascii') + b"\x00")
-    dkms_dir = os.path.join(root_mnt, "var", "lib", "dkms")
+    vmlinuz_path = os.path.join(root_mnt, "boot", f"vmlinuz-{abi}")
+    if not os.path.isfile(vmlinuz_path):
+        return None
+    with open(vmlinuz_path, "rb") as f:
+        k_sha = hashlib.sha256(f.read()).hexdigest()
+
+    dep_path = os.path.join(root_mnt, "lib", "modules", abi, "modules.dep")
+    if not os.path.isfile(dep_path):
+        return None
+    with open(dep_path, "rb") as f:
+        dep_sha = hashlib.sha256(f.read()).hexdigest()
+
+    dkms_dir = os.path.join(root_mnt, "lib", "modules", abi, "updates", "dkms")
+    lines = []
     if os.path.isdir(dkms_dir):
-        dkms_entries = []
-        for mod_name in sorted(os.listdir(dkms_dir)):
-            m_dir = os.path.join(dkms_dir, mod_name)
-            if not os.path.isdir(m_dir):
-                continue
-            for mod_ver in sorted(os.listdir(m_dir)):
-                mv_dir = os.path.join(m_dir, mod_ver)
-                if not os.path.isdir(mv_dir):
-                    continue
-                dkms_h = hashlib.sha256()
-                rel_files = []
-                for root, _, dfiles in os.walk(mv_dir):
-                    for df in dfiles:
-                        full_p = os.path.join(root, df)
-                        rel_p = os.path.relpath(full_p, mv_dir).replace("\\", "/")
-                        rel_files.append((rel_p, full_p))
-                rel_files.sort(key=lambda x: x[0])
-                for rel_p, full_p in rel_files:
-                    with open(full_p, "rb") as dfp:
-                        d_sha = hashlib.sha256(dfp.read()).hexdigest()
-                    dkms_h.update(rel_p.encode('utf-8') + b"\x00" + d_sha.encode('ascii') + b"\x00")
-                dkms_entries.append((mod_name, mod_ver, dkms_h.hexdigest()))
-        for mn, mv, mh in dkms_entries:
-            h.update(mn.encode('utf-8') + b"\x00" + mv.encode('utf-8') + b"\x00" + mh.encode('ascii') + b"\x00")
-    return h.hexdigest()
+        for root, _, files in os.walk(dkms_dir):
+            for file in files:
+                p = os.path.join(root, file)
+                rel = os.path.relpath(p, dkms_dir).replace("\\", "/")
+                with open(p, "rb") as f:
+                    lines.append(f"{rel} {hashlib.sha256(f.read()).hexdigest()}\n")
+    if not lines:
+        h = hashlib.sha256(b"")
+        dkms_sha = h.hexdigest()
+    else:
+        lines.sort()
+        dkms_sha = hashlib.sha256("".join(lines).encode("utf-8")).hexdigest()
+
+    return {
+        "kernel_sha256": k_sha,
+        "modules_dep_sha256": dep_sha,
+        "dkms_sha256": dkms_sha
+    }
 
 def get_retained_packages(root_mnt):
     conf_path = os.path.join(root_mnt, "etc", "apt", "apt.conf.d", "50vintner-retained-kernels")
@@ -359,7 +355,7 @@ def main():
                 # Check module_tree
                 if mnt:
                     expected_modtree = compute_module_tree(mnt, abi)
-                    actual_modtree = img2_b1["kernel"].get("module_tree")
+                    actual_modtree = img2_b1.get("module_tree")
                     if actual_modtree != expected_modtree:
                         e2_ok = False
                         e2_evid.append(f"module_tree mismatch: manifest={actual_modtree} actual={expected_modtree}")
