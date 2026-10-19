@@ -258,3 +258,41 @@ func TestSetBad(t *testing.T) {
 		})
 	}
 }
+
+func TestRenameSync(t *testing.T) {
+	root := t.TempDir()
+	staging := filepath.Join(root, "staging")
+	final := filepath.Join(root, "final")
+	for _, d := range []string{filepath.Join(staging, "os-2"), final} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(staging, "os-2", "vmlinuz"), []byte("k"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "a.efi"), []byte("uki"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A directory and a file, each across directories.
+	if err := RenameSync(filepath.Join(staging, "os-2"), filepath.Join(final, "os-2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := RenameSync(filepath.Join(staging, "a.efi"), filepath.Join(final, "a.efi")); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(final, "os-2", "vmlinuz")); err != nil || string(b) != "k" {
+		t.Errorf("moved directory: got %q, %v", b, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(final, "a.efi")); err != nil || string(b) != "uki" {
+		t.Errorf("moved file: got %q, %v", b, err)
+	}
+	if entries, _ := os.ReadDir(staging); len(entries) != 0 {
+		t.Errorf("staging not empty: %v", entries)
+	}
+
+	if err := RenameSync(filepath.Join(staging, "missing"), filepath.Join(final, "x")); err == nil {
+		t.Error("renaming a missing path succeeded")
+	}
+}

@@ -824,11 +824,9 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("create EFI/Linux dir: %w", err)
 		}
 		finalUKI := filepath.Join(efiDir, fmt.Sprintf("vintner-os-%d+%d-0.efi", g, m.Tries))
-		if err := os.Rename(stagedUKI, finalUKI); err != nil {
+		if err := bls.RenameSync(stagedUKI, finalUKI); err != nil {
 			return nil, fmt.Errorf("publish rename UKI: %w", err)
 		}
-		_ = syncDir(efiDir)
-		_ = syncDir(stagingDir)
 	}
 
 	if isBIOS {
@@ -837,11 +835,9 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("create vintner/bios dir: %w", err)
 		}
 		finalSlotDir := filepath.Join(biosDir, fmt.Sprintf("os-%d", g))
-		if err := os.Rename(stagedSlotDir, finalSlotDir); err != nil {
+		if err := bls.RenameSync(stagedSlotDir, finalSlotDir); err != nil {
 			return nil, fmt.Errorf("publish rename BIOS slot: %w", err)
 		}
-		_ = syncDir(stagingDir)
-		_ = syncDir(biosDir)
 	}
 
 	testpoint.Hit("renamed")
