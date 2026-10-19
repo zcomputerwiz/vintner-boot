@@ -2,7 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM, loop devices with partition scanning (`losetup -P`), Go 1.24 and outbound network access.
 - **Issued:** 2026-10-17
-- **Status:** ready.
+- **Status:** done. Delivered in #48 together with the vfat rename fixes (`bls.RenameSync`); results in `ci/publish-interrupt/README.md`.
 - **Base branch:** `main`. Work on branch `wo-0007` and open one pull request against `main`.
 
 ## Why

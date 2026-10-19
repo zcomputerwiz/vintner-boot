@@ -2,7 +2,7 @@
 
 - **For:** the agent that delivered WO-0007 (#48).
 - **Issued:** 2026-10-19
-- **Status:** ready.
+- **Status:** done. Delivered in #48 together with the vfat rename fixes (`bls.RenameSync`); results in `ci/publish-interrupt/README.md`.
 - **Branch:** keep working on `wo-0007` (PR #48). First merge `origin/claude/festive-tesla-9ekjn5` into it with a merge commit, not a rebase. That branch carries this work order and the product fix below. Push to `wo-0007`. PR #48 is then the one to merge, and #49 will be closed.
 
 ## Why
