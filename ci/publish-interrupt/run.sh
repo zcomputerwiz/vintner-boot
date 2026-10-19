@@ -87,12 +87,19 @@ read_disk() {
 		--root "$ROOT" \
 		--out-prefix "$OUT/$step"
 
+	# After a reset (interrupted operation boots), the ext4 root partition has an
+	# unreplayed journal. Record as "not read: unclean root journal" rather than mounting.
+	if [ "$step" = "${CASE}-read-op" ] && [ "$CASE" != "C0" ]; then
+		echo "not read: unclean root journal" > "$OUT/${step}-retained-kernels.txt"
+		return 0
+	fi
+
 	echo "Block devices on host before losetup (${step} retained kernels):"
 	lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 	local loop
 	loop=$(sudo losetup -P -r -f --show "$disk")
 	LOOP="$loop"
-	if sudo mount -o ro,noload "${loop}p1" "$MNT" 2>/dev/null || sudo mount -o ro "${loop}p1" "$MNT"; then
+	if sudo mount -o ro "${loop}p1" "$MNT"; then
 		local rf="$MNT/etc/apt/apt.conf.d/50vintner-retained-kernels"
 		if [ -f "$rf" ]; then
 			sudo cp "$rf" "$OUT/${step}-retained-kernels.txt"
