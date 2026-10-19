@@ -539,14 +539,14 @@ def evaluate_case(case, fw, out_dir, results_file):
                     got_sha = r_data.get("file_hashes", {}).get(uki_path)
                     if got_sha != want_sha:
                         p4_ok = False
-                        p4_ev.append(f"gen {g} in {r_name} UKI sha mismatch")
+                        p4_ev.append(f"gen {g} in {r_name} UKI sha mismatch (got {got_sha[:8] if got_sha else 'None'}..., want {want_sha[:8]}...)")
             if fw == "bios" and pre_rec.get("bios"):
                 for fname, want_sha in pre_rec["bios"].get("files", {}).items():
                     fpath = f"/vintner/bios/os-{g}/{fname}"
                     got_sha = r_data.get("file_hashes", {}).get(fpath)
                     if got_sha != want_sha:
                         p4_ok = False
-                        p4_ev.append(f"gen {g} in {r_name} {fname} sha mismatch")
+                        p4_ev.append(f"gen {g} in {r_name} {fname} sha mismatch (got {got_sha[:8] if got_sha else 'None'}..., want {want_sha[:8]}...)")
 
     if p4_ok:
         p4_ev.append(f"images {good_before} still GOOD with matching file hashes at all reads")
