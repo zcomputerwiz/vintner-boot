@@ -91,16 +91,21 @@ read_disk() {
 	lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 	local loop
 	loop=$(sudo losetup -P -r -f --show "$disk")
-	sudo mount -o ro "${loop}p1" "$MNT"
-	local rf="$MNT/etc/apt/apt.conf.d/50vintner-retained-kernels"
-	if [ -f "$rf" ]; then
-		sudo cp "$rf" "$OUT/${step}-retained-kernels.txt"
-		sudo chmod 0644 "$OUT/${step}-retained-kernels.txt"
+	LOOP="$loop"
+	if sudo mount -o ro,noload "${loop}p1" "$MNT" 2>/dev/null || sudo mount -o ro "${loop}p1" "$MNT"; then
+		local rf="$MNT/etc/apt/apt.conf.d/50vintner-retained-kernels"
+		if [ -f "$rf" ]; then
+			sudo cp "$rf" "$OUT/${step}-retained-kernels.txt"
+			sudo chmod 0644 "$OUT/${step}-retained-kernels.txt"
+		else
+			echo "(missing)" > "$OUT/${step}-retained-kernels.txt"
+		fi
+		sudo umount "$MNT"
 	else
 		echo "(missing)" > "$OUT/${step}-retained-kernels.txt"
 	fi
-	sudo umount "$MNT"
 	sudo losetup -d "$loop"
+	LOOP=""
 
 	if [ "$step" = "${CASE}-read-rec-op" ]; then
 		cp "$OUT/${step}-retained-kernels.txt" "$OUT/${CASE}-retained-kernels.txt"
