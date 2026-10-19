@@ -125,13 +125,35 @@ func Find(dir, stem string) (string, error) {
 	return matched[0], nil
 }
 
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
+// syncPath fsyncs the file or directory at path.
+func syncPath(path string) error {
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer d.Close()
-	return d.Sync()
+	defer f.Close()
+	return f.Sync()
+}
+
+// RenameSync renames oldpath to newpath and makes the rename durable. On vfat,
+// rename(2) writes the new directory entry with start cluster 0 and size 0;
+// the real values reach the disk only when the renamed inode itself is
+// written back, so syncing the parent directories alone leaves an empty file
+// or a directory pointing at the root after a power cut (WO-0007).
+func RenameSync(oldpath, newpath string) error {
+	if err := os.Rename(oldpath, newpath); err != nil {
+		return err
+	}
+	if err := syncPath(newpath); err != nil {
+		return err
+	}
+	if err := syncPath(filepath.Dir(newpath)); err != nil {
+		return err
+	}
+	if dir := filepath.Dir(oldpath); dir != filepath.Dir(newpath) {
+		return syncPath(dir)
+	}
+	return nil
 }
 
 func Rearm(dir, stem string, tries int) error {
@@ -154,11 +176,7 @@ func Rearm(dir, stem string, tries int) error {
 		return nil
 	}
 
-	if err := os.Rename(filepath.Join(dir, match), filepath.Join(dir, newName)); err != nil {
-		return err
-	}
-
-	return syncDir(dir)
+	return RenameSync(filepath.Join(dir, match), filepath.Join(dir, newName))
 }
 
 func SetBad(dir, stem string) error {
@@ -178,9 +196,5 @@ func SetBad(dir, stem string) error {
 		return nil
 	}
 
-	if err := os.Rename(filepath.Join(dir, match), filepath.Join(dir, newName)); err != nil {
-		return err
-	}
-
-	return syncDir(dir)
+	return RenameSync(filepath.Join(dir, match), filepath.Join(dir, newName))
 }
