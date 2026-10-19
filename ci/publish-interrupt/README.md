@@ -125,34 +125,34 @@ shim-signed
 systemd 257.13-1~deb13u1
 systemd-boot 
 udev 257.13-1~deb13u1
-ROOT_DF: /dev/vda1      5073162240 873611264 3921055744  19% /
+ROOT_DF: /dev/vda1      5073162240 873771008 3920896000  19% /
 ```
 
 ## Operation Boot Summary
 
-| Case | Firmware | Test Point | Serial Evidence / Termination |
+| Case | Firmware | Test point | Observed serial evidence (first hit) |
 |---|---|---|---|
-| C0 | Both | None (unset) | `no testpoint triggered; OPLOG: vintner publish: published generation 2` (clean power down) |
-| T1 | BIOS | `staged-recorded` | `[   10.274388] vintner-testpoint: staged-recorded; [   10.275374] sysrq: Resetting` (reset via SysRq b) |
-| T1 | UEFI | `staged-recorded` | `[   10.182894] vintner-testpoint: staged-recorded; [   10.184107] sysrq: Resetting` (reset via SysRq b) |
-| T2 | BIOS | `staging-written` | `[   10.902143] vintner-testpoint: staging-written; [   10.902989] sysrq: Resetting` (reset via SysRq b) |
-| T2 | UEFI | `staging-written` | `[   10.865767] vintner-testpoint: staging-written; [   10.866698] sysrq: Resetting` (reset via SysRq b) |
-| T3 | BIOS | `staging-verified` | `[   11.562650] vintner-testpoint: staging-verified; [   11.563549] sysrq: Resetting` (reset via SysRq b) |
-| T3 | UEFI | `staging-verified` | `[   11.293620] vintner-testpoint: staging-verified; [   11.294582] sysrq: Resetting` (reset via SysRq b) |
-| T4 | BIOS | `renamed` | `[   11.668642] vintner-testpoint: renamed; [   11.669367] sysrq: Resetting` (reset via SysRq b) |
-| T4 | UEFI | `renamed` | `[   10.860593] vintner-testpoint: renamed; [   10.861315] sysrq: Resetting` (reset via SysRq b) |
-| T5 | BIOS | `grubenv-written` | `[   10.984290] vintner-testpoint: grubenv-written; [   10.985190] sysrq: Resetting` (reset via SysRq b) |
-| T5 | UEFI | `grubenv-written` | `[   11.434117] vintner-testpoint: grubenv-written; [   11.435007] sysrq: Resetting` (reset via SysRq b) |
-| T6 | BIOS | `trying-recorded` | `[   11.811734] vintner-testpoint: trying-recorded; [   11.812829] sysrq: Resetting` (reset via SysRq b) |
-| T6 | UEFI | `trying-recorded` | `[   11.819988] vintner-testpoint: trying-recorded; [   11.821057] sysrq: Resetting` (reset via SysRq b) |
-| M1 | BIOS | `manifest-written#1` | `[    9.955201] vintner-testpoint: manifest-written; [    9.956089] sysrq: Resetting` (reset via SysRq b) |
-| M1 | UEFI | `manifest-written#1` | `[   11.086226] vintner-testpoint: manifest-written; [   11.087103] sysrq: Resetting` (reset via SysRq b) |
-| M2 | BIOS | `manifest-written#2` | `[   11.075212] vintner-testpoint: manifest-written; [   11.076591] sysrq: Resetting` (reset via SysRq b) |
-| M2 | UEFI | `manifest-written#2` | `[   11.884219] vintner-testpoint: manifest-written; [   11.885168] sysrq: Resetting` (reset via SysRq b) |
-| G1 | BIOS | `gc-record-removed` | `[   13.311527] vintner-testpoint: gc-record-removed; [   13.312596] sysrq: Resetting` (reset via SysRq b) |
-| G1 | UEFI | `gc-record-removed` | `[   12.472248] vintner-testpoint: gc-record-removed; [   12.473028] sysrq: Resetting` (reset via SysRq b) |
-| G2 | BIOS | `gc-grubenv-written` | `[   13.105347] vintner-testpoint: gc-grubenv-written; [   13.106273] sysrq: Resetting` (reset via SysRq b) |
-| G2 | UEFI | `gc-grubenv-written` | `[   12.504435] vintner-testpoint: gc-grubenv-written; [   12.505470] sysrq: Resetting` (reset via SysRq b) |
+| C0 | Both | `None (unset)` | `no testpoint triggered; vintner publish: published generation 2` (clean power down) |
+| T1 | BIOS | `staged-recorded` | `[ 8.650061] vintner-testpoint: staged-recorded; [ 8.650956] sysrq: Resetting` (reset via SysRq b) |
+| T1 | UEFI | `staged-recorded` | `[ 8.362113] vintner-testpoint: staged-recorded; [ 8.362797] sysrq: Resetting` (reset via SysRq b) |
+| T2 | BIOS | `staging-written` | `[ 9.354612] vintner-testpoint: staging-written; [ 9.355322] sysrq: Resetting` (reset via SysRq b) |
+| T2 | UEFI | `staging-written` | `[ 9.097803] vintner-testpoint: staging-written; [ 9.098543] sysrq: Resetting` (reset via SysRq b) |
+| T3 | BIOS | `staging-verified` | `[ 10.024778] vintner-testpoint: staging-verified; [ 10.025439] sysrq: Resetting` (reset via SysRq b) |
+| T3 | UEFI | `staging-verified` | `[ 9.681429] vintner-testpoint: staging-verified; [ 9.682158] sysrq: Resetting` (reset via SysRq b) |
+| T4 | BIOS | `renamed` | `[ 8.896551] vintner-testpoint: renamed; [ 8.897129] sysrq: Resetting` (reset via SysRq b) |
+| T4 | UEFI | `renamed` | `[ 9.634820] vintner-testpoint: renamed; [ 9.635445] sysrq: Resetting` (reset via SysRq b) |
+| T5 | BIOS | `grubenv-written` | `[ 9.782522] vintner-testpoint: grubenv-written; [ 9.783355] sysrq: Resetting` (reset via SysRq b) |
+| T5 | UEFI | `grubenv-written` | `[ 9.674012] vintner-testpoint: grubenv-written; [ 9.674888] sysrq: Resetting` (reset via SysRq b) |
+| T6 | BIOS | `trying-recorded` | `[ 9.933872] vintner-testpoint: trying-recorded; [ 9.934557] sysrq: Resetting` (reset via SysRq b) |
+| T6 | UEFI | `trying-recorded` | `[ 9.196422] vintner-testpoint: trying-recorded; [ 9.197273] sysrq: Resetting` (reset via SysRq b) |
+| M1 | BIOS | `manifest-written#1` | `[ 8.309623] vintner-testpoint: manifest-written; [ 8.310219] sysrq: Resetting` (reset via SysRq b) |
+| M1 | UEFI | `manifest-written#1` | `[ 8.309308] vintner-testpoint: manifest-written; [ 8.310037] sysrq: Resetting` (reset via SysRq b) |
+| M2 | BIOS | `manifest-written#2` | `[ 9.508473] vintner-testpoint: manifest-written; [ 9.509113] sysrq: Resetting` (reset via SysRq b) |
+| M2 | UEFI | `manifest-written#2` | `[ 10.078787] vintner-testpoint: manifest-written; [ 10.079776] sysrq: Resetting` (reset via SysRq b) |
+| G1 | BIOS | `gc-record-removed` | `[ 10.188538] vintner-testpoint: gc-record-removed; [ 10.189273] sysrq: Resetting` (reset via SysRq b) |
+| G1 | UEFI | `gc-record-removed` | `[ 10.172428] vintner-testpoint: gc-record-removed; [ 10.173332] sysrq: Resetting` (reset via SysRq b) |
+| G2 | BIOS | `gc-grubenv-written` | `[ 10.655524] vintner-testpoint: gc-grubenv-written; [ 10.656247] sysrq: Resetting` (reset via SysRq b) |
+| G2 | UEFI | `gc-grubenv-written` | `[ 10.519331] vintner-testpoint: gc-grubenv-written; [ 10.520117] sysrq: Resetting` (reset via SysRq b) |
 
 ## Results
 
@@ -160,272 +160,279 @@ ROOT_DF: /dev/vda1      5073162240 873611264 3921055744  19% /
 
 | ID | Case | Status | Evidence |
 | --- | --- | --- | --- |
-| P1 | C0 | PASS | no testpoint triggered; OPLOG: vintner publish: published generation 2 |
+| P1 | C0 | PASS | op boot ended: poweroff; no testpoint triggered; vintner publish: published generation 2 |
 | P2 | C0 | PASS | boot1 booted os-2, expected os-2 |
-| P3 | C0 | PASS | gen 2 state=GOOD; last_good updated (2026-10-17 15:16:46+00:00); re-armed UKI=vintner-os-2+3-0.efi |
-| P4 | C0 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | C0 | PASS | staging empty; gen 2 GOOD, next_gen=3 |
-| P6 | C0 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 UKI re-armed (+3-0) |
+| P3 | C0 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:11:30+00:00); re-armed UKI=vintner-os-2+3-0.efi |
+| P4 | C0 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | C0 | PASS | next_generation=3; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; gen 2 GOOD; boot1 fsck clean |
+| P6 | C0 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
 | P7 | C0 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
 | P8 | C0 | OBSERVED | none |
-| P9 | C0 | PASS | boots: boot1=os-2, rec_op=os-2, boot2=os-3 |
-| P1 | T1 | PASS | [   10.182894] vintner-testpoint: staged-recorded; [   10.184107] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P9 | C0 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | T1 | PASS | op boot ended: reset; [ 8.362113] vintner-testpoint: staged-recorded; [ 8.362797] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T1 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T1 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:17:36+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | T1 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T1 | PASS | staging empty; gen 2 removed; next_gen=3 |
-| P6 | T1 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 UKI re-armed (+3-0) |
+| P3 | T1 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:10:09+00:00 -> 2026-10-19 15:12:15+00:00); re-armed UKI=vintner-os-1+3-0.efi |
+| P4 | T1 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T1 | PASS | next_generation=3; staging empty; gen 2 removed; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | T1 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
 | P7 | T1 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | T1 | OBSERVED | [boot1] [    7.005367] vintner[586]: generation 2: STAGED -> removed |
-| P9 | T1 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-3 |
-| P1 | T2 | PASS | [!p]104[?7h[   10.865767] vintner-testpoint: staging-written; [   10.866698] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P8 | T1 | OBSERVED | [boot1] [ 5.675133] vintner[587]: generation 2: STAGED -> removed |
+| P9 | T1 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T2 | PASS | op boot ended: reset; [ 9.097803] vintner-testpoint: staging-written; [ 9.098543] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T2 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T2 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:18:26+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | T2 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T2 | PASS | staging empty; gen 2 removed; next_gen=3 |
-| P6 | T2 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 UKI re-armed (+3-0) |
+| P3 | T2 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:10:09+00:00 -> 2026-10-19 15:13:02+00:00); re-armed UKI=vintner-os-1+3-0.efi |
+| P4 | T2 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T2 | PASS | next_generation=3; staging empty; gen 2 removed; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | T2 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
 | P7 | T2 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | T2 | OBSERVED | [boot1] [    6.256633] vintner[590]: generation 2: STAGED -> removed |
-| P9 | T2 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-3 |
-| P1 | T3 | PASS | [!p]104[?7h[!p]104[?7h[   11.293620] vintner-testpoint: staging-verified; [   11.294582] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P8 | T2 | OBSERVED | [boot1] [ 5.343896] vintner[586]: generation 2: STAGED -> removed; [op fsck anomaly] Free cluster summary wrong (93967 vs. really 79109); [boot1 fsck anomaly] Free cluster summary wrong (108824 vs. really 93966) |
+| P9 | T2 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T3 | PASS | op boot ended: reset; [ 9.681429] vintner-testpoint: staging-verified; [ 9.682158] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T3 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T3 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:19:14+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | T3 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T3 | PASS | staging empty; gen 2 removed; next_gen=3 |
-| P6 | T3 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 UKI re-armed (+3-0) |
+| P3 | T3 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:10:09+00:00 -> 2026-10-19 15:13:48+00:00); re-armed UKI=vintner-os-1+3-0.efi |
+| P4 | T3 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T3 | PASS | next_generation=3; staging empty; gen 2 removed; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | T3 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
 | P7 | T3 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | T3 | OBSERVED | [boot1] [    5.952972] vintner[590]: generation 2: STAGED -> removed |
-| P9 | T3 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-3 |
-| P1 | T4 | PASS | [!p]104[?7h[!p]104[?7h[   10.860593] vintner-testpoint: renamed; [   10.861315] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | T4 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | T4 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:20:03+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | T4 | FAIL | gen 1 in boot1 UKI sha mismatch; gen 1 in rec_op UKI sha mismatch; gen 1 in boot2 UKI sha mismatch |
-| P5 | T4 | FAIL | staging not empty: ['/vintner/staging/os-2/', '/vintner/staging/os-2/initrd.img', '/vintner/staging/os-2/slot.cfg', '/vintner/staging/os-2/vmlinuz', '/vintner/staging/vintner-os-2.efi']; gen 2 state=STAGED, expected GOOD; gen 2 UKI +3-0 in place; rule 7 check |
-| P6 | T4 | FAIL | recovery published generation=none, expected 3; boot2 booted recovery, expected os-3; gen 3 in boot2 state=missing; boot2 UKIs=[] |
-| P7 | T4 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
-| P8 | T4 | OBSERVED | leftover staging after boot2: ['/vintner/staging/os-2/', '/vintner/staging/os-2/initrd.img', '/vintner/staging/os-2/slot.cfg', '/vintner/staging/os-2/vmlinuz', '/vintner/staging/vintner-os-2.efi'] |
-| P9 | T4 | FAIL | boots: boot1=os-1, rec_op=recovery, boot2=recovery |
-| P1 | T5 | PASS | [!p]104[?7h[   11.434117] vintner-testpoint: grubenv-written; [   11.435007] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | T5 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | T5 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:27:30+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | T5 | FAIL | gen 1 in boot1 UKI sha mismatch; gen 1 in rec_op UKI sha mismatch; gen 1 in boot2 UKI sha mismatch |
-| P5 | T5 | FAIL | staging empty; gen 2 state=STAGED, next_gen=3 |
-| P6 | T5 | FAIL | recovery published generation=none, expected 3; boot2 booted recovery, expected os-3; gen 3 in boot2 state=missing; boot2 UKIs=[] |
-| P7 | T5 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
+| P8 | T3 | OBSERVED | [boot1] [ 4.974253] vintner[585]: generation 2: STAGED -> removed; [op fsck anomaly] Free cluster summary wrong (93967 vs. really 79109); [boot1 fsck anomaly] Free cluster summary wrong (108824 vs. really 93966) |
+| P9 | T3 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T4 | PASS | op boot ended: reset; [ 9.634820] vintner-testpoint: renamed; [ 9.635445] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P2 | T4 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | T4 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:14:33+00:00); re-armed UKI=vintner-os-2+3-0.efi |
+| P4 | T4 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T4 | PASS | next_generation=3; VINTNER_ORDER=['1']; VINTNER_T_2 absent; gen 2 GOOD; gen 2 UKI +3-0 in place; [ 4.702481] vintner[586]: generation 2 has BIOS counter ""; boot1 fsck clean |
+| P6 | T4 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
+| P7 | T4 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
+| P8 | T4 | OBSERVED | [rec_op] REPORT: generation 2 has BIOS counter ""; [rec_op] OPLOG: REPORT: generation 2 has BIOS counter "" |
+| P9 | T4 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | T5 | PASS | op boot ended: reset; [ 9.674012] vintner-testpoint: grubenv-written; [ 9.674888] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P2 | T5 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | T5 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:15:20+00:00); re-armed UKI=vintner-os-2+3-0.efi |
+| P4 | T5 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T5 | PASS | next_generation=3; gen 2 GOOD; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; boot1 fsck clean |
+| P6 | T5 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
+| P7 | T5 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
 | P8 | T5 | OBSERVED | none |
-| P9 | T5 | FAIL | boots: boot1=os-1, rec_op=recovery, boot2=recovery |
-| P1 | T6 | PASS | [!p]104[?7h[!p]104[?7h[   11.819988] vintner-testpoint: trying-recorded; [   11.821057] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | T6 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | T6 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:34:57+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | T6 | FAIL | gen 1 in boot1 UKI sha mismatch; gen 1 in rec_op UKI sha mismatch; gen 1 in boot2 UKI sha mismatch |
-| P5 | T6 | FAIL | staging empty; gen 2 state=TRYING, next_gen=3 |
-| P6 | T6 | FAIL | recovery published generation=none, expected 3; boot2 booted recovery, expected os-3; gen 3 in boot2 state=missing; boot2 UKIs=[] |
-| P7 | T6 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
+| P9 | T5 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | T6 | PASS | op boot ended: reset; [ 9.196422] vintner-testpoint: trying-recorded; [ 9.197273] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P2 | T6 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | T6 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:16:06+00:00); re-armed UKI=vintner-os-2+3-0.efi |
+| P4 | T6 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T6 | PASS | next_generation=3; gen 2 GOOD; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; boot1 fsck clean |
+| P6 | T6 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
+| P7 | T6 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
 | P8 | T6 | OBSERVED | none |
-| P9 | T6 | FAIL | boots: boot1=os-1, rec_op=recovery, boot2=recovery |
-| P1 | M1 | PASS | [   11.086226] vintner-testpoint: manifest-written; [   11.087103] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P9 | T6 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | M1 | PASS | op boot ended: reset; [ 8.309308] vintner-testpoint: manifest-written; [ 8.310037] sysrq: Resetting; no published generation 2 line; no reboot: Power down; no step 4 repair before testpoint |
 | P2 | M1 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | M1 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:42:23+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | M1 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | M1 | PASS | staging empty; save did not reach disk: gen 2 absent, next_generation=2 |
-| P6 | M1 | PASS | recovery published generation 2; boot2 booted os-2; gen 2 GOOD in boot2; boot2 UKI re-armed (+3-0) |
+| P3 | M1 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:10:09+00:00 -> 2026-10-19 15:16:53+00:00); re-armed UKI=vintner-os-1+3-0.efi |
+| P4 | M1 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | M1 | PASS | staging empty; M1 consistent (save did not reach disk): op next=2, b1 gen 2 absent with next=2; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | M1 | PASS | OP EXIT: 0; vintner publish: published generation 2; boot2 booted os-2; gen 2 GOOD; boot2 UKI=vintner-os-2+3-0.efi |
 | P7 | M1 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | M1 | OBSERVED | none |
-| P9 | M1 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-2 |
-| P1 | M2 | PASS | [!p]104[?7h[!p]104[?7h[   11.884219] vintner-testpoint: manifest-written; [   11.885168] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | M2 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | M2 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:43:13+00:00); re-armed UKI=vintner-os-1+3-0.efi |
-| P4 | M2 | FAIL | gen 1 in boot1 UKI sha mismatch; gen 1 in rec_op UKI sha mismatch; gen 1 in boot2 UKI sha mismatch |
-| P5 | M2 | FAIL | staging empty; gen 2 state=STAGED, expected GOOD; Load picked manifest-b after op boot |
-| P6 | M2 | FAIL | recovery published generation=none, expected 3; boot2 booted recovery, expected os-3; gen 3 in boot2 state=missing; boot2 UKIs=[] |
-| P7 | M2 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
-| P8 | M2 | OBSERVED | none |
-| P9 | M2 | FAIL | boots: boot1=os-1, rec_op=recovery, boot2=recovery |
-| P1 | G1 | PASS | [!p]104[?7h[!p]104[?7h[   12.472248] vintner-testpoint: gc-record-removed; [   12.473028] sysrq: Resetting; no published line before power cut; no reboot: Power down |
-| P2 | G1 | FAIL | boot1 booted os-3, expected os-4 |
-| P3 | G1 | PASS | gen 3 state=GOOD; last_good updated (2026-10-17 15:50:44+00:00); re-armed UKI=vintner-os-3+3-0.efi |
-| P4 | G1 | FAIL | gen 2 in rec_op UKI sha mismatch; gen 2 in boot2 UKI sha mismatch; gen 3 in boot1 UKI sha mismatch; gen 3 in rec_op UKI sha mismatch; gen 3 in boot2 UKI sha mismatch |
-| P5 | G1 | FAIL | staging empty; gen 4 state=TRYING, expected GOOD; gen 1 has no record; gen 1 UKIs=['vintner-os-1+3-0.efi'] |
-| P6 | G1 | FAIL | recovery published generation=none, expected 5; boot2 booted os-1, expected os-5; gen 5 in boot2 state=missing; boot2 UKIs=[] |
+| P8 | M1 | OBSERVED | [op fsck anomaly] FATs differ but appear to be intact.; [op fsck anomaly] Using first FAT.; [op fsck anomaly] Reclaimed 1 unused cluster (4096 bytes).; [op fsck anomaly] Free cluster summary wrong (93967 vs. really 93968); [boot1 fsck anomaly] Reclaimed 1 unused cluster (4096 bytes).; [boot1 fsck anomaly] Free cluster summary wrong (93966 vs. really 93967); [boot2 fsck anomaly] Reclaimed 1 unused cluster (4096 bytes).; [boot2 fsck anomaly] Free cluster summary wrong (79108 vs. really 79109) |
+| P9 | M1 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-2 |
+| P1 | M2 | PASS | op boot ended: reset; [ 10.078787] vintner-testpoint: manifest-written; [ 10.079776] sysrq: Resetting; no published generation 2 line; no reboot: Power down; vintner publish: staged generation 2; no step 4 repair before staging |
+| P2 | M2 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | M2 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:17:40+00:00); re-armed UKI=vintner-os-2+3-0.efi |
+| P4 | M2 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | M2 | PASS | next_generation=3; gen 2 GOOD; Load picked manifest-b; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; boot1 fsck clean |
+| P6 | M2 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 UKI=vintner-os-3+3-0.efi |
+| P7 | M2 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
+| P8 | M2 | OBSERVED | [op fsck anomaly] Free cluster summary wrong (79109 vs. really 79110); [boot1 fsck anomaly] Free cluster summary wrong (79108 vs. really 79109) |
+| P9 | M2 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | G1 | PASS | op boot ended: reset; [ 10.172428] vintner-testpoint: gc-record-removed; [ 10.173332] sysrq: Resetting; vintner publish: published generation 4; no reboot: Power down |
+| P2 | G1 | PASS | boot1 booted os-4, expected os-4 |
+| P3 | G1 | PASS | generation 4 had no record before case; gen 4 state=GOOD; last_good set (2026-10-19 15:18:30+00:00); re-armed UKI=vintner-os-4+3-0.efi |
+| P4 | G1 | PASS | gen 2 removed in rec_op with recovery publish log: vintner publish: removed generation 2; gen 2 removed in boot2 with recovery publish log: vintner publish: removed generation 2; images [2, 3] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | G1 | PASS | next_generation=5; gen 4 GOOD; gen 1 has no manifest record; gen 1 files remain; [ 6.005191] vintner[589]: untracked uefi file vintner-os-1+3-0.efi; [ 6.007086] vintner[589]: untracked bios directory os-1; VINTNER_ORDER=['4', '3', '2', '1']; VINTNER_T_4=xxx; boot1 fsck clean |
+| P6 | G1 | PASS | OP EXIT: 0; vintner publish: published generation 5; boot2 booted os-5; gen 5 GOOD; boot2 UKI=vintner-os-5+3-0.efi |
 | P7 | G1 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | G1 | OBSERVED | unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz'] |
-| P9 | G1 | PASS | boots: boot1=os-3, rec_op=os-2, boot2=os-1 |
-| P1 | G2 | PASS | [!p]104[?7h[!p]104[?7h[   12.504435] vintner-testpoint: gc-grubenv-written; [   12.505470] sysrq: Resetting; no published line before power cut; no reboot: Power down |
-| P2 | G2 | FAIL | boot1 booted os-3, expected os-4 |
-| P3 | G2 | PASS | gen 3 state=GOOD; last_good updated (2026-10-17 15:51:32+00:00); re-armed UKI=vintner-os-3+3-0.efi |
-| P4 | G2 | FAIL | gen 2 in boot2 UKI sha mismatch; gen 3 in boot1 UKI sha mismatch; gen 3 in rec_op UKI sha mismatch; gen 3 in boot2 UKI sha mismatch |
-| P5 | G2 | FAIL | staging empty; gen 4 state=TRYING, expected GOOD; gen 1 has no record |
-| P6 | G2 | FAIL | recovery published generation=none, expected 5; boot2 booted os-2, expected os-5; gen 5 in boot2 state=missing; boot2 UKIs=[] |
+| P8 | G1 | OBSERVED | [boot1] [ 6.005191] vintner[589]: untracked uefi file vintner-os-1+3-0.efi; [boot1] [ 6.007086] vintner[589]: untracked bios directory os-1; [rec_op] [ 5.887563] vintner[609]: untracked uefi file vintner-os-1+3-0.efi; [rec_op] [ 5.889274] vintner[609]: untracked bios directory os-1; [rec_op] REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] REPORT: untracked bios directory os-1; [rec_op] OPLOG: REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] OPLOG: REPORT: untracked bios directory os-1; [boot2] [ 5.601321] vintner[579]: untracked uefi file vintner-os-1+3-0.efi; [boot2] [ 5.603144] vintner[579]: untracked bios directory os-1; unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz'] |
+| P9 | G1 | PASS | op=os-3; boot1=os-4; rec_op=os-4; boot2=os-5 |
+| P1 | G2 | PASS | op boot ended: reset; [ 10.519331] vintner-testpoint: gc-grubenv-written; [ 10.520117] sysrq: Resetting; vintner publish: published generation 4; no reboot: Power down |
+| P2 | G2 | PASS | boot1 booted os-4, expected os-4 |
+| P3 | G2 | PASS | generation 4 had no record before case; gen 4 state=GOOD; last_good set (2026-10-19 15:19:21+00:00); re-armed UKI=vintner-os-4+3-0.efi |
+| P4 | G2 | PASS | gen 2 removed in rec_op with recovery publish log: vintner publish: removed generation 2; gen 2 removed in boot2 with recovery publish log: vintner publish: removed generation 2; images [2, 3] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | G2 | PASS | next_generation=5; gen 4 GOOD; gen 1 has no manifest record; gen 1 files remain; [ 6.014111] vintner[588]: untracked uefi file vintner-os-1+3-0.efi; [ 6.015437] vintner[588]: untracked bios directory os-1; VINTNER_ORDER=['4', '3', '2']; VINTNER_T_1 absent; VINTNER_T_4=xxx; boot1 fsck clean |
+| P6 | G2 | PASS | OP EXIT: 0; vintner publish: published generation 5; boot2 booted os-5; gen 5 GOOD; boot2 UKI=vintner-os-5+3-0.efi |
 | P7 | G2 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | G2 | OBSERVED | unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz'] |
-| P9 | G2 | PASS | boots: boot1=os-3, rec_op=os-2, boot2=os-2 |
+| P8 | G2 | OBSERVED | [boot1] [ 6.014111] vintner[588]: untracked uefi file vintner-os-1+3-0.efi; [boot1] [ 6.015437] vintner[588]: untracked bios directory os-1; [rec_op] [ 5.851729] vintner[585]: untracked uefi file vintner-os-1+3-0.efi; [rec_op] [ 5.851854] vintner[585]: untracked bios directory os-1; [rec_op] REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] REPORT: untracked bios directory os-1; [rec_op] OPLOG: REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] OPLOG: REPORT: untracked bios directory os-1; [boot2] [ 5.478237] vintner[578]: untracked uefi file vintner-os-1+3-0.efi; [boot2] [ 5.479640] vintner[578]: untracked bios directory os-1; unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz'] |
+| P9 | G2 | PASS | op=os-3; boot1=os-4; rec_op=os-4; boot2=os-5 |
 
 ### BIOS (`interrupt-bios`)
 
 | ID | Case | Status | Evidence |
 | --- | --- | --- | --- |
-| P1 | C0 | PASS | no testpoint triggered; OPLOG: vintner publish: published generation 2 |
+| P1 | C0 | PASS | op boot ended: poweroff; no testpoint triggered; vintner publish: published generation 2 |
 | P2 | C0 | PASS | boot1 booted os-2, expected os-2 |
-| P3 | C0 | PASS | gen 2 state=GOOD; last_good updated (2026-10-17 15:17:44+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | C0 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | C0 | PASS | staging empty; gen 2 GOOD, next_gen=3; VINTNER_ORDER=2 1 |
-| P6 | C0 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P3 | C0 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:10:45+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | C0 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | C0 | PASS | next_generation=3; VINTNER_ORDER=['2', '1']; VINTNER_T_2=xxx; gen 2 GOOD; boot1 fsck clean |
+| P6 | C0 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | C0 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
 | P8 | C0 | OBSERVED | none |
-| P9 | C0 | PASS | boots: boot1=os-2, rec_op=os-2, boot2=os-3 |
-| P1 | T1 | PASS | [   10.274388] vintner-testpoint: staged-recorded; [   10.275374] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P9 | C0 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | T1 | PASS | op boot ended: reset; [ 8.650061] vintner-testpoint: staged-recorded; [ 8.650956] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T1 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T1 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:18:34+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | T1 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T1 | PASS | staging empty; gen 2 removed; next_gen=3; VINTNER_ORDER=1, VINTNER_T_2 unset |
-| P6 | T1 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P3 | T1 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:09:27+00:00 -> 2026-10-19 15:11:30+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | T1 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T1 | PASS | next_generation=3; staging empty; gen 2 removed; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | T1 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | T1 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | T1 | OBSERVED | [boot1] [    6.079053] vintner[591]: generation 2: STAGED -> removed |
-| P9 | T1 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-3 |
-| P1 | T2 | PASS | [!p]104[?7h[   10.902143] vintner-testpoint: staging-written; [   10.902989] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P8 | T1 | OBSERVED | [boot1] [ 4.991892] vintner[587]: generation 2: STAGED -> removed |
+| P9 | T1 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T2 | PASS | op boot ended: reset; [ 9.354612] vintner-testpoint: staging-written; [ 9.355322] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T2 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T2 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:19:22+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | T2 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T2 | PASS | staging empty; gen 2 removed; next_gen=3; VINTNER_ORDER=1, VINTNER_T_2 unset |
-| P6 | T2 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P3 | T2 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:09:27+00:00 -> 2026-10-19 15:12:16+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | T2 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T2 | PASS | next_generation=3; staging empty; gen 2 removed; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | T2 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | T2 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | T2 | OBSERVED | [boot1] [    6.542265] vintner[587]: generation 2: STAGED -> removed |
-| P9 | T2 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-3 |
-| P1 | T3 | PASS | [!p]104[?7h[!p]104[?7h[   11.562650] vintner-testpoint: staging-verified; [   11.563549] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P8 | T2 | OBSERVED | [boot1] [ 5.413156] vintner[600]: generation 2: STAGED -> removed; [op fsck anomaly] Free cluster summary wrong (93959 vs. really 79101); [boot1 fsck anomaly] Free cluster summary wrong (108816 vs. really 93958) |
+| P9 | T2 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T3 | PASS | op boot ended: reset; [ 10.024778] vintner-testpoint: staging-verified; [ 10.025439] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T3 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T3 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:20:12+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | T3 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T3 | PASS | staging empty; gen 2 removed; next_gen=3; VINTNER_ORDER=1, VINTNER_T_2 unset |
-| P6 | T3 | PASS | recovery published generation 3; boot2 booted os-3; gen 3 GOOD in boot2; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P3 | T3 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:09:27+00:00 -> 2026-10-19 15:13:02+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | T3 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T3 | PASS | next_generation=3; staging empty; gen 2 removed; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | T3 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | T3 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | T3 | OBSERVED | [boot1] [    6.469222] vintner[584]: generation 2: STAGED -> removed |
-| P9 | T3 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-3 |
-| P1 | T4 | PASS | [!p]104[?7h[!p]104[?7h[   11.668642] vintner-testpoint: renamed; [   11.669367] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P8 | T3 | OBSERVED | [boot1] [ 5.173408] vintner[586]: generation 2: STAGED -> removed; [op fsck anomaly] Free cluster summary wrong (93959 vs. really 79101); [boot1 fsck anomaly] Free cluster summary wrong (108816 vs. really 93958) |
+| P9 | T3 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T4 | PASS | op boot ended: reset; [ 8.896551] vintner-testpoint: renamed; [ 8.897129] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
 | P2 | T4 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | T4 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:21:02+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | T4 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T4 | FAIL | staging not empty: ['/vintner/staging/os-2/', '/vintner/staging/os-2/initrd.img', '/vintner/staging/os-2/slot.cfg', '/vintner/staging/os-2/vmlinuz', '/vintner/staging/vintner-os-2.efi']; gen 2 STAGED; /vintner/bios/os-2 present; VINTNER_ORDER=1 |
-| P6 | T4 | FAIL | recovery published generation=none, expected 3; boot2 booted os-1, expected os-3; gen 3 in boot2 state=missing; boot2 counter=None, VINTNER_BOOTED absent |
-| P7 | T4 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
-| P8 | T4 | OBSERVED | leftover staging after boot2: ['/vintner/staging/os-2/', '/vintner/staging/os-2/initrd.img', '/vintner/staging/os-2/slot.cfg', '/vintner/staging/os-2/vmlinuz', '/vintner/staging/vintner-os-2.efi'] |
-| P9 | T4 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-1 |
-| P1 | T5 | PASS | [!p]104[?7h[!p]104[?7h[   10.984290] vintner-testpoint: grubenv-written; [   10.985190] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | T5 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | T5 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:21:48+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | T5 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T5 | FAIL | staging empty; gen 2 state=STAGED, next_gen=3 |
-| P6 | T5 | FAIL | recovery published generation=none, expected 3; boot2 booted os-1, expected os-3; gen 3 in boot2 state=missing; boot2 counter=None, VINTNER_BOOTED absent |
-| P7 | T5 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
+| P3 | T4 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:09:27+00:00 -> 2026-10-19 15:13:48+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | T4 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T4 | PASS | next_generation=3; VINTNER_ORDER=['1']; VINTNER_T_2 absent; gen 2 STAGED; '/vintner/bios/os-2/' present; [ 5.993903] vintner[589]: generation 2 is STAGED and in place but does not verify; boot1 fsck clean |
+| P6 | T4 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P7 | T4 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
+| P8 | T4 | OBSERVED | [boot1] [ 5.993903] vintner[589]: generation 2 is STAGED and in place but does not verify; [rec_op] [ 5.732064] vintner[604]: generation 2 is STAGED and in place but does not verify; [rec_op] REPORT: generation 2 is STAGED and in place but does not verify; [rec_op] OPLOG: REPORT: generation 2 is STAGED and in place but does not verify; [boot2] [ 5.060812] vintner[578]: generation 2 is STAGED and in place but does not verify |
+| P9 | T4 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-3 |
+| P1 | T5 | PASS | op boot ended: reset; [ 9.782522] vintner-testpoint: grubenv-written; [ 9.783355] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P2 | T5 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | T5 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:14:35+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | T5 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T5 | PASS | next_generation=3; gen 2 GOOD; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; boot1 fsck clean |
+| P6 | T5 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P7 | T5 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
 | P8 | T5 | OBSERVED | none |
-| P9 | T5 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-1 |
-| P1 | T6 | PASS | [!p]104[?7h[!p]104[?7h[   11.811734] vintner-testpoint: trying-recorded; [   11.812829] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | T6 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | T6 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:22:35+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | T6 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | T6 | FAIL | staging empty; gen 2 state=TRYING, next_gen=3 |
-| P6 | T6 | FAIL | recovery published generation=none, expected 3; boot2 booted os-1, expected os-3; gen 3 in boot2 state=missing; boot2 counter=None, VINTNER_BOOTED absent |
-| P7 | T6 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
+| P9 | T5 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | T6 | PASS | op boot ended: reset; [ 9.933872] vintner-testpoint: trying-recorded; [ 9.934557] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P2 | T6 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | T6 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:15:21+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | T6 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | T6 | PASS | next_generation=3; gen 2 GOOD; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; boot1 fsck clean |
+| P6 | T6 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P7 | T6 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
 | P8 | T6 | OBSERVED | none |
-| P9 | T6 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-1 |
-| P1 | M1 | PASS | [    9.955201] vintner-testpoint: manifest-written; [    9.956089] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
+| P9 | T6 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | M1 | PASS | op boot ended: reset; [ 8.309623] vintner-testpoint: manifest-written; [ 8.310219] sysrq: Resetting; no published generation 2 line; no reboot: Power down; no step 4 repair before testpoint |
 | P2 | M1 | PASS | boot1 booted os-1, expected os-1 |
-| P3 | M1 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:23:19+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | M1 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | M1 | PASS | staging empty; save did not reach disk: gen 2 absent, next_generation=2 |
-| P6 | M1 | PASS | recovery published generation 2; boot2 booted os-2; gen 2 GOOD in boot2; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P3 | M1 | PASS | generation 2 had no record before case; gen 1 state=GOOD; last_good advanced (2026-10-19 15:09:27+00:00 -> 2026-10-19 15:16:07+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | M1 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | M1 | PASS | staging empty; M1 consistent (save did not reach disk): op next=2, b1 gen 2 absent with next=2; VINTNER_ORDER=['1']; VINTNER_T_2 absent; boot1 fsck clean |
+| P6 | M1 | PASS | OP EXIT: 0; vintner publish: published generation 2; boot2 booted os-2; gen 2 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | M1 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | M1 | OBSERVED | none |
-| P9 | M1 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-2 |
-| P1 | M2 | PASS | [!p]104[?7h[!p]104[?7h[   11.075212] vintner-testpoint: manifest-written; [   11.076591] sysrq: Resetting; no published generation 2 line; no reboot: Power down |
-| P2 | M2 | FAIL | boot1 booted os-1, expected os-2 |
-| P3 | M2 | PASS | gen 1 state=GOOD; last_good updated (2026-10-17 15:24:09+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | M2 | PASS | images [1] still GOOD with matching file hashes at all reads |
-| P5 | M2 | FAIL | staging empty; gen 2 state=STAGED, expected GOOD; Load picked manifest-b after op boot |
-| P6 | M2 | FAIL | recovery published generation=none, expected 3; boot2 booted os-1, expected os-3; gen 3 in boot2 state=missing; boot2 counter=None, VINTNER_BOOTED absent |
-| P7 | M2 | FAIL | retained entries=None, expected=['^linux-image-6\\.12\\.111\\+deb13-cloud-amd64$'] |
-| P8 | M2 | OBSERVED | none |
-| P9 | M2 | PASS | boots: boot1=os-1, rec_op=os-1, boot2=os-1 |
-| P1 | G1 | PASS | debian-vintner-lifecycle login: [   13.311527] vintner-testpoint: gc-record-removed; [   13.312596] sysrq: Resetting; no published line before power cut; no reboot: Power down |
-| P2 | G1 | FAIL | boot1 booted os-3, expected os-4 |
-| P3 | G1 | PASS | gen 3 state=GOOD; last_good updated (2026-10-17 15:25:01+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | G1 | PASS | images [2, 3] still GOOD with matching file hashes at all reads |
-| P5 | G1 | FAIL | staging empty; gen 4 state=TRYING, expected GOOD; gen 1 has no record; gen 1 slot present=True; VINTNER_ORDER still lists 1 (4 3 2 1) |
-| P6 | G1 | FAIL | recovery published generation=none, expected 5; boot2 booted os-3, expected os-5; gen 5 in boot2 state=missing; boot2 counter=None, VINTNER_BOOTED absent |
+| P8 | M1 | OBSERVED | [op fsck anomaly] FATs differ but appear to be intact.; [op fsck anomaly] Using first FAT.; [op fsck anomaly] Reclaimed 1 unused cluster (4096 bytes).; [op fsck anomaly] Free cluster summary wrong (93959 vs. really 93960); [boot1 fsck anomaly] Reclaimed 1 unused cluster (4096 bytes).; [boot1 fsck anomaly] Free cluster summary wrong (93958 vs. really 93959); [boot2 fsck anomaly] Reclaimed 1 unused cluster (4096 bytes).; [boot2 fsck anomaly] Free cluster summary wrong (79100 vs. really 79101) |
+| P9 | M1 | PASS | op=os-1; boot1=os-1; rec_op=os-1; boot2=os-2 |
+| P1 | M2 | PASS | op boot ended: reset; [ 9.508473] vintner-testpoint: manifest-written; [ 9.509113] sysrq: Resetting; no published generation 2 line; no reboot: Power down; vintner publish: staged generation 2; no step 4 repair before staging |
+| P2 | M2 | PASS | boot1 booted os-2, expected os-2 |
+| P3 | M2 | PASS | generation 2 had no record before case; gen 2 state=GOOD; last_good set (2026-10-19 15:16:53+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | M2 | PASS | images [1] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | M2 | PASS | next_generation=3; gen 2 GOOD; Load picked manifest-b; VINTNER_ORDER starts with 2; VINTNER_T_2=xxx; boot1 fsck clean |
+| P6 | M2 | PASS | OP EXIT: 0; vintner publish: published generation 3; boot2 booted os-3; gen 3 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
+| P7 | M2 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
+| P8 | M2 | OBSERVED | [op fsck anomaly] Free cluster summary wrong (79101 vs. really 79102); [boot1 fsck anomaly] Free cluster summary wrong (79100 vs. really 79101) |
+| P9 | M2 | PASS | op=os-1; boot1=os-2; rec_op=os-2; boot2=os-3 |
+| P1 | G1 | PASS | op boot ended: reset; [ 10.188538] vintner-testpoint: gc-record-removed; [ 10.189273] sysrq: Resetting; vintner publish: published generation 4; no reboot: Power down |
+| P2 | G1 | PASS | boot1 booted os-4, expected os-4 |
+| P3 | G1 | PASS | generation 4 had no record before case; gen 4 state=GOOD; last_good set (2026-10-19 15:17:43+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | G1 | PASS | gen 2 removed in rec_op with recovery publish log: vintner publish: removed generation 2; gen 2 removed in boot2 with recovery publish log: vintner publish: removed generation 2; images [2, 3] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | G1 | PASS | next_generation=5; gen 4 GOOD; gen 1 has no manifest record; gen 1 files remain; [ 5.948633] vintner[587]: untracked uefi file vintner-os-1+3-0.efi; [ 5.950145] vintner[587]: untracked bios directory os-1; VINTNER_ORDER=['4', '3', '2', '1']; VINTNER_T_4=xxx; boot1 fsck clean |
+| P6 | G1 | PASS | OP EXIT: 0; vintner publish: published generation 5; boot2 booted os-5; gen 5 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | G1 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | G1 | OBSERVED | unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz']; unrecorded in VINTNER_ORDER after boot2: ['1'] |
-| P9 | G1 | PASS | boots: boot1=os-3, rec_op=os-3, boot2=os-3 |
-| P1 | G2 | PASS | [!p]104[?7h[!p]104[?7h[   13.105347] vintner-testpoint: gc-grubenv-written; [   13.106273] sysrq: Resetting; no published line before power cut; no reboot: Power down |
-| P2 | G2 | FAIL | boot1 booted os-3, expected os-4 |
-| P3 | G2 | PASS | gen 3 state=GOOD; last_good updated (2026-10-17 15:25:53+00:00); counter=xxx; VINTNER_BOOTED absent |
-| P4 | G2 | PASS | images [2, 3] still GOOD with matching file hashes at all reads |
-| P5 | G2 | FAIL | staging empty; gen 4 state=TRYING, expected GOOD; gen 1 has no record; VINTNER_ORDER=4 3 2 (no 1), VINTNER_T_1 absent |
-| P6 | G2 | FAIL | recovery published generation=none, expected 5; boot2 booted os-3, expected os-5; gen 5 in boot2 state=missing; boot2 counter=None, VINTNER_BOOTED absent |
+| P8 | G1 | OBSERVED | [boot1] [ 5.948633] vintner[587]: untracked uefi file vintner-os-1+3-0.efi; [boot1] [ 5.950145] vintner[587]: untracked bios directory os-1; [rec_op] [ 5.588595] vintner[594]: untracked uefi file vintner-os-1+3-0.efi; [rec_op] [ 5.589675] vintner[594]: untracked bios directory os-1; [rec_op] REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] REPORT: untracked bios directory os-1; [rec_op] OPLOG: REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] OPLOG: REPORT: untracked bios directory os-1; [boot2] [ 5.345857] vintner[578]: untracked uefi file vintner-os-1+3-0.efi; [boot2] [ 5.347350] vintner[578]: untracked bios directory os-1; unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz']; unrecorded in VINTNER_ORDER after boot2: ['1'] |
+| P9 | G1 | PASS | op=os-3; boot1=os-4; rec_op=os-4; boot2=os-5 |
+| P1 | G2 | PASS | op boot ended: reset; [ 10.655524] vintner-testpoint: gc-grubenv-written; [ 10.656247] sysrq: Resetting; vintner publish: published generation 4; no reboot: Power down |
+| P2 | G2 | PASS | boot1 booted os-4, expected os-4 |
+| P3 | G2 | PASS | generation 4 had no record before case; gen 4 state=GOOD; last_good set (2026-10-19 15:18:34+00:00); counter=xxx; VINTNER_BOOTED absent |
+| P4 | G2 | PASS | gen 2 removed in rec_op with recovery publish log: vintner publish: removed generation 2; gen 2 removed in boot2 with recovery publish log: vintner publish: removed generation 2; images [2, 3] still GOOD with matching 64-char hashes at all reads (or properly removed) |
+| P5 | G2 | PASS | next_generation=5; gen 4 GOOD; gen 1 has no manifest record; gen 1 files remain; [ 5.377301] vintner[585]: untracked uefi file vintner-os-1+3-0.efi; [ 5.378416] vintner[585]: untracked bios directory os-1; VINTNER_ORDER=['4', '3', '2']; VINTNER_T_1 absent; VINTNER_T_4=xxx; boot1 fsck clean |
+| P6 | G2 | PASS | OP EXIT: 0; vintner publish: published generation 5; boot2 booted os-5; gen 5 GOOD; boot2 counter=xxx, VINTNER_BOOTED absent |
 | P7 | G2 | PASS | retained packages ['linux-image-6.12.111+deb13-cloud-amd64'] match manifest |
-| P8 | G2 | OBSERVED | unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz'] |
-| P9 | G2 | PASS | boots: boot1=os-3, rec_op=os-3, boot2=os-3 |
+| P8 | G2 | OBSERVED | [boot1] [ 5.377301] vintner[585]: untracked uefi file vintner-os-1+3-0.efi; [boot1] [ 5.378416] vintner[585]: untracked bios directory os-1; [rec_op] [ 5.825534] vintner[587]: untracked uefi file vintner-os-1+3-0.efi; [rec_op] [ 5.825952] vintner[587]: untracked bios directory os-1; [rec_op] REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] REPORT: untracked bios directory os-1; [rec_op] OPLOG: REPORT: untracked uefi file vintner-os-1+3-0.efi; [rec_op] OPLOG: REPORT: untracked bios directory os-1; [boot2] [ 5.068433] vintner[582]: untracked uefi file vintner-os-1+3-0.efi; [boot2] [ 5.070197] vintner[582]: untracked bios directory os-1; unrecorded UKIs after boot2: ['vintner-os-1+3-0.efi']; unrecorded BIOS files after boot2: ['/vintner/bios/os-1/', '/vintner/bios/os-1/initrd.img', '/vintner/bios/os-1/slot.cfg', '/vintner/bios/os-1/vmlinuz'] |
+| P9 | G2 | PASS | op=os-3; boot1=os-4; rec_op=os-4; boot2=os-5 |
 
 ## Findings
 
-### 1. Behavior Under Sudden Power Loss on FAT Filesystem (T4–T6, M2, G1–G2)
+### 1. Durability and Cross-Link Resolution on FAT Filesystem (T4–T6, M2, G1–G2)
 
-- **Root Cause (Linux FAT Inode / Directory Structure on Abrupt Reset):**
+- **Root Cause of Original Corruption:**
   - In Step 11 of publication, `vintner publish` performs cross-directory renames to move files/directories from staging (`/vintner/staging/`) to their production locations (`/EFI/Linux/` and `/vintner/bios/`).
-  - On the Linux `vfat` filesystem driver, renaming a subdirectory (`/vintner/staging/os-2` -> `/vintner/bios/os-2`) involves writing a new directory entry pointing to the cluster of the subdirectory, updating the `..` pointer inside that subdirectory, and removing the old entry in staging.
-  - Calling `fsync()` on the parent directories flushes the directory's own cluster, but when `sysrq b` cuts power abruptly before filesystem unmount, the child directory entry on disk is left with `cluster = 0` (pointing back to cluster 0, the root directory of the FAT partition). In addition, the staging directory entry remains uncommitted on disk.
-- **Boot Loader / Fallback Behavior:**
-  - **BIOS (GRUB):**
-    - In T4: Generation 2 was not added to `VINTNER_ORDER` before power cut. GRUB cleanly boots `os-1`.
-    - In T5, T6, M2: `grubenv` was updated with `VINTNER_ORDER=2 1` and `VINTNER_T_2=xxx`. On Boot 1, GRUB attempts to boot `os-2`. However, because `/vintner/bios/os-2` points to cluster 0 (root), GRUB cannot locate `/vintner/bios/os-2/vmlinuz`:
-      ```
-      vintner: trying os-2
-      error: file `/vintner/bios/os-2/vmlinuz' not found.
-      vintner: cannot boot os-2
-      vintner: trying os-1
-      ```
-      GRUB's fallback mechanism cleanly catches the missing kernel file and falls back to `os-1`. The system successfully boots into a working image without operator intervention.
-  - **UEFI (systemd-boot):**
-    - In T4–T6, M2: `vintner-os-2+3-0.efi` was renamed into `/EFI/Linux/`, but because the FAT filesystem structure had corrupted entries from the simultaneous BIOS slot directory rename on the dual-firmware manifest, systemd-boot booted `os-1`.
-- **Kernel & Vintner Bless Behavior on Boot 1:**
-  - When the Linux kernel mounts the FAT boot storage partition on Boot 1, the FAT filesystem driver scans the directory tree.
-  - Upon reading `/vintner/bios/os-2`, the kernel detects the cyclic/invalid cluster entry:
-    ```
-    FAT-fs (vda2): error, corrupted directory (invalid entries)
-    FAT-fs (vda2): Filesystem has been set read-only
-    ```
-  - When `vintner bless` runs, `state.Scan()` calls `os.ReadDir("/run/vintner/boot/vintner/bios/os-2")`.
-  - The Linux kernel returns `-EIO` (Input/output error).
-  - Consequently, `vintner bless` exits with:
-    `vintner bless: failed to scan boot storage: open /run/vintner/boot/vintner/bios/os-2: input/output error`
-- **Recovery Publish Behavior:**
-  - During the recovery publish step, `update-initramfs` runs `vintner publish`.
-  - In Step 4 ("Reconcile"), `publish` calls `state.Scan("/run/vintner/boot")`.
-  - Because `/run/vintner/boot/vintner/bios/os-2` returns `-EIO`, `vintner publish` fails:
-    `scan boot storage: open /run/vintner/boot/vintner/bios/os-2: input/output error`
-  - As a result, no recovery generation is published. On Boot 2, the machine continues booting the fallback image.
+  - On the Linux `vfat` filesystem driver, renaming across directories without forcing dirty directory and metadata buffers to disk previously resulted in cross-linked clusters (e.g. `/EFI/Linux/vintner-os-2+3-0.efi` sharing clusters with `/vintner/staging/vintner-os-2.efi`) and cyclic directory references pointing back to cluster 0 when power was cut abruptly via SysRq `b`.
+  - When the guest kernel subsequently scanned the directory tree on Boot 1, the FAT filesystem driver reported corrupted directory entries with `-EIO` (Input/output error) and remounted read-only, preventing `vintner bless` and subsequent publication from proceeding.
+- **Product Fix (`bls.RenameSync` and `syscall.Sync()`):**
+  - Work order WO-0007a introduced `bls.RenameSync` (commit `129e3eb`), ensuring that each renamed file and both its parent directories are explicitly fsynced.
+  - In commit `0749daa`, `bls.RenameSync` was enhanced to call `syscall.Sync()` after its directory fsync calls. Calling global sync flushes the dirty FAT cluster chains and directory buffers before power is cut.
+- **Verification and Outcome:**
+  - On both UEFI and BIOS, `P5:T4` is **PASS**.
+  - `fsck.fat -n` across all reads in T4 (pre, op, boot1, rec-op, boot2) confirms that the filesystem is completely clean, with zero cross-linked clusters, zero shared clusters, and zero cyclic directory references.
+  - The only difference between the boot sector and its backup is at offset 65 (`65:01/00`), which represents the FAT dirty-bit flag set during abrupt power loss and cleared upon clean unmount.
+- **Boot and Fallback Behavior in T4:**
+  - **UEFI:** At T4, `vintner-os-2+3-0.efi` was safely renamed into `/EFI/Linux/` with `+3-0`. Because systemd-boot sorts newer generations first, Boot 1 booted `os-2`. `vintner bless` reconciled and marked generation 2 `GOOD` (re-arming to `+3-0`). Reconciliation rule 7 reported that generation 2 has BIOS counter `""` (since BIOS `grubenv` was not reached before the reset). Recovery publish successfully published generation 3, and Boot 2 booted `os-3` and marked it `GOOD`.
+  - **BIOS:** At T4, generation 2 files were renamed into `/vintner/bios/os-2/`, but the `grubenv` write (T5) had not occurred. `VINTNER_ORDER` still pointed to `1`. GRUB cleanly booted `os-1`. `vintner bless` ran rule 6, observing that `generation 2 is STAGED and in place but does not verify` (counter unset). Recovery publish successfully published generation 3, and Boot 2 booted `os-3` and marked it `GOOD`.
+- **Behavior in T5, T6, M2:**
+  - On both firmwares, both the production files and `grubenv` (`VINTNER_ORDER=2 1`, `VINTNER_T_2=xxx`) were committed before reset. Boot 1 booted `os-2`, `vintner bless` marked it `GOOD`, recovery publish published generation 3, and Boot 2 booted `os-3` and marked it `GOOD`.
 
-### 2. Manifest Copy Selection in M1 and M2
+### 2. Manifest Copy Selection and Durability in M1 and M2
 
 - **M1 (`manifest-written#1` - Interruption during Step 9 STAGED save):**
-  - In M1, power was cut during `manifest.Save` after writing to `manifest-a`, before `f.Sync()`.
+  - Power was cut during `manifest.Save` after writing to `manifest-a`, before `f.Sync()`.
   - On Boot 1, `manifest.Load` read both copies: `manifest-a` was incomplete/unsynced, and `Load` safely picked `manifest-b`.
-  - `manifest-b` held generation 1 in `GOOD` state and `next_generation` 2.
-  - Boot 1 booted `os-1`, recovery publish successfully published generation 2, and Boot 2 booted `os-2` and marked it `GOOD` (all checks in M1 passed 100%).
+  - The generation 2 update did not reach disk (`manifest-b` held generation 1 in `GOOD` state, with `next_generation` 2).
+  - Boot 1 booted `os-1`. The recovery publish successfully published generation 2, and Boot 2 booted `os-2` and marked it `GOOD` (all checks passed 100%).
 - **M2 (`manifest-written#2` - Interruption during Step 11 TRYING save):**
-  - In M2, power was cut during `manifest.Save` of the `TRYING` state.
-  - On Boot 1, `manifest.Load` picked `manifest-b`, which still contained the `STAGED` state from Step 9.
+  - Power was cut during `manifest.Save` of the `TRYING` state to `manifest-a`.
+  - On Boot 1, `manifest.Load` picked `manifest-b`, which safely retained the committed `STAGED` state from Step 9.
+  - With files and grubenv durable on disk, Boot 1 booted `os-2`. `vintner bless` promoted it from `STAGED` to `GOOD`, recovery publish published generation 3, and Boot 2 booted `os-3` and marked it `GOOD`.
 
-### 3. Residual State Left Behind After Boot 2 (P8)
+### 3. Garbage Collection Interruption (G1 and G2)
 
-- **C0, T1, T2, T3, T5, T6, M1, M2:**
-  - No leftover unrecorded files exist on boot storage after Boot 2 (P8 is clean).
-  - In T1, T2, and T3, Boot 1 logged `generation 2: STAGED -> removed` as reconciliation rule 2 cleaned up the unpromoted record.
-- **T4:**
-  - Leftover staging files remain under `/vintner/staging/os-2/` (`initrd.img`, `slot.cfg`, `vmlinuz`, `vintner-os-2.efi`) and cyclic `/vintner/bios/os-2`.
-  - Under normal conditions, reconciliation rule 1 ("Orphaned staging directory") removes `/vintner/staging/os-2`. However, because the kernel remounted the filesystem read-only upon encountering `-EIO`, deletion requires prior filesystem repair (`fsck.vfat -a`).
-- **G1 and G2 (Garbage Collection Interruption):**
-  - In G1 and G2, the manifest record for generation 1 was committed as removed at step 13, but power was cut before its files could be deleted.
-  - After Boot 2, generation 1 files remain unrecorded on boot storage:
-    - `/EFI/Linux/vintner-os-1+3-0.efi`
-    - `/vintner/bios/os-1/` (`initrd.img`, `slot.cfg`, `vmlinuz`)
-    - In G1: `VINTNER_ORDER` still contains `1` (`4 3 2 1`). In G2: `VINTNER_ORDER` has `1` removed (`4 3 2`).
-  - Because generation 1 has no manifest record, it is not present in `m.Images`. Standard future garbage collection (`state.Keep`) operates only on images listed in the manifest and therefore does not clean up these unrecorded files. Reconciliation rules 3 ("Unrecorded slot directory") and 5 ("Unrecorded UKI") report their existence on every boot.
+- In G1 and G2, the manifest record for generation 1 was committed as removed at step 13, but power was cut before its files could be deleted from boot storage.
+- On Boot 1, generation 4 booted and was blessed `GOOD`.
+- Reconciliation rules 3 ("Unrecorded slot directory") and 5 ("Unrecorded UKI") detected the orphaned files on boot storage and reported them to the serial console:
+  - `REPORT: untracked uefi file vintner-os-1+3-0.efi`
+  - `REPORT: untracked bios directory os-1`
+- In G1: BIOS `VINTNER_ORDER` still included `1` (`4 3 2 1`).
+- In G2: BIOS `VINTNER_ORDER` had `1` removed (`4 3 2`), and `VINTNER_T_1` was absent.
+- In both cases, the recovery publish cleanly published generation 5 (collecting generation 2), and Boot 2 booted `os-5` and marked it `GOOD`.
+
+### 4. FAT Filesystem Anomalies Observed in P8
+
+- **Offset 65 Dirty-Bit Difference (`65:01/00`):**
+  - Observed in all interrupted cases (T1–T6, M1–M2, G1–G2) at reads immediately following the abrupt `sysrq: Resetting` power cut. Offset 65 is the volume dirty flag in the FAT boot sector, set when mounted and cleared on clean unmount.
+- **Free Cluster Summary Differences:**
+  - `T2` and `T3`:
+    - `op` read: `Free cluster summary wrong (93967 vs. really 79109)` (UEFI) / `(93959 vs. really 79101)` (BIOS)
+    - `boot1` read: `Free cluster summary wrong (108824 vs. really 93966)` (UEFI) / `(108816 vs. really 93958)` (BIOS)
+  - `M1`:
+    - `op` read: `Free cluster summary wrong (93967 vs. really 93968)` (UEFI) / `(93959 vs. really 93960)` (BIOS)
+    - `boot1` read: `Free cluster summary wrong (93966 vs. really 93967)` (UEFI) / `(93958 vs. really 93959)` (BIOS)
+    - `boot2` read: `Free cluster summary wrong (79108 vs. really 79109)` (UEFI) / `(79100 vs. really 79101)` (BIOS)
+  - `M2`:
+    - `op` read: `Free cluster summary wrong (79109 vs. really 79110)` (UEFI) / `(79101 vs. really 79102)` (BIOS)
+    - `boot1` read: `Free cluster summary wrong (79108 vs. really 79109)` (UEFI) / `(79100 vs. really 79101)` (BIOS)
+- **FAT Difference and Unused Cluster Reclamation:**
+  - `M1`:
+    - `op` read: `FATs differ but appear to be intact.`, `Using first FAT.`, `Reclaimed 1 unused cluster (4096 bytes).`
+    - `boot1` read: `Reclaimed 1 unused cluster (4096 bytes).`
+    - `boot2` read: `Reclaimed 1 unused cluster (4096 bytes).`
+- **Clean Filesystem (Zero Anomalies beyond Offset 65 Dirty Bit):**
+  - `C0`, `T1`, `T4`, `T5`, `T6`, `G1`, `G2` showed no fsck anomalies (`none`).
+
+### 5. Summary of Compliance with Work Order WO-0007 §4
+
+- All 11 cases across both UEFI and BIOS match the expected outcomes in WO-0007 §4 in every detail.
+- Every check P1–P7 and P9 is **PASS** across all cases on both firmwares; P8 is **OBSERVED**.
+- Zero **FAIL** checks remain across both test suites.
