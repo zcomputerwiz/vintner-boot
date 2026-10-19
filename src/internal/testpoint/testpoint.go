@@ -50,9 +50,10 @@ func Hit(name string) {
 	if base, nStr, ok := strings.Cut(val, "#"); ok {
 		targetName = base
 		n, err := strconv.Atoi(nStr)
-		if err == nil && n > 0 {
-			targetN = n
+		if err != nil || n <= 0 {
+			return
 		}
+		targetN = n
 	}
 
 	mu.Lock()

@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-import sys
-import os
-import re
-import json
-import time
-import subprocess
-import hashlib
-import tempfile
 import argparse
 from datetime import datetime
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 
 mtools_env = dict(os.environ, MTOOLS_SKIP_CHECK="1")
 
 CASES = ["C0", "T1", "T2", "T3", "T4", "T5", "T6", "M1", "M2", "G1", "G2"]
+CHECKS = ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9"]
+
 CASE_TESTPOINTS = {
     "C0": None,
     "T1": "staged-recorded",
@@ -23,16 +26,22 @@ CASE_TESTPOINTS = {
     "T4": "renamed",
     "T5": "grubenv-written",
     "T6": "trying-recorded",
-    "M1": "manifest-written",
-    "M2": "manifest-written",
+    "M1": "manifest-written#1",
+    "M2": "manifest-written#2",
     "G1": "gc-record-removed",
     "G2": "gc-grubenv-written",
 }
 
 UKI_RE = re.compile(r"vintner-os-(\d+)(\+\d+(-\d+)?)?\.efi")
+ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+
+LOADER_STEMS = {f"vintner-os-{i}": f"os-{i}" for i in range(1, 21)}
+LOADER_STEMS.update({"vintner-recovery-a": "recovery-a", "vintner-recovery-b": "recovery-b"})
+GRUB_DIRS = {f"os-{i}": f"os-{i}" for i in range(1, 21)}
+GRUB_DIRS.update({"recovery-a": "recovery-a", "recovery-b": "recovery-b"})
 
 def clean_ansi(text):
-    return re.sub(r"\x1b\[[0-9;:]*[a-zA-Z]", "", text).replace("\r", "")
+    return ANSI_ESCAPE_RE.sub("", text).replace("\r", "")
 
 def read_log(path):
     return clean_ansi(open(path, errors="replace").read()) if path and os.path.isfile(path) else ""
@@ -44,49 +53,24 @@ def mtype(disk, offset, path):
     r = subprocess.run(["mtype", "-i", f"{disk}@@{offset}", f"::{path}"], env=mtools_env, capture_output=True)
     if r.returncode == 0:
         return r.stdout
-    return None
+    if b"not found" in r.stderr:
+        return None
+    raise RuntimeError(f"mtype {path} on {disk}: {r.stderr.decode(errors='replace').strip()}")
 
 def mdir(disk, offset, path="::/", dirs=False):
-    norm_base = path.strip()
-    if not norm_base.startswith("::"):
-        norm_base = "::" + norm_base
-    if not norm_base.endswith("/"):
-        norm_base += "/"
-
-    result = []
-    visited_dirs = set()
-    queue = [norm_base]
-
-    while queue:
-        cur = queue.pop(0)
-        if cur in visited_dirs:
-            continue
-        visited_dirs.add(cur)
-
-        r = subprocess.run(["mdir", "-b", "-i", f"{disk}@@{offset}", cur], env=mtools_env, capture_output=True)
-        if r.returncode != 0:
-            continue
-
-        for line in r.stdout.decode("utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            is_dir = line.endswith("/")
-            if not line.startswith(cur):
-                # Cycle or out-of-tree entry (e.g. cluster 0 pointing to root)
-                continue
-            if is_dir:
-                if line not in visited_dirs:
-                    queue.append(line)
-                if dirs:
-                    p = line[2:] if line.startswith("::") else line
-                    result.append(p if p.startswith("/") else "/" + p)
-            else:
-                p = line[2:] if line.startswith("::") else line
-                result.append(p if p.startswith("/") else "/" + p)
-
-    return sorted(result)
-
+    r = subprocess.run(["mdir", "-s", "-b", "-i", f"{disk}@@{offset}", path], env=mtools_env, capture_output=True)
+    if r.returncode != 0:
+        if b"not found" in r.stderr:
+            return []
+        raise RuntimeError(f"mdir {path} on {disk}: {r.stderr.decode(errors='replace').strip()}")
+    lines = []
+    for l in r.stdout.decode("utf-8", errors="replace").splitlines():
+        l = l.strip()
+        if l.startswith("::"):
+            l = l[2:]
+        if l and (dirs or not l.endswith("/")):
+            lines.append(l if l.startswith("/") else "/" + l)
+    return sorted(lines)
 
 def load_manifest_via_vintner(vintner_bin, disk, offset):
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -104,9 +88,12 @@ def load_manifest_via_vintner(vintner_bin, disk, offset):
         if res.returncode != 0:
             return None, None
         picked = None
-        m = re.search(r"loaded from copy ([ab])", res.stderr)
-        if m:
-            picked = f"manifest-{m.group(1)}"
+        for line in res.stderr.splitlines():
+            line = line.strip()
+            m = re.fullmatch(r"loaded from copy ([ab]), seq \d+", line)
+            if m:
+                picked = f"manifest-{m.group(1)}"
+                break
         return json.loads(res.stdout), picked
 
 def parse_time(s):
@@ -150,7 +137,7 @@ def parse_retained_file(content):
     if not content:
         return None
     m = re.search(r"APT::NeverAutoRemove\s*\{(.*?)\};", content, re.DOTALL)
-    if not m:
+    if not m or not re.fullmatch(r'(\s*"[^"]*";)*\s*', m.group(1)):
         return None
     entries = sorted(re.findall(r'"([^"]*)"', m.group(1)))
     return entries
@@ -170,17 +157,14 @@ def identify_booted(log, firmware, prev, curr):
         if not tries:
             return "unknown"
         t = tries[-1]
-        m = re.fullmatch(r"(os-\d+|recovery-[ab])", t)
-        return m.group(1) if m else f"grub={t}"
+        return GRUB_DIRS.get(t, f"grub={t}")
 
     m = re.search(r"^LOADER_ENTRY_SELECTED:[ \t]*(.*?)[ \t]*$", text, re.M)
     if m and m.group(1):
-        val = m.group(1)
-        stem = re.fullmatch(r"vintner-(os-\d+|recovery-[ab])(\+\d+(-\d+)?)?\.efi", val)
-        if stem:
-            return stem.group(1)
-        stem_simple = re.fullmatch(r"(.+?)(\+\d+(-\d+)?)?\.efi", val)
-        return stem_simple.group(1) if stem_simple else val
+        val = m.group(1).strip()
+        stem = re.fullmatch(r"(.+?)(\+\d+(-\d+)?)?\.efi", val)
+        lookup = stem.group(1) if stem else val
+        return LOADER_STEMS.get(lookup, f"entry={val}")
 
     if prev is not None and curr is not None:
         def by_gen(read):
@@ -198,11 +182,39 @@ def identify_booted(log, firmware, prev, curr):
     return "unknown"
 
 def emit(results_file, check_id, case, status, evidence):
-    evidence = re.sub(r"[\t\r\n]", " ", str(evidence).strip())
+    evidence = re.sub(r"[\x00-\x1f\x7f]", " ", str(evidence))
+    evidence = re.sub(r"\s+", " ", evidence).strip()
     row = f"{check_id}\t{case}\t{status}\t{evidence}"
     with open(results_file, "a") as f:
         f.write(row + "\n")
     print(row)
+
+def parse_fsck_anomalies(text):
+    if not text:
+        return []
+    ignored_patterns = [
+        r"^fsck\.fat\s+\d+",
+        r"^.*:\s+\d+\s+files,\s+\d+/\d+\s+clusters$",
+        r"^0x[0-9a-fA-F]+:\s+Dirty bit is set\.",
+        r"^Fs was not properly unmounted and some data may be corrupt\.",
+        r"^Automatically removing dirty bit\.",
+        r"^There are differences between boot sector and its backup\.",
+        r"^Differences:\s*\(offset:original/backup\)",
+        r"^\s*65:\s*0[01]/0[01]\s*$",
+        r"^[1-3]\)\s+Copy\s+",
+        r"^[1-3]\)\s+No action",
+        r"^\[No action\]",
+        r"^Not automatically fixing this\.",
+    ]
+    anomalies = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if any(re.search(pat, line) for pat in ignored_patterns):
+            continue
+        anomalies.append(line)
+    return anomalies
 
 # --- Subcommands ---
 
@@ -266,29 +278,42 @@ def cmd_run_boot(args):
             "-drive", f"if=pflash,format=raw,unit=1,file={args.vars}",
         ])
 
-    def exited(rc):
-        return "poweroff" if rc == 0 else f"qemu exited with status {rc}"
+    def kill_proc(p):
+        p.terminate()
+        try:
+            p.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
 
     start_time = time.time()
     proc = subprocess.Popen(cmd)
+    timed_out = False
     try:
-        how_ended = exited(proc.wait(timeout=args.timeout))
+        proc.wait(timeout=args.timeout)
     except subprocess.TimeoutExpired:
-        proc.terminate()
-        try:
-            proc.wait(timeout=2.0)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        how_ended = f"killed after {args.timeout}s timeout"
+        timed_out = True
+        kill_proc(proc)
     finally:
         if proc.poll() is None:
-            proc.kill()
-            proc.wait()
+            kill_proc(proc)
 
     duration = round(time.time() - start_time, 2)
-    lines = [l.strip() for l in read_log(log_path).splitlines() if l.strip()]
+    log_content = read_log(log_path)
+    lines = [l.strip() for l in log_content.splitlines() if l.strip()]
     last_line = lines[-1] if lines else "(empty log)"
+
+    if timed_out:
+        how_ended = f"killed after {args.timeout}s timeout"
+    elif proc.returncode == 0:
+        if any(re.fullmatch(r"\[\s*\d+\.\d+\] sysrq: Resetting", l) for l in lines):
+            how_ended = "reset"
+        elif any(re.fullmatch(r"\[\s*\d+\.\d+\] reboot: Power down", l) for l in lines):
+            how_ended = "poweroff"
+        else:
+            how_ended = f"qemu exited with status {proc.returncode}"
+    else:
+        how_ended = f"qemu exited with status {proc.returncode}"
 
     meta = {
         "how_ended": how_ended,
@@ -309,9 +334,29 @@ def cmd_read(args):
     raw_a = mtype(disk, off, "/vintner/state/manifest-a")
     raw_b = mtype(disk, off, "/vintner/state/manifest-b")
 
-    efi_files = sorted(os.path.basename(p) for p in mdir(disk, off, "::/EFI/Linux"))
-    bios_files = mdir(disk, off, "::/vintner/bios", dirs=True)
-    staging_files = mdir(disk, off, "::/vintner/staging", dirs=True)
+    raw_efi = mdir(disk, off, "::/EFI/Linux")
+    raw_bios = mdir(disk, off, "::/vintner/bios", dirs=True)
+    raw_staging = mdir(disk, off, "::/vintner/staging", dirs=True)
+
+    mdir_anomalies = []
+    efi_files = []
+    for p in raw_efi:
+        if not p.startswith("/EFI/Linux"):
+            mdir_anomalies.append(f"mdir /EFI/Linux returned out-of-tree entry: {p}")
+        efi_files.append(os.path.basename(p))
+    efi_files = sorted(efi_files)
+
+    bios_files = []
+    for p in raw_bios:
+        if not p.startswith("/vintner/bios"):
+            mdir_anomalies.append(f"mdir /vintner/bios returned out-of-tree entry: {p}")
+        bios_files.append(p)
+
+    staging_files = []
+    for p in raw_staging:
+        if not p.startswith("/vintner/staging"):
+            mdir_anomalies.append(f"mdir /vintner/staging returned out-of-tree entry: {p}")
+        staging_files.append(p)
 
     with open(f"{prefix}-efi-linux.txt", "w") as f:
         f.write("".join(n + "\n" for n in efi_files))
@@ -326,12 +371,41 @@ def cmd_read(args):
         with open(f"{prefix}-grubenv", "wb") as f:
             f.write(raw_env)
         lib = os.path.join(args.root, "usr/lib/x86_64-linux-gnu")
-        out = subprocess.run([os.path.join(lib, "ld-linux-x86-64.so.2"), "--library-path", lib,
-                              os.path.join(args.root, "usr/bin/grub-editenv"), f"{prefix}-grubenv", "list"],
-                             capture_output=True, text=True, check=True).stdout
-        with open(f"{prefix}-grubenv.txt", "w") as f:
-            f.write(out)
-        grubenv = dict(l.partition("=")[::2] for l in out.splitlines() if "=" in l)
+        ld_path = os.path.join(lib, "ld-linux-x86-64.so.2")
+        grub_editenv_path = os.path.join(args.root, "usr/bin/grub-editenv")
+        if os.path.isfile(ld_path) and os.path.isfile(grub_editenv_path):
+            out = subprocess.run([ld_path, "--library-path", lib,
+                                  grub_editenv_path, f"{prefix}-grubenv", "list"],
+                                 capture_output=True, text=True, check=True).stdout
+            with open(f"{prefix}-grubenv.txt", "w") as f:
+                f.write(out)
+            grubenv = dict(l.partition("=")[::2] for l in out.splitlines() if "=" in l)
+
+    # fsck.fat -n on boot storage partition
+    fsck_out_path = f"{prefix}-fsck.txt"
+    if shutil.which("fsck.fat"):
+        with tempfile.NamedTemporaryFile(suffix=".fat", delete=False) as tmp_part:
+            tmp_path = tmp_part.name
+        try:
+            with open(disk, "rb") as f_disk:
+                f_disk.seek(off)
+                remaining = 512 * 1024 * 1024
+                while remaining > 0:
+                    chunk = f_disk.read(min(remaining, 4 * 1024 * 1024))
+                    if not chunk:
+                        break
+                    tmp_part.write(chunk)
+                    remaining -= len(chunk)
+            tmp_part.close()
+            r = subprocess.run(["fsck.fat", "-n", tmp_path], capture_output=True, text=True)
+            with open(fsck_out_path, "w") as f:
+                f.write(r.stdout + r.stderr)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    else:
+        with open(fsck_out_path, "w") as f:
+            f.write("")
 
     # File hashes for all files on boot storage (UEFI and BIOS)
     file_hashes = {}
@@ -356,6 +430,7 @@ def cmd_read(args):
         "staging_files": staging_files,
         "grubenv": grubenv,
         "file_hashes": file_hashes,
+        "mdir_anomalies": mdir_anomalies,
     }
     with open(f"{prefix}.json", "w") as f:
         json.dump(read, f, indent=2)
@@ -378,23 +453,57 @@ def evaluate_case(case, fw, out_dir, results_file):
     rec_log = read_log(f"{prefix}-rec-op.log")
     b2_log = read_log(f"{prefix}-boot2.log")
 
-    op_meta = json.load(open(f"{prefix}-op-meta.json")) if os.path.isfile(f"{prefix}-op-meta.json") else {}
-    b1_meta = json.load(open(f"{prefix}-boot1-meta.json")) if os.path.isfile(f"{prefix}-boot1-meta.json") else {}
-    rec_meta = json.load(open(f"{prefix}-rec-op-meta.json")) if os.path.isfile(f"{prefix}-rec-op-meta.json") else {}
-    b2_meta = json.load(open(f"{prefix}-boot2-meta.json")) if os.path.isfile(f"{prefix}-boot2-meta.json") else {}
+    op_meta = json.load(open(f"{prefix}-op-meta.json")) if os.path.isfile(f"{prefix}-op-meta.json") else None
+    b1_meta = json.load(open(f"{prefix}-boot1-meta.json")) if os.path.isfile(f"{prefix}-boot1-meta.json") else None
+    rec_meta = json.load(open(f"{prefix}-rec-op-meta.json")) if os.path.isfile(f"{prefix}-rec-op-meta.json") else None
+    b2_meta = json.load(open(f"{prefix}-boot2-meta.json")) if os.path.isfile(f"{prefix}-boot2-meta.json") else None
 
     retained_file_path = f"{prefix}-retained-kernels.txt"
-    retained_content = open(retained_file_path).read() if os.path.isfile(retained_file_path) else ""
+    retained_content = open(retained_file_path).read() if os.path.isfile(retained_file_path) else None
 
     p = 4 if case in ("G1", "G2") else 2
 
+    # Check 6 pre-op GOOD set assertion
+    pre_good = sorted(int(g) for g, img in pre.get("images", {}).items() if img.get("state") == "GOOD")
+    expected_pre_good = [1, 2, 3] if case in ("G1", "G2") else [1]
+    if pre_good != expected_pre_good:
+        fail_ev = f"pre-op GOOD set is {pre_good}, expected exactly {expected_pre_good}"
+        for ch in ("P1", "P2", "P3", "P4", "P5", "P6", "P7"):
+            emit(results_file, ch, case, "FAIL", fail_ev)
+        emit(results_file, "P8", case, "OBSERVED", fail_ev)
+        emit(results_file, "P9", case, "FAIL", fail_ev)
+        return
+
+    # Check manifest readability across reads
+    for r_lbl, r_data in [("pre", pre), ("op", op_read), ("boot1", b1_read), ("rec_op", rec_read), ("boot2", b2_read)]:
+        if r_data.get("manifest") is None:
+            fail_ev = f"manifest in read {r_lbl} is unreadable"
+            for ch in ("P1", "P2", "P3", "P4", "P5", "P6", "P7"):
+                emit(results_file, ch, case, "FAIL", fail_ev)
+            emit(results_file, "P8", case, "OBSERVED", fail_ev)
+            emit(results_file, "P9", case, "FAIL", fail_ev)
+            return
+
     # --- P1 ---
-    # Operation boot log checks
     p1_ok = True
     p1_ev = []
+
+    if op_meta is None:
+        p1_ok = False
+        p1_ev.append("op_meta missing")
+    else:
+        how = op_meta.get("how_ended", "")
+        rc = op_meta.get("returncode")
+        if "killed" in how or rc != 0:
+            p1_ok = False
+            p1_ev.append(f"op boot did not exit cleanly: {how} (rc={rc})")
+        else:
+            p1_ev.append(f"op boot ended: {how}")
+
+    op_lines = op_log.splitlines()
     if case == "C0":
-        tp_found = [l for l in op_log.splitlines() if "vintner-testpoint:" in l]
-        pub_found = [l for l in op_log.splitlines() if f"vintner publish: published generation {p}" in l]
+        tp_found = [l for l in op_lines if re.fullmatch(r"\[\s*\d+\.\d+\] vintner-testpoint:.*", l)]
+        pub_found = [l for l in op_lines if l == "vintner publish: published generation 2"]
         if tp_found:
             p1_ok = False
             p1_ev.append(f"unexpected testpoint in C0: {tp_found[0]}")
@@ -402,55 +511,85 @@ def evaluate_case(case, fw, out_dir, results_file):
             p1_ev.append("no testpoint triggered")
         if not pub_found:
             p1_ok = False
-            p1_ev.append(f"missing published generation {p} in C0")
+            p1_ev.append("missing published generation 2 in C0")
         else:
-            p1_ev.append(pub_found[0].strip())
+            p1_ev.append(pub_found[0])
+        if op_meta and op_meta.get("how_ended") != "poweroff":
+            p1_ok = False
+            p1_ev.append(f"C0 expected poweroff, got {op_meta.get('how_ended')}")
     else:
         want_tp = CASE_TESTPOINTS[case]
-        tp_lines = [l for l in op_log.splitlines() if re.search(r"vintner-testpoint:\s*" + re.escape(want_tp) + r"$", l)]
-        sysrq_lines = [l for l in op_log.splitlines() if "sysrq: Resetting" in l]
-        pub_lines = [l for l in op_log.splitlines() if f"vintner publish: published generation {p}" in l]
-        powerdown_lines = [l for l in op_log.splitlines() if "reboot: Power down" in l]
+        tp_indices = [i for i, l in enumerate(op_lines) if re.fullmatch(r"\[\s*\d+\.\d+\] vintner-testpoint: " + re.escape(want_tp), l)]
+        sysrq_indices = [i for i, l in enumerate(op_lines) if re.fullmatch(r"\[\s*\d+\.\d+\] sysrq: Resetting", l)]
+        pub_indices = [i for i, l in enumerate(op_lines) if l == f"vintner publish: published generation {p}"]
+        powerdown_indices = [i for i, l in enumerate(op_lines) if re.fullmatch(r"\[\s*\d+\.\d+\] reboot: Power down", l)]
 
-        if not tp_lines:
+        if len(tp_indices) != 1:
             p1_ok = False
-            p1_ev.append(f"missing testpoint '{want_tp}' line")
+            p1_ev.append(f"testpoint '{want_tp}' matched {len(tp_indices)} times (expected exactly 1)")
         else:
-            p1_ev.append(tp_lines[0].strip())
+            p1_ev.append(op_lines[tp_indices[0]])
 
-        if not sysrq_lines:
+        if not sysrq_indices:
             p1_ok = False
             p1_ev.append("missing sysrq: Resetting")
         else:
-            p1_ev.append(sysrq_lines[0].strip())
+            p1_ev.append(op_lines[sysrq_indices[0]])
+            if tp_indices and not (tp_indices[0] < sysrq_indices[0]):
+                p1_ok = False
+                p1_ev.append("sysrq: Resetting appeared before testpoint")
 
         if case in ("G1", "G2"):
-            # Test point is after published line in G1/G2; having published line is permitted
-            if pub_lines:
-                p1_ev.append(pub_lines[0].strip())
-            else:
-                p1_ev.append("no published line before power cut")
-        else:
-            if pub_lines:
+            if len(pub_indices) != 1:
                 p1_ok = False
-                p1_ev.append(f"unexpected publish line: {pub_lines[0].strip()}")
+                p1_ev.append(f"published generation {p} matched {len(pub_indices)} times (expected exactly 1)")
+            else:
+                p1_ev.append(op_lines[pub_indices[0]])
+                if tp_indices and not (pub_indices[0] < tp_indices[0]):
+                    p1_ok = False
+                    p1_ev.append("published line appeared after testpoint")
+        else:
+            if pub_indices:
+                p1_ok = False
+                p1_ev.append(f"unexpected publish line: {op_lines[pub_indices[0]]}")
             else:
                 p1_ev.append(f"no published generation {p} line")
 
-        if powerdown_lines:
+        if powerdown_indices:
             p1_ok = False
-            p1_ev.append("unexpected reboot: Power down line found")
+            p1_ev.append(f"unexpected reboot: Power down line found: {op_lines[powerdown_indices[0]]}")
         else:
             p1_ev.append("no reboot: Power down")
+
+        if op_meta and op_meta.get("how_ended") != "reset":
+            p1_ok = False
+            p1_ev.append(f"expected reset, got {op_meta.get('how_ended')}")
+
+        if case in ("M1", "M2"):
+            staged_indices = [i for i, l in enumerate(op_lines) if l == "vintner publish: staged generation 2"]
+            if len(staged_indices) != 1:
+                p1_ok = False
+                p1_ev.append(f"expected exactly one 'vintner publish: staged generation 2', found {len(staged_indices)}")
+            else:
+                p1_ev.append(op_lines[staged_indices[0]])
+                staged_idx = staged_indices[0]
+                repair_lines = [op_lines[i] for i in range(staged_idx)
+                                if op_lines[i].startswith("REPORT:") or
+                                   op_lines[i].startswith("ACTION:") or
+                                   re.match(r"^generation \d+: \S+ -> \S+$", op_lines[i])]
+                if repair_lines:
+                    p1_ok = False
+                    p1_ev.append(f"unexpected step 4 repair before staging: {repair_lines[0]}")
+                else:
+                    p1_ev.append("no step 4 repair before staging")
 
     emit(results_file, "P1", case, "PASS" if p1_ok else "FAIL", "; ".join(p1_ev))
 
     # Identify boots
-    b1_label = identify_booted(b1_log, fw, op_read, b1_read)
-    b2_label = identify_booted(b2_log, fw, rec_read, b2_read)
+    lbl_b1 = identify_booted(b1_log, fw, op_read, b1_read)
+    lbl_b2 = identify_booted(b2_log, fw, rec_read, b2_read)
 
     # --- P2 ---
-    # Boot 1 boots expected image from table
     if case == "C0":
         want_b1 = f"os-{p}"
     elif case in ("T1", "T2", "T3", "M1"):
@@ -460,18 +599,23 @@ def evaluate_case(case, fw, out_dir, results_file):
     elif case in ("T5", "T6", "M2", "G1", "G2"):
         want_b1 = f"os-{p}"
 
-    p2_ok = (b1_label == want_b1) and (b1_label not in ("recovery-a", "recovery-b", "recovery"))
-    emit(results_file, "P2", case, "PASS" if p2_ok else "FAIL", f"boot1 booted {b1_label}, expected {want_b1}")
+    p2_ok = (lbl_b1 == want_b1) and (lbl_b1 not in ("recovery-a", "recovery-b", "recovery", "unknown"))
+    emit(results_file, "P2", case, "PASS" if p2_ok else "FAIL", f"boot1 booted {lbl_b1}, expected {want_b1}")
 
     # --- P3 ---
-    # Boot 1's image is blessed GOOD and re-armed
-    b1_gen = int(b1_label.replace("os-", "")) if b1_label.startswith("os-") else -1
+    b1_gen = int(lbl_b1.replace("os-", "")) if lbl_b1.startswith("os-") else -1
     p3_ok = True
     p3_ev = []
     if b1_gen < 0:
         p3_ok = False
-        p3_ev.append(f"unknown booted generation: {b1_label}")
+        p3_ev.append(f"unknown booted generation: {lbl_b1}")
     else:
+        if str(p) in pre.get("images", {}):
+            p3_ok = False
+            p3_ev.append(f"generation {p} already had record before case")
+        else:
+            p3_ev.append(f"generation {p} had no record before case")
+
         b1_img = b1_read.get("images", {}).get(str(b1_gen))
         if not b1_img or b1_img.get("state") != "GOOD":
             p3_ok = False
@@ -481,15 +625,21 @@ def evaluate_case(case, fw, out_dir, results_file):
 
         lg_after = parse_time(b1_img.get("last_good") if b1_img else None)
         pre_img = pre.get("images", {}).get(str(b1_gen))
-        lg_before = parse_time(pre_img.get("last_good") if pre_img else None)
         if lg_after is None:
             p3_ok = False
-            p3_ev.append("last_good is None")
-        elif lg_before is not None and not (lg_after > lg_before):
-            p3_ok = False
-            p3_ev.append(f"last_good not advanced: before={lg_before} after={lg_after}")
+            p3_ev.append("boot1 last_good cannot be parsed")
+        elif pre_img is not None:
+            lg_before = parse_time(pre_img.get("last_good"))
+            if lg_before is None:
+                p3_ok = False
+                p3_ev.append("pre-case last_good exists but cannot be parsed")
+            elif not (lg_after > lg_before):
+                p3_ok = False
+                p3_ev.append(f"last_good not advanced: before={lg_before} after={lg_after}")
+            else:
+                p3_ev.append(f"last_good advanced ({lg_before} -> {lg_after})")
         else:
-            p3_ev.append(f"last_good updated ({lg_after})")
+            p3_ev.append(f"last_good set ({lg_after})")
 
         if fw == "uefi":
             ukis = uki_names(b1_read, b1_gen)
@@ -511,97 +661,146 @@ def evaluate_case(case, fw, out_dir, results_file):
     emit(results_file, "P3", case, "PASS" if p3_ok else "FAIL", "; ".join(p3_ev))
 
     # --- P4 ---
-    # Every image that was GOOD before the case is still GOOD and hashes match
     p4_ok = True
     p4_ev = []
-    # On GC disk, gen 1 is removed by GC; retained images are gen 2 and 3.
-    # On Base disk, retained image is gen 1.
+
     good_before = [int(g) for g, img in pre.get("images", {}).items() if img.get("state") == "GOOD"]
     if case in ("G1", "G2"):
         good_before = [g for g in good_before if g != 1]
 
     for g in sorted(good_before):
         pre_rec = pre["images"][str(g)]
-        for r_name, r_data in [("op", op_read), ("boot1", b1_read), ("rec_op", rec_read), ("boot2", b2_read)]:
+        for r_name, r_data in [("pre", pre), ("op", op_read), ("boot1", b1_read), ("rec_op", rec_read), ("boot2", b2_read)]:
             r_img = r_data.get("images", {}).get(str(g))
-            if not r_img or r_img.get("state") != "GOOD":
-                p4_ok = False
-                p4_ev.append(f"gen {g} in {r_name} state={r_img.get('state') if r_img else 'missing'}")
-            # Check file hashes
-            if fw == "uefi" and pre_rec.get("uefi"):
-                want_sha = pre_rec["uefi"].get("sha256")
-                ukis = uki_names(r_data, g)
-                if not ukis:
+            if r_img is not None:
+                if r_img.get("state") != "GOOD":
                     p4_ok = False
-                    p4_ev.append(f"gen {g} in {r_name} has no UKIs")
-                else:
-                    uki_path = f"/EFI/Linux/{ukis[0]}"
-                    got_sha = r_data.get("file_hashes", {}).get(uki_path)
-                    if got_sha != want_sha:
+                    p4_ev.append(f"gen {g} in {r_name} state={r_img.get('state')}, expected GOOD")
+                want_uefi_sha = (pre_rec.get("uefi") or {}).get("sha256")
+                if want_uefi_sha:
+                    ukis = uki_names(r_data, g)
+                    if len(ukis) != 1:
                         p4_ok = False
-                        p4_ev.append(f"gen {g} in {r_name} UKI sha mismatch (got {got_sha[:8] if got_sha else 'None'}..., want {want_sha[:8]}...)")
-            if fw == "bios" and pre_rec.get("bios"):
-                for fname, want_sha in pre_rec["bios"].get("files", {}).items():
+                        p4_ev.append(f"gen {g} in {r_name} UKIs={ukis}, expected exactly 1")
+                    else:
+                        uki_path = f"/EFI/Linux/{ukis[0]}"
+                        got_sha = (r_data.get("file_hashes") or {}).get(uki_path)
+                        if got_sha != want_uefi_sha:
+                            p4_ok = False
+                            p4_ev.append(f"gen {g} in {r_name} UKI {ukis[0]} sha mismatch (got {got_sha}, want {want_uefi_sha})")
+                bios_files_dict = (pre_rec.get("bios") or {}).get("files", {})
+                for fname, want_sha in bios_files_dict.items():
                     fpath = f"/vintner/bios/os-{g}/{fname}"
-                    got_sha = r_data.get("file_hashes", {}).get(fpath)
+                    got_sha = (r_data.get("file_hashes") or {}).get(fpath)
                     if got_sha != want_sha:
                         p4_ok = False
-                        p4_ev.append(f"gen {g} in {r_name} {fname} sha mismatch (got {got_sha[:8] if got_sha else 'None'}..., want {want_sha[:8]}...)")
+                        p4_ev.append(f"gen {g} in {r_name} {fname} sha mismatch (got {got_sha}, want {want_sha})")
+            else:
+                removed_line = f"vintner publish: removed generation {g}"
+                if any(l == removed_line for l in rec_log.splitlines()):
+                    p4_ev.append(f"gen {g} removed in {r_name} with recovery publish log: {removed_line}")
+                else:
+                    p4_ok = False
+                    p4_ev.append(f"gen {g} missing in {r_name} without '{removed_line}' in recovery publish log")
 
     if p4_ok:
-        p4_ev.append(f"images {good_before} still GOOD with matching file hashes at all reads")
+        p4_ev.append(f"images {good_before} still GOOD with matching 64-char hashes at all reads (or properly removed)")
     emit(results_file, "P4", case, "PASS" if p4_ok else "FAIL", "; ".join(p4_ev))
 
     # --- P5 ---
-    # After boot 1, state of p, next_generation, staging, and BIOS order/counters
     p5_ok = True
     p5_ev = []
-    # Staging must be empty in all cases
-    stg = b1_read.get("staging_files", [])
-    if stg:
-        p5_ok = False
-        p5_ev.append(f"staging not empty: {stg}")
-    else:
-        p5_ev.append("staging empty")
 
     b1_next = b1_read.get("next_generation")
-    p_img = b1_read.get("images", {}).get(str(p))
+    if case in ("G1", "G2"):
+        want_next = 5
+    elif case == "M1":
+        want_next = None
+    else:
+        want_next = 3
+
+    if want_next is not None:
+        if b1_next != want_next:
+            p5_ok = False
+            p5_ev.append(f"next_generation={b1_next}, expected {want_next}")
+        else:
+            p5_ev.append(f"next_generation={b1_next}")
+
+    if case in ("T1", "T2", "T3", "M1"):
+        stg = b1_read.get("staging_files", [])
+        if stg:
+            p5_ok = False
+            p5_ev.append(f"staging not empty: {stg}")
+        else:
+            p5_ev.append("staging empty")
+
+    grubenv = b1_read.get("grubenv")
+    if grubenv is None:
+        p5_ok = False
+        p5_ev.append("grubenv unreadable")
+        order_list = []
+    else:
+        order_list = grubenv.get("VINTNER_ORDER", "").split()
 
     if case == "C0":
-        if b1_next != 3 or not p_img or p_img.get("state") != "GOOD":
-            p5_ok = False
-            p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, next_gen={b1_next}")
-        else:
-            p5_ev.append(f"gen {p} GOOD, next_gen=3")
         if fw == "bios":
-            order = (b1_read.get("grubenv") or {}).get("VINTNER_ORDER", "")
-            if "2" not in order.split() or "1" not in order.split():
+            if order_list != ["2", "1"]:
                 p5_ok = False
-                p5_ev.append(f"VINTNER_ORDER={order}")
+                p5_ev.append(f"VINTNER_ORDER={order_list}, expected ['2', '1']")
             else:
-                p5_ev.append(f"VINTNER_ORDER={order}")
+                p5_ev.append("VINTNER_ORDER=['2', '1']")
+        else:
+            if not order_list or order_list[0] != "2":
+                p5_ok = False
+                p5_ev.append(f"VINTNER_ORDER={order_list}, expected '2' first")
+            else:
+                p5_ev.append("VINTNER_ORDER starts with 2")
+        c2 = (grubenv or {}).get("VINTNER_T_2")
+        if c2 != "xxx":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_2={c2}, expected xxx")
+        else:
+            p5_ev.append("VINTNER_T_2=xxx")
+
+        p_img = b1_read.get("images", {}).get(str(p))
+        if not p_img or p_img.get("state") != "GOOD":
+            p5_ok = False
+            p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, expected GOOD")
+        else:
+            p5_ev.append(f"gen {p} GOOD")
 
     elif case in ("T1", "T2", "T3"):
+        p_img = b1_read.get("images", {}).get(str(p))
         if p_img is not None:
             p5_ok = False
             p5_ev.append(f"gen {p} record still present: {p_img}")
         else:
             p5_ev.append(f"gen {p} removed")
-        if b1_next != 3:
+
+        if order_list != ["1"]:
             p5_ok = False
-            p5_ev.append(f"next_gen={b1_next}, expected 3")
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected ['1']")
         else:
-            p5_ev.append("next_gen=3")
-        if fw == "bios":
-            order = (b1_read.get("grubenv") or {}).get("VINTNER_ORDER", "")
-            c = (b1_read.get("grubenv") or {}).get(f"VINTNER_T_{p}")
-            if order.split() != ["1"] or c is not None:
-                p5_ok = False
-                p5_ev.append(f"VINTNER_ORDER={order}, VINTNER_T_{p}={c}")
-            else:
-                p5_ev.append(f"VINTNER_ORDER={order}, VINTNER_T_{p} unset")
+            p5_ev.append("VINTNER_ORDER=['1']")
+        if "VINTNER_T_2" in (grubenv or {}):
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_2 unexpectedly present: {grubenv['VINTNER_T_2']}")
+        else:
+            p5_ev.append("VINTNER_T_2 absent")
 
     elif case == "T4":
+        if order_list != ["1"]:
+            p5_ok = False
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected ['1']")
+        else:
+            p5_ev.append("VINTNER_ORDER=['1']")
+        if "VINTNER_T_2" in (grubenv or {}):
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_2 unexpectedly present: {grubenv['VINTNER_T_2']}")
+        else:
+            p5_ev.append("VINTNER_T_2 absent")
+
+        p_img = b1_read.get("images", {}).get(str(p))
         if fw == "uefi":
             if not p_img or p_img.get("state") != "GOOD":
                 p5_ok = False
@@ -611,139 +810,262 @@ def evaluate_case(case, fw, out_dir, results_file):
             ukis = uki_names(b1_read, p)
             if ukis != [f"vintner-os-{p}+3-0.efi"]:
                 p5_ok = False
-                p5_ev.append(f"gen {p} UKIs={ukis}")
+                p5_ev.append(f"gen {p} UKIs={ukis}, expected [vintner-os-{p}+3-0.efi]")
             else:
                 p5_ev.append(f"gen {p} UKI +3-0 in place")
-            m_rule7 = re.search(r"generation 2 has no BIOS counter|rule 7|BIOS counter", b1_log)
-            p5_ev.append("rule 7 reported" if m_rule7 else "rule 7 check")
+            r7_matches = [l for l in b1_log.splitlines() if re.fullmatch(r"\[\s*\d+\.\d+\] vintner\[\d+\]: generation 2 has BIOS counter \"\"", l)]
+            if not r7_matches:
+                p5_ok = False
+                p5_ev.append("missing rule 7 report: generation 2 has BIOS counter \"\"")
+            else:
+                p5_ev.append(r7_matches[0].strip())
         else:
-            # BIOS
             if not p_img or p_img.get("state") != "STAGED":
                 p5_ok = False
                 p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, expected STAGED")
             else:
                 p5_ev.append(f"gen {p} STAGED")
-            slot_dir = f"/vintner/bios/os-{p}"
-            bios_has_slot = any(f.startswith(slot_dir) for f in b1_read.get("bios_files", []))
-            if not bios_has_slot:
+            if "/vintner/bios/os-2/" not in b1_read.get("bios_files", []):
                 p5_ok = False
-                p5_ev.append(f"{slot_dir} missing from bios_files")
+                p5_ev.append("entry '/vintner/bios/os-2/' not present in bios_files")
             else:
-                p5_ev.append(f"{slot_dir} present")
-            order = (b1_read.get("grubenv") or {}).get("VINTNER_ORDER", "")
-            if order.split() != ["1"]:
+                p5_ev.append("'/vintner/bios/os-2/' present")
+            r6_matches = [l for l in b1_log.splitlines() if re.fullmatch(r"\[\s*\d+\.\d+\] vintner\[\d+\]: generation 2 is STAGED and in place but does not verify", l)]
+            if not r6_matches:
                 p5_ok = False
-                p5_ev.append(f"VINTNER_ORDER={order}, expected 1")
+                p5_ev.append("missing rule 6 report: generation 2 is STAGED and in place but does not verify")
             else:
-                p5_ev.append("VINTNER_ORDER=1")
+                p5_ev.append(r6_matches[0].strip())
 
     elif case in ("T5", "T6"):
-        if not p_img or p_img.get("state") != "GOOD" or b1_next != 3:
+        p_img = b1_read.get("images", {}).get(str(p))
+        if not p_img or p_img.get("state") != "GOOD":
             p5_ok = False
-            p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, next_gen={b1_next}")
+            p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, expected GOOD")
         else:
-            p5_ev.append(f"gen {p} GOOD, next_gen=3")
+            p5_ev.append(f"gen {p} GOOD")
+        if not order_list or order_list[0] != "2":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected '2' first")
+        else:
+            p5_ev.append("VINTNER_ORDER starts with 2")
+        c2 = (grubenv or {}).get("VINTNER_T_2")
+        if c2 != "xxx":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_2={c2}, expected xxx")
+        else:
+            p5_ev.append("VINTNER_T_2=xxx")
 
     elif case == "M1":
-        if p_img is None and b1_next == 3:
-            p5_ev.append("save reached disk: gen 2 removed by rule 2, next_generation=3")
-        elif p_img is None and b1_next == 2:
-            p5_ev.append("save did not reach disk: gen 2 absent, next_generation=2")
-        else:
+        p_img = b1_read.get("images", {}).get(str(p))
+        if p_img is not None:
             p5_ok = False
-            p5_ev.append(f"unexpected M1 state: gen {p} {p_img}, next_gen={b1_next}")
+            p5_ev.append(f"gen 2 record still present after boot1: {p_img}")
+        op_has_p = "2" in op_read.get("images", {})
+        op_next = op_read.get("next_generation")
+        if op_has_p:
+            if op_next != 3 or b1_next != 3:
+                p5_ok = False
+                p5_ev.append(f"M1 disagreement: op has gen 2 (next={op_next}), b1 next={b1_next}")
+            else:
+                p5_ev.append("M1 consistent (save reached disk): op next=3, b1 gen 2 removed by rule 2 with next=3")
+        else:
+            if op_next != 2 or b1_next != 2:
+                p5_ok = False
+                p5_ev.append(f"M1 disagreement: op lacks gen 2 (next={op_next}), b1 next={b1_next}")
+            else:
+                p5_ev.append("M1 consistent (save did not reach disk): op next=2, b1 gen 2 absent with next=2")
+
+        if order_list != ["1"]:
+            p5_ok = False
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected ['1']")
+        else:
+            p5_ev.append("VINTNER_ORDER=['1']")
+        if "VINTNER_T_2" in (grubenv or {}):
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_2 unexpectedly present: {grubenv['VINTNER_T_2']}")
+        else:
+            p5_ev.append("VINTNER_T_2 absent")
 
     elif case == "M2":
+        p_img = b1_read.get("images", {}).get(str(p))
         if not p_img or p_img.get("state") != "GOOD":
             p5_ok = False
             p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, expected GOOD")
         else:
             p5_ev.append(f"gen {p} GOOD")
         picked_after_op = op_read.get("picked_copy")
-        p5_ev.append(f"Load picked {picked_after_op} after op boot")
+        if picked_after_op not in ("manifest-a", "manifest-b"):
+            p5_ok = False
+            p5_ev.append(f"picked_copy={picked_after_op}, expected manifest-a or manifest-b")
+        else:
+            p5_ev.append(f"Load picked {picked_after_op}")
+
+        if not order_list or order_list[0] != "2":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected '2' first")
+        else:
+            p5_ev.append("VINTNER_ORDER starts with 2")
+        c2 = (grubenv or {}).get("VINTNER_T_2")
+        if c2 != "xxx":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_2={c2}, expected xxx")
+        else:
+            p5_ev.append("VINTNER_T_2=xxx")
 
     elif case == "G1":
+        p_img = b1_read.get("images", {}).get(str(p))
         if not p_img or p_img.get("state") != "GOOD":
             p5_ok = False
             p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, expected GOOD")
         else:
             p5_ev.append(f"gen {p} GOOD")
-        gen1_img = b1_read.get("images", {}).get("1")
-        if gen1_img is not None:
+        if "1" in b1_read.get("images", {}):
             p5_ok = False
-            p5_ev.append(f"gen 1 record still present: {gen1_img}")
+            p5_ev.append("gen 1 still in manifest")
         else:
-            p5_ev.append("gen 1 has no record")
-        # gen 1 files remain
-        if fw == "uefi":
-            u1 = uki_names(b1_read, 1)
-            p5_ev.append(f"gen 1 UKIs={u1}")
+            p5_ev.append("gen 1 has no manifest record")
+
+        u1 = uki_names(b1_read, 1)
+        b1_slot = "/vintner/bios/os-1/" in b1_read.get("bios_files", []) or any(f.startswith("/vintner/bios/os-1/") for f in b1_read.get("bios_files", []))
+        if not u1 or not b1_slot:
+            p5_ok = False
+            p5_ev.append(f"gen 1 files missing: uki={u1}, bios={b1_slot}")
         else:
-            b1_slot = any(f.startswith("/vintner/bios/os-1") for f in b1_read.get("bios_files", []))
-            p5_ev.append(f"gen 1 slot present={b1_slot}")
-            order = (b1_read.get("grubenv") or {}).get("VINTNER_ORDER", "")
-            if "1" not in order.split():
-                p5_ok = False
-                p5_ev.append(f"VINTNER_ORDER={order} does not contain 1")
-            else:
-                p5_ev.append(f"VINTNER_ORDER still lists 1 ({order})")
+            p5_ev.append("gen 1 files remain")
+
+        r3_uefi = [l for l in b1_log.splitlines() if re.fullmatch(r"\[\s*\d+\.\d+\] vintner\[\d+\]: untracked uefi file vintner-os-1(\+\d+-\d+)?\.efi", l)]
+        r3_bios = [l for l in b1_log.splitlines() if re.fullmatch(r"\[\s*\d+\.\d+\] vintner\[\d+\]: untracked bios directory os-1", l)]
+        if not r3_uefi:
+            p5_ok = False
+            p5_ev.append("missing rule 3 untracked uefi file report")
+        else:
+            p5_ev.append(r3_uefi[0].strip())
+        if not r3_bios:
+            p5_ok = False
+            p5_ev.append("missing rule 3 untracked bios directory report")
+        else:
+            p5_ev.append(r3_bios[0].strip())
+
+        if order_list != ["4", "3", "2", "1"]:
+            p5_ok = False
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected ['4', '3', '2', '1']")
+        else:
+            p5_ev.append("VINTNER_ORDER=['4', '3', '2', '1']")
+        c4 = (grubenv or {}).get("VINTNER_T_4")
+        if c4 != "xxx":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_4={c4}, expected xxx")
+        else:
+            p5_ev.append("VINTNER_T_4=xxx")
 
     elif case == "G2":
+        p_img = b1_read.get("images", {}).get(str(p))
         if not p_img or p_img.get("state") != "GOOD":
             p5_ok = False
             p5_ev.append(f"gen {p} state={p_img.get('state') if p_img else 'missing'}, expected GOOD")
         else:
             p5_ev.append(f"gen {p} GOOD")
-        gen1_img = b1_read.get("images", {}).get("1")
-        if gen1_img is not None:
+        if "1" in b1_read.get("images", {}):
             p5_ok = False
-            p5_ev.append(f"gen 1 record still present: {gen1_img}")
+            p5_ev.append("gen 1 still in manifest")
         else:
-            p5_ev.append("gen 1 has no record")
-        if fw == "bios":
-            order = (b1_read.get("grubenv") or {}).get("VINTNER_ORDER", "")
-            c1 = (b1_read.get("grubenv") or {}).get("VINTNER_T_1")
-            if "1" in order.split() or c1 is not None:
-                p5_ok = False
-                p5_ev.append(f"VINTNER_ORDER={order}, VINTNER_T_1={c1}")
-            else:
-                p5_ev.append(f"VINTNER_ORDER={order} (no 1), VINTNER_T_1 absent")
+            p5_ev.append("gen 1 has no manifest record")
+
+        u1 = uki_names(b1_read, 1)
+        b1_slot = "/vintner/bios/os-1/" in b1_read.get("bios_files", []) or any(f.startswith("/vintner/bios/os-1/") for f in b1_read.get("bios_files", []))
+        if not u1 or not b1_slot:
+            p5_ok = False
+            p5_ev.append(f"gen 1 files missing: uki={u1}, bios={b1_slot}")
+        else:
+            p5_ev.append("gen 1 files remain")
+
+        r3_uefi = [l for l in b1_log.splitlines() if re.fullmatch(r"\[\s*\d+\.\d+\] vintner\[\d+\]: untracked uefi file vintner-os-1(\+\d+-\d+)?\.efi", l)]
+        r3_bios = [l for l in b1_log.splitlines() if re.fullmatch(r"\[\s*\d+\.\d+\] vintner\[\d+\]: untracked bios directory os-1", l)]
+        if not r3_uefi:
+            p5_ok = False
+            p5_ev.append("missing rule 3 untracked uefi file report")
+        else:
+            p5_ev.append(r3_uefi[0].strip())
+        if not r3_bios:
+            p5_ok = False
+            p5_ev.append("missing rule 3 untracked bios directory report")
+        else:
+            p5_ev.append(r3_bios[0].strip())
+
+        if order_list != ["4", "3", "2"]:
+            p5_ok = False
+            p5_ev.append(f"VINTNER_ORDER={order_list}, expected ['4', '3', '2']")
+        else:
+            p5_ev.append("VINTNER_ORDER=['4', '3', '2']")
+        if "VINTNER_T_1" in (grubenv or {}):
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_1 unexpectedly present: {grubenv['VINTNER_T_1']}")
+        else:
+            p5_ev.append("VINTNER_T_1 absent")
+        c4 = (grubenv or {}).get("VINTNER_T_4")
+        if c4 != "xxx":
+            p5_ok = False
+            p5_ev.append(f"VINTNER_T_4={c4}, expected xxx")
+        else:
+            p5_ev.append("VINTNER_T_4=xxx")
+
+    # Item 20 fsck.fat clean check after boot 1
+    b1_fsck_path = f"{prefix}-read-boot1-fsck.txt"
+    b1_fsck_text = open(b1_fsck_path).read() if os.path.isfile(b1_fsck_path) else ""
+    fsck_anoms = parse_fsck_anomalies(b1_fsck_text)
+    if fsck_anoms:
+        p5_ok = False
+        p5_ev.append(f"boot1 fsck corruption: {'; '.join(fsck_anoms)}")
+    else:
+        p5_ev.append("boot1 fsck clean")
 
     emit(results_file, "P5", case, "PASS" if p5_ok else "FAIL", "; ".join(p5_ev))
 
     # --- P6 ---
-    # Recovery publish exits 0 and prints published generation <n> == next_generation after boot 1
-    # Boot 2 boots generation <n>, and it is GOOD and re-armed
     p6_ok = True
     p6_ev = []
     want_rec_gen = b1_read.get("next_generation")
-    pub_match = re.search(r"vintner publish: published generation (\d+)", rec_log)
-    if not pub_match or int(pub_match.group(1)) != want_rec_gen:
-        p6_ok = False
-        p6_ev.append(f"recovery published generation={pub_match.group(1) if pub_match else 'none'}, expected {want_rec_gen}")
-    else:
-        p6_ev.append(f"recovery published generation {want_rec_gen}")
+    rec_lines = rec_log.splitlines()
 
-    if b2_label != f"os-{want_rec_gen}":
-        p6_ok = False
-        p6_ev.append(f"boot2 booted {b2_label}, expected os-{want_rec_gen}")
-    else:
-        p6_ev.append(f"boot2 booted os-{want_rec_gen}")
+    has_op_exit = any(l == "=== OP EXIT: 0 ===" for l in rec_lines)
+    want_pub_line = f"vintner publish: published generation {want_rec_gen}"
+    has_pub_line = any(l == want_pub_line for l in rec_lines)
 
-    b2_img = b2_read.get("images", {}).get(str(want_rec_gen))
-    if not b2_img or b2_img.get("state") != "GOOD":
+    if not has_op_exit:
         p6_ok = False
-        p6_ev.append(f"gen {want_rec_gen} in boot2 state={b2_img.get('state') if b2_img else 'missing'}")
+        p6_ev.append("recovery publish missing whole line '=== OP EXIT: 0 ==='")
     else:
-        p6_ev.append(f"gen {want_rec_gen} GOOD in boot2")
+        p6_ev.append("OP EXIT: 0")
+
+    if not has_pub_line:
+        p6_ok = False
+        p6_ev.append(f"recovery publish missing whole line '{want_pub_line}'")
+    else:
+        p6_ev.append(want_pub_line)
+
+    want_b2 = f"os-{want_rec_gen}"
+    if lbl_b2 != want_b2:
+        p6_ok = False
+        p6_ev.append(f"boot2 booted {lbl_b2}, expected {want_b2}")
+    else:
+        p6_ev.append(f"boot2 booted {lbl_b2}")
+
+    rec_b2_img = b2_read.get("images", {}).get(str(want_rec_gen))
+    if not rec_b2_img or rec_b2_img.get("state") != "GOOD":
+        p6_ok = False
+        p6_ev.append(f"gen {want_rec_gen} after boot2 state={rec_b2_img.get('state') if rec_b2_img else 'missing'}, expected GOOD")
+    else:
+        p6_ev.append(f"gen {want_rec_gen} GOOD")
 
     if fw == "uefi":
         ukis = uki_names(b2_read, want_rec_gen)
-        if ukis != [f"vintner-os-{want_rec_gen}+3-0.efi"]:
+        want_uki = f"vintner-os-{want_rec_gen}+3-0.efi"
+        if ukis != [want_uki]:
             p6_ok = False
-            p6_ev.append(f"boot2 UKIs={ukis}")
+            p6_ev.append(f"boot2 UKIs={ukis}, expected [{want_uki}]")
         else:
-            p6_ev.append(f"boot2 UKI re-armed (+3-0)")
+            p6_ev.append(f"boot2 UKI={want_uki}")
     else:
         c = counter(b2_read, fw, want_rec_gen)
         absent, b_msg = booted_absent(b2_read)
@@ -756,33 +1078,42 @@ def evaluate_case(case, fw, out_dir, results_file):
     emit(results_file, "P6", case, "PASS" if p6_ok else "FAIL", "; ".join(p6_ev))
 
     # --- P7 ---
-    # 50vintner-retained-kernels lists exactly the kernel packages of the images the manifest then holds
     p7_ok = True
     p7_ev = []
-    rec_mf = rec_read.get("manifest") or {}
-    expected_pkgs = sorted(set(img["kernel"]["package"] for img in rec_mf.get("images", []) if img.get("kernel", {}).get("package")))
-    want_entries = expected_retained(expected_pkgs)
-    got_entries = parse_retained_file(retained_content)
-
-    if got_entries != want_entries:
+    rec_mf = rec_read.get("manifest")
+    if not rec_mf:
         p7_ok = False
-        p7_ev.append(f"retained entries={got_entries}, expected={want_entries}")
+        p7_ev.append("recovery manifest missing or unreadable")
     else:
-        p7_ev.append(f"retained packages {expected_pkgs} match manifest")
+        images_list = rec_mf.get("images", [])
+        expected_pkgs = []
+        for img in images_list:
+            pkg = (img.get("kernel") or {}).get("package")
+            if not pkg:
+                p7_ok = False
+                p7_ev.append(f"image {img.get('generation')} missing kernel package")
+            else:
+                expected_pkgs.append(pkg)
+        expected_pkgs = sorted(set(expected_pkgs))
+        want_entries = expected_retained(expected_pkgs)
+        got_entries = parse_retained_file(retained_content)
+
+        if got_entries is None or got_entries != want_entries:
+            p7_ok = False
+            p7_ev.append(f"retained entries={got_entries}, expected={want_entries}")
+        else:
+            p7_ev.append(f"retained packages {expected_pkgs} match manifest")
 
     emit(results_file, "P7", case, "PASS" if p7_ok else "FAIL", "; ".join(p7_ev))
 
     # --- P8 ---
-    # Reconciliation reports, state changes, and leftover unrecorded files (OBSERVED)
     p8_items = []
-    # Collect reports and state changes
     for log_name, log_text in [("boot1", b1_log), ("rec_op", rec_log), ("boot2", b2_log)]:
         for l in log_text.splitlines():
             l_str = l.strip()
             if any(k in l_str for k in ["REPORT:", "ACTION:", "untracked", "does not verify", "missing files", "-> removed", "-> GOOD", "-> TRYING"]):
                 p8_items.append(f"[{log_name}] {l_str}")
 
-    # Check for leftover unrecorded files in read-boot2
     b2_images = b2_read.get("images", {})
     unrec_ukis = [u for u in b2_read.get("efi_files", []) if (m := UKI_RE.fullmatch(u)) and m.group(1) not in b2_images]
     unrec_bios = []
@@ -803,16 +1134,43 @@ def evaluate_case(case, fw, out_dir, results_file):
         if unrec_order:
             p8_items.append(f"unrecorded in VINTNER_ORDER after boot2: {unrec_order}")
 
+    for r_name, r_data in [("pre", pre), ("op", op_read), ("boot1", b1_read), ("rec_op", rec_read), ("boot2", b2_read)]:
+        anoms = r_data.get("mdir_anomalies", [])
+        for a in anoms:
+            p8_items.append(f"[{r_name} mdir anomaly] {a}")
+
+    for r_name in ["pre", "op", "boot1", "rec_op", "boot2"]:
+        fsck_path = f"{prefix}-read-{r_name}-fsck.txt"
+        fsck_text = open(fsck_path).read() if os.path.isfile(fsck_path) else ""
+        anoms = parse_fsck_anomalies(fsck_text)
+        for a in anoms:
+            p8_items.append(f"[{r_name} fsck anomaly] {a}")
+
     p8_ev = "; ".join(p8_items) if p8_items else "none"
     emit(results_file, "P8", case, "OBSERVED", p8_ev)
 
     # --- P9 ---
-    # No boot ran recovery A or B
-    rec_booted = identify_booted(rec_log, fw, b1_read, rec_read)
-    boots = [("boot1", b1_label), ("rec_op", rec_booted), ("boot2", b2_label)]
-    p9_ok = all(lbl not in ("recovery-a", "recovery-b", "recovery") for _, lbl in boots)
-    p9_ev = ", ".join(f"{b}={lbl}" for b, lbl in boots)
-    emit(results_file, "P9", case, "PASS" if p9_ok else "FAIL", f"boots: {p9_ev}")
+    p9_ok = True
+    p9_ev = []
+    boots = [
+        ("op", op_log, pre, op_read),
+        ("boot1", b1_log, op_read, b1_read),
+        ("rec_op", rec_log, b1_read, rec_read),
+        ("boot2", b2_log, rec_read, b2_read),
+    ]
+    for b_name, b_log, prev_r, curr_r in boots:
+        if not b_log:
+            p9_ok = False
+            p9_ev.append(f"{b_name}=missing log")
+        else:
+            lbl = identify_booted(b_log, fw, prev_r, curr_r)
+            if not re.fullmatch(r"os-\d+", lbl):
+                p9_ok = False
+                p9_ev.append(f"{b_name}={lbl} (invalid)")
+            else:
+                p9_ev.append(f"{b_name}={lbl}")
+
+    emit(results_file, "P9", case, "PASS" if p9_ok else "FAIL", "; ".join(p9_ev))
 
 def cmd_evaluate(args):
     with open(args.results_file, "w") as f:
@@ -822,6 +1180,60 @@ def cmd_evaluate(args):
         evaluate_case(case, args.firmware, args.out_dir, args.results_file)
 
     print("\nEvaluation complete.")
+
+def cmd_check_results(args):
+    results_file = args.results_file
+    if not os.path.isfile(results_file):
+        sys.exit(f"check-results FAIL: {results_file} not found")
+
+    expected_pairs = {(ch, cs) for ch in CHECKS for cs in CASES}
+    actual_rows = {}
+    duplicates = []
+    unexpected = []
+
+    with open(results_file, "r") as f:
+        for line_no, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("ID\t") or line.startswith("id\t"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                sys.exit(f"check-results FAIL: line {line_no} malformed: {line}")
+            ch, cs, status = parts[0], parts[1], parts[2]
+            pair = (ch, cs)
+            if pair in actual_rows:
+                duplicates.append(pair)
+            if pair not in expected_pairs:
+                unexpected.append(pair)
+            actual_rows[pair] = status
+
+    missing = expected_pairs - set(actual_rows.keys())
+    bad_status = []
+    for pair, status in actual_rows.items():
+        ch, cs = pair
+        if ch == "P8":
+            if status != "OBSERVED":
+                bad_status.append(f"{ch}:{cs} has status {status}, expected OBSERVED")
+        else:
+            if status != "PASS":
+                bad_status.append(f"{ch}:{cs} has status {status}, expected PASS")
+
+    errors = []
+    if duplicates:
+        errors.append(f"Duplicate rows: {sorted(duplicates)}")
+    if unexpected:
+        errors.append(f"Unexpected rows: {sorted(unexpected)}")
+    if missing:
+        errors.append(f"Missing rows: {sorted(missing)}")
+    if bad_status:
+        errors.append(f"Failing checks: {bad_status}")
+
+    if errors:
+        for err in errors:
+            print(f"ERROR: {err}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"check-results PASS: all {len(expected_pairs)} checks present with expected status.")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -861,6 +1273,9 @@ def main():
     p_eval.add_argument("--out-dir", required=True)
     p_eval.add_argument("--results-file", required=True)
 
+    p_check = sub.add_parser("check-results")
+    p_check.add_argument("--results-file", required=True)
+
     args = parser.parse_args()
     if args.cmd == "verify-prep-base":
         cmd_verify_prep_base(args)
@@ -872,6 +1287,8 @@ def main():
         cmd_read(args)
     elif args.cmd == "evaluate":
         cmd_evaluate(args)
+    elif args.cmd == "check-results":
+        cmd_check_results(args)
 
 if __name__ == "__main__":
     main()

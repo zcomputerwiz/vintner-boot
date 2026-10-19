@@ -66,20 +66,45 @@ echo "Building tagged and default vintner binaries on host..."
 (cd src && CGO_ENABLED=0 go build -o "../$DEFAULT_BIN" ./cmd/vintner)
 
 # Pre-case check 2 (§2): default build contains neither VINTNER_TEST_INTERRUPT nor vintner-testpoint
-if strings "$DEFAULT_BIN" | grep -q -E "VINTNER_TEST_INTERRUPT|vintner-testpoint"; then
+if grep -a -q -F -e VINTNER_TEST_INTERRUPT -e vintner-testpoint "$DEFAULT_BIN"; then
 	echo "FAIL: default binary contains testpoint strings!" >&2
 	exit 1
 fi
-echo "Pre-check passed: default build contains no testpoint strings."
+if ! grep -a -q -F "VINTNER_TEST_INTERRUPT" "$TAGGED_BIN" || ! grep -a -q -F "vintner-testpoint" "$TAGGED_BIN"; then
+	echo "FAIL: tagged binary missing testpoint strings!" >&2
+	exit 1
+fi
+echo "Pre-check passed: default build contains no testpoint strings, tagged build contains both."
 
 # read_disk <disk> <prefix>
 read_disk() {
+	local disk="$1"
+	local step="$2"
 	python3 ci/publish-interrupt/inspector.py read \
-		--disk "$1" \
+		--disk "$disk" \
 		--bs-offset "$BS_OFFSET" \
 		--vintner-bin "$TAGGED_BIN" \
 		--root "$ROOT" \
-		--out-prefix "$OUT/$2"
+		--out-prefix "$OUT/$step"
+
+	echo "Block devices on host before losetup (${step} retained kernels):"
+	lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
+	local loop
+	loop=$(sudo losetup -P -r -f --show "$disk")
+	sudo mount -o ro "${loop}p1" "$MNT"
+	local rf="$MNT/etc/apt/apt.conf.d/50vintner-retained-kernels"
+	if [ -f "$rf" ]; then
+		sudo cp "$rf" "$OUT/${step}-retained-kernels.txt"
+		sudo chmod 0644 "$OUT/${step}-retained-kernels.txt"
+	else
+		echo "(missing)" > "$OUT/${step}-retained-kernels.txt"
+	fi
+	sudo umount "$MNT"
+	sudo losetup -d "$loop"
+
+	if [ "$step" = "${CASE}-read-rec-op" ]; then
+		cp "$OUT/${step}-retained-kernels.txt" "$OUT/${CASE}-retained-kernels.txt"
+	fi
 }
 
 # --- 2. Prepare Base Golden Test Disk (§2) -----------------------------------
@@ -262,20 +287,22 @@ for CASE in "${CASES[@]}"; do
 	echo "[$CASE] Step 1: Operation boot (testpoint: '${TESTPOINT:-none}')..."
 	if [ -n "$TESTPOINT" ]; then
 		OP_SCRIPT=$(cat <<EOF
-set -e
+set -e -o pipefail
+systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} op boot
 SH
-VINTNER_TEST_INTERRUPT="${TESTPOINT}" update-initramfs -u -k "\$(uname -r)"
+VINTNER_TEST_INTERRUPT="${TESTPOINT}" update-initramfs -u -k "\$(uname -r)" 2>&1 | tee /dev/ttyS0
 EOF
 )
 	else
 		OP_SCRIPT=$(cat <<EOF
-set -e
+set -e -o pipefail
+systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} op boot
 SH
-update-initramfs -u -k "\$(uname -r)"
+update-initramfs -u -k "\$(uname -r)" 2>&1 | tee /dev/ttyS0
 EOF
 )
 	fi
@@ -297,7 +324,7 @@ EOF
 		--boot-num "op" \
 		"${VARS_ARG[@]}" \
 		"${CODE_ARG[@]}" \
-		--timeout 300 \
+		--timeout 120 \
 		--meta-out "$OUT/${CASE}-op-meta.json"
 
 	read_disk "$CASE_DISK" "${CASE}-read-op"
@@ -321,11 +348,12 @@ EOF
 	# Step 3: Recovery publish
 	echo "[$CASE] Step 3: Recovery publish..."
 	REC_SCRIPT=$(cat <<EOF
-set -e
+set -e -o pipefail
+systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} recovery publish (distinct)
 SH
-update-initramfs -u -k "\$(uname -r)"
+update-initramfs -u -k "\$(uname -r)" 2>&1 | tee /dev/ttyS0
 EOF
 )
 	REC_SEED=$(make_seed "${CASE}-rec-op" "$REC_SCRIPT")
@@ -339,20 +367,10 @@ EOF
 		--boot-num "rec-op" \
 		"${VARS_ARG[@]}" \
 		"${CODE_ARG[@]}" \
-		--timeout 300 \
+		--timeout 120 \
 		--meta-out "$OUT/${CASE}-rec-op-meta.json"
 
 	read_disk "$CASE_DISK" "${CASE}-read-rec-op"
-
-	# Read 50vintner-retained-kernels after recovery publish (for check P7)
-	echo "Block devices on host before losetup (${CASE} retained kernels):"
-	lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
-	LOOP=$(sudo losetup -P -r -f --show "$CASE_DISK")
-	sudo mount -o ro "${LOOP}p1" "$MNT"
-	cp "$MNT/etc/apt/apt.conf.d/50vintner-retained-kernels" "$OUT/${CASE}-retained-kernels.txt" 2>/dev/null || true
-	sudo umount "$MNT"
-	sudo losetup -d "$LOOP"
-	LOOP=""
 
 	# Step 4: Boot 2
 	echo "[$CASE] Step 4: Boot 2..."
@@ -387,23 +405,8 @@ cat "$RESULTS"
 echo "=== versions.txt ==="
 cat "$VERSIONS"
 
-# Verification: all P1-P7, P9 must be PASS, P8 must be OBSERVED
-BAD=$(awk -F'\t' 'NR > 1 && $1 ~ /^P[1-79]$/ && $3 != "PASS" {print $1 ":" $2 ":" $3}' "$RESULTS" | paste -sd ' ')
-BAD_OBS=$(awk -F'\t' 'NR > 1 && $1 == "P8" && $3 != "OBSERVED" {print $1 ":" $2 ":" $3}' "$RESULTS" | paste -sd ' ')
+# Verification: final gate
+python3 ci/publish-interrupt/inspector.py check-results \
+	--results-file "$RESULTS"
 
-EXPECTED_COUNT=$((11 * 9))
-ACTUAL_COUNT=$(awk 'NR > 1' "$RESULTS" | wc -l)
-
-if [ "$ACTUAL_COUNT" -ne "$EXPECTED_COUNT" ]; then
-	echo "ERROR: Expected $EXPECTED_COUNT result rows, got $ACTUAL_COUNT" >&2
-	exit 1
-fi
-
-if [ -n "$BAD" ] || [ -n "$BAD_OBS" ]; then
-	echo "ERROR: One or more checks did not pass:" >&2
-	[ -n "$BAD" ] && echo "  Failing checks: $BAD" >&2
-	[ -n "$BAD_OBS" ] && echo "  Failing observed checks: $BAD_OBS" >&2
-	exit 1
-fi
-
-echo "All $FIRMWARE publish interruption checks passed successfully ($ACTUAL_COUNT/$EXPECTED_COUNT rows)."
+echo "All $FIRMWARE publish interruption checks passed successfully."

@@ -107,4 +107,25 @@ func TestHitTaggedBuild(t *testing.T) {
 			t.Fatalf("expected no hit on subset name, got kmsg=%v sysrq=%d", kmsgCalls, sysrqCount)
 		}
 	})
+
+	// 5. name#0, name#x, and name# must never match (WO-0007a Item 17)
+	t.Run("InvalidHashN", func(t *testing.T) {
+		invalidCases := []string{
+			"staged-recorded#0",
+			"staged-recorded#-1",
+			"staged-recorded#x",
+			"staged-recorded#",
+			"staged-recorded#01x",
+		}
+		for _, tc := range invalidCases {
+			reset()
+			os.Setenv("VINTNER_TEST_INTERRUPT", tc)
+			Hit("staged-recorded")
+			Hit("staged-recorded")
+			if len(kmsgCalls) != 0 || sysrqCount != 0 {
+				t.Fatalf("case %q should never match, got kmsg=%v sysrq=%d", tc, kmsgCalls, sysrqCount)
+			}
+		}
+		os.Unsetenv("VINTNER_TEST_INTERRUPT")
+	})
 }

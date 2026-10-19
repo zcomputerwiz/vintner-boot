@@ -11,10 +11,22 @@ import (
 
 func TestHitDefaultBuild(t *testing.T) {
 	envKey := "VINTNER_" + "TEST_" + "INTERRUPT"
-	os.Setenv(envKey, "staged-recorded")
-	defer os.Unsetenv(envKey)
+	testpoints := []string{
+		"staged-recorded",
+		"staging-written",
+		"staging-verified",
+		"renamed",
+		"grubenv-written",
+		"trying-recorded",
+		"gc-record-removed",
+		"gc-grubenv-written",
+		"manifest-written",
+	}
 
-	// In default builds, Hit must return for every name without panicking or failing.
-	Hit("staged-recorded")
-	Hit("other-name")
+	for _, name := range testpoints {
+		os.Setenv(envKey, name)
+		Hit(name)
+		Hit("other-name")
+	}
+	os.Unsetenv(envKey)
 }
