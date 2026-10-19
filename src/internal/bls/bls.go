@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type Entry struct {
@@ -139,20 +140,20 @@ func syncPath(path string) error {
 // rename(2) writes the new directory entry with start cluster 0 and size 0;
 // the real values reach the disk only when the renamed inode itself is
 // written back, so syncing the parent directories alone leaves an empty file
-// or a directory pointing at the root after a power cut (WO-0007).
+// or a directory pointing at the root after a power cut. Even with the
+// renamed inode and both parents fsynced, WO-0007 found the old entry's
+// removal still unwritten after a cut, leaving two entries sharing clusters,
+// so all filesystems are synced as well.
 func RenameSync(oldpath, newpath string) error {
 	if err := os.Rename(oldpath, newpath); err != nil {
 		return err
 	}
-	if err := syncPath(newpath); err != nil {
-		return err
+	for _, p := range []string{newpath, filepath.Dir(newpath), filepath.Dir(oldpath)} {
+		if err := syncPath(p); err != nil {
+			return err
+		}
 	}
-	if err := syncPath(filepath.Dir(newpath)); err != nil {
-		return err
-	}
-	if dir := filepath.Dir(oldpath); dir != filepath.Dir(newpath) {
-		return syncPath(dir)
-	}
+	syscall.Sync() // the standard library has no syncfs(2)
 	return nil
 }
 
