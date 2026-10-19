@@ -386,7 +386,6 @@ def cmd_read(args):
     if shutil.which("fsck.fat"):
         with tempfile.NamedTemporaryFile(suffix=".fat", delete=False) as tmp_part:
             tmp_path = tmp_part.name
-        try:
             with open(disk, "rb") as f_disk:
                 f_disk.seek(off)
                 remaining = 512 * 1024 * 1024
@@ -396,7 +395,7 @@ def cmd_read(args):
                         break
                     tmp_part.write(chunk)
                     remaining -= len(chunk)
-            tmp_part.close()
+        try:
             r = subprocess.run(["fsck.fat", "-n", tmp_path], capture_output=True, text=True)
             with open(fsck_out_path, "w") as f:
                 f.write(r.stdout + r.stderr)
