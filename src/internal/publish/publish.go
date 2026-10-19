@@ -23,6 +23,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/testpoint"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/uki"
 )
 
@@ -706,6 +707,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if err := manifest.Save(stateDir, m); err != nil {
 		return nil, fmt.Errorf("manifest save staged: %w", err)
 	}
+	testpoint.Hit("staged-recorded")
 	fmt.Fprintf(stdout, "vintner publish: staged generation %d\n", g)
 
 	if opts.StopAfterStep9 {
@@ -770,6 +772,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
+	testpoint.Hit("staging-written")
+
 	if err := syncDir(stagingDir); err != nil {
 		return nil, cleanupStagingAndRefuse(err)
 	}
@@ -807,6 +811,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
+	testpoint.Hit("staging-verified")
+
 	if opts.StopAfterStep10 {
 		return &Result{Generation: g}, nil
 	}
@@ -818,11 +824,9 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("create EFI/Linux dir: %w", err)
 		}
 		finalUKI := filepath.Join(efiDir, fmt.Sprintf("vintner-os-%d+%d-0.efi", g, m.Tries))
-		if err := os.Rename(stagedUKI, finalUKI); err != nil {
+		if err := bls.RenameSync(stagedUKI, finalUKI); err != nil {
 			return nil, fmt.Errorf("publish rename UKI: %w", err)
 		}
-		_ = syncDir(efiDir)
-		_ = syncDir(stagingDir)
 	}
 
 	if isBIOS {
@@ -831,12 +835,14 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("create vintner/bios dir: %w", err)
 		}
 		finalSlotDir := filepath.Join(biosDir, fmt.Sprintf("os-%d", g))
-		if err := os.Rename(stagedSlotDir, finalSlotDir); err != nil {
+		if err := bls.RenameSync(stagedSlotDir, finalSlotDir); err != nil {
 			return nil, fmt.Errorf("publish rename BIOS slot: %w", err)
 		}
-		_ = syncDir(stagingDir)
-		_ = syncDir(biosDir)
+	}
 
+	testpoint.Hit("renamed")
+
+	if isBIOS {
 		env, err := grubenv.Read(grubenvPath)
 		if err != nil {
 			return nil, fmt.Errorf("read grubenv for publish: %w", err)
@@ -852,6 +858,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		if err := grubenv.Write(grubenvPath, env); err != nil {
 			return nil, fmt.Errorf("write grubenv publish: %w", err)
 		}
+		testpoint.Hit("grubenv-written")
 	}
 
 	for i := range m.Images {
@@ -863,6 +870,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if err := manifest.Save(stateDir, m); err != nil {
 		return nil, fmt.Errorf("save manifest TRYING: %w", err)
 	}
+	testpoint.Hit("trying-recorded")
 	fmt.Fprintf(stdout, "vintner publish: published generation %d\n", g)
 
 	// 12 to 14.
@@ -911,6 +919,7 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 		if err := manifest.Save(stateDir, m); err != nil {
 			return nil, fmt.Errorf("save manifest gc: %w", err)
 		}
+		testpoint.Hit("gc-record-removed")
 
 		// 2. on BIOS, remove from VINTNER_ORDER and unset counter in one grubenv write
 		if isBIOS {
@@ -931,6 +940,7 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 			if err := grubenv.Write(grubenvPath, env); err != nil {
 				return nil, fmt.Errorf("gc generation %d: write grubenv: %w", remGen, err)
 			}
+			testpoint.Hit("gc-grubenv-written")
 		}
 
 		// 3. remove its BIOS directory and its UKI (found by stem with bls.Find)

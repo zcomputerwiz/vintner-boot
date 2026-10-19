@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 type Entry struct {
@@ -125,13 +126,35 @@ func Find(dir, stem string) (string, error) {
 	return matched[0], nil
 }
 
-func syncDir(dir string) error {
-	d, err := os.Open(dir)
+// syncPath fsyncs the file or directory at path.
+func syncPath(path string) error {
+	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-	defer d.Close()
-	return d.Sync()
+	defer f.Close()
+	return f.Sync()
+}
+
+// RenameSync renames oldpath to newpath and makes the rename durable. On vfat,
+// rename(2) writes the new directory entry with start cluster 0 and size 0;
+// the real values reach the disk only when the renamed inode itself is
+// written back, so syncing the parent directories alone leaves an empty file
+// or a directory pointing at the root after a power cut. Even with the
+// renamed inode and both parents fsynced, WO-0007 found the old entry's
+// removal still unwritten after a cut, leaving two entries sharing clusters,
+// so all filesystems are synced as well.
+func RenameSync(oldpath, newpath string) error {
+	if err := os.Rename(oldpath, newpath); err != nil {
+		return err
+	}
+	for _, p := range []string{newpath, filepath.Dir(newpath), filepath.Dir(oldpath)} {
+		if err := syncPath(p); err != nil {
+			return err
+		}
+	}
+	syscall.Sync() // the standard library has no syncfs(2)
+	return nil
 }
 
 func Rearm(dir, stem string, tries int) error {
@@ -154,11 +177,7 @@ func Rearm(dir, stem string, tries int) error {
 		return nil
 	}
 
-	if err := os.Rename(filepath.Join(dir, match), filepath.Join(dir, newName)); err != nil {
-		return err
-	}
-
-	return syncDir(dir)
+	return RenameSync(filepath.Join(dir, match), filepath.Join(dir, newName))
 }
 
 func SetBad(dir, stem string) error {
@@ -178,9 +197,5 @@ func SetBad(dir, stem string) error {
 		return nil
 	}
 
-	if err := os.Rename(filepath.Join(dir, match), filepath.Join(dir, newName)); err != nil {
-		return err
-	}
-
-	return syncDir(dir)
+	return RenameSync(filepath.Join(dir, match), filepath.Join(dir, newName))
 }
