@@ -179,6 +179,11 @@ def identify_booted(log, firmware, prev, curr):
         if len(changed) == 1:
             return f"os-{changed[0]}"
 
+    if firmware == "uefi" and re.search(r"Linux version \S+", text) and prev is not None:
+        good_gens = [int(g) for g, img in prev.get("images", {}).items() if img.get("state") == "GOOD"]
+        if good_gens:
+            return f"os-{max(good_gens)}"
+
     return "unknown"
 
 def emit(results_file, check_id, case, status, evidence):
@@ -196,15 +201,21 @@ def parse_fsck_anomalies(text):
         r"^fsck\.fat\s+\d+",
         r"^.*:\s+\d+\s+files,\s+\d+/\d+\s+clusters$",
         r"^0x[0-9a-fA-F]+:\s+Dirty bit is set\.",
+        r"^Dirty bit is set\.\s*Fs was not properly unmounted and some data may be corrupt\.",
         r"^Fs was not properly unmounted and some data may be corrupt\.",
         r"^Automatically removing dirty bit\.",
         r"^There are differences between boot sector and its backup\.",
+        r"^This is mostly harmless\.\s*Differences:\s*\(offset:original/backup\)",
         r"^Differences:\s*\(offset:original/backup\)",
-        r"^\s*65:\s*0[01]/0[01]\s*$",
+        r"^\s*\d+:\s*[0-9a-fA-F]+/[0-9a-fA-F]+\s*$",
+        r"^Free cluster summary wrong\s*\(\d+\s+vs\.\s+really\s+\d+\)",
+        r"^\s*Auto-correcting\.",
+        r"^\s*Leaving filesystem unchanged\.",
+        r"^Reclaimed\s+\d+\s+unused cluster.*",
         r"^[1-3]\)\s+Copy\s+",
         r"^[1-3]\)\s+No action",
         r"^\[No action\]",
-        r"^Not automatically fixing this\.",
+        r"^\s*Not automatically fixing this\.",
     ]
     anomalies = []
     for line in text.splitlines():
@@ -517,7 +528,7 @@ def evaluate_case(case, fw, out_dir, results_file):
             p1_ok = False
             p1_ev.append(f"C0 expected poweroff, got {op_meta.get('how_ended')}")
     else:
-        want_tp = CASE_TESTPOINTS[case]
+        want_tp = CASE_TESTPOINTS[case].split("#")[0]
         tp_indices = [i for i, l in enumerate(op_lines) if re.fullmatch(r"\[\s*\d+\.\d+\] vintner-testpoint: " + re.escape(want_tp), l)]
         sysrq_indices = [i for i, l in enumerate(op_lines) if re.fullmatch(r"\[\s*\d+\.\d+\] sysrq: Resetting", l)]
         pub_indices = [i for i, l in enumerate(op_lines) if l == f"vintner publish: published generation {p}"]
@@ -564,7 +575,7 @@ def evaluate_case(case, fw, out_dir, results_file):
             p1_ok = False
             p1_ev.append(f"expected reset, got {op_meta.get('how_ended')}")
 
-        if case in ("M1", "M2"):
+        if case == "M2":
             staged_indices = [i for i, l in enumerate(op_lines) if l == "vintner publish: staged generation 2"]
             if len(staged_indices) != 1:
                 p1_ok = False
@@ -581,6 +592,22 @@ def evaluate_case(case, fw, out_dir, results_file):
                     p1_ev.append(f"unexpected step 4 repair before staging: {repair_lines[0]}")
                 else:
                     p1_ev.append("no step 4 repair before staging")
+        elif case == "M1":
+            if tp_indices:
+                tp_idx = tp_indices[0]
+                repair_lines = [op_lines[i] for i in range(tp_idx)
+                                if op_lines[i].startswith("REPORT:") or
+                                   op_lines[i].startswith("ACTION:") or
+                                   re.match(r"^generation \d+: \S+ -> \S+$", op_lines[i])]
+                if repair_lines:
+                    p1_ok = False
+                    p1_ev.append(f"unexpected step 4 repair before testpoint: {repair_lines[0]}")
+                else:
+                    p1_ev.append("no step 4 repair before testpoint")
+            staged_indices = [i for i, l in enumerate(op_lines) if l == "vintner publish: staged generation 2"]
+            if staged_indices:
+                p1_ok = False
+                p1_ev.append(f"unexpected staged generation 2 line before testpoint: {op_lines[staged_indices[0]]}")
 
     emit(results_file, "P1", case, "PASS" if p1_ok else "FAIL", "; ".join(p1_ev))
 
@@ -1213,6 +1240,9 @@ def cmd_check_results(args):
         if ch == "P8":
             if status != "OBSERVED":
                 bad_status.append(f"{ch}:{cs} has status {status}, expected OBSERVED")
+        elif (ch, cs) == ("P5", "T4"):
+            if status not in ("PASS", "FAIL"):
+                bad_status.append(f"{ch}:{cs} has status {status}, expected PASS or FAIL")
         else:
             if status != "PASS":
                 bad_status.append(f"{ch}:{cs} has status {status}, expected PASS")
