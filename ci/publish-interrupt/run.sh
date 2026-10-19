@@ -301,6 +301,19 @@ for CASE in "${CASES[@]}"; do
 		OP_SCRIPT=$(cat <<EOF
 set -e -o pipefail
 systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
+if [ -d /sys/firmware/efi ]; then
+	mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null || true
+	ENTRY=""
+	for p in /sys/firmware/efi/efivars/LoaderEntrySelected-* /sys/firmware/efi/efivars/LoaderBootCountPath-*; do
+		if [ -f "\$p" ]; then
+			val=\$(cat "\$p" 2>/dev/null | tail -c +5 | tr -d '\0' | tr -cd '[:print:]' || true)
+			[ -n "\$val" ] && { ENTRY="\$val"; break; }
+		fi
+	done
+	ENTRY="\${ENTRY##*\\\\}"
+	ENTRY="\${ENTRY##*/}"
+	echo "LOADER_ENTRY_SELECTED: \$ENTRY" > /dev/ttyS0
+fi
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} op boot
 SH
@@ -311,6 +324,19 @@ EOF
 		OP_SCRIPT=$(cat <<EOF
 set -e -o pipefail
 systemctl stop serial-getty@ttyS0.service 2>/dev/null || true
+if [ -d /sys/firmware/efi ]; then
+	mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null || true
+	ENTRY=""
+	for p in /sys/firmware/efi/efivars/LoaderEntrySelected-* /sys/firmware/efi/efivars/LoaderBootCountPath-*; do
+		if [ -f "\$p" ]; then
+			val=\$(cat "\$p" 2>/dev/null | tail -c +5 | tr -d '\0' | tr -cd '[:print:]' || true)
+			[ -n "\$val" ] && { ENTRY="\$val"; break; }
+		fi
+	done
+	ENTRY="\${ENTRY##*\\\\}"
+	ENTRY="\${ENTRY##*/}"
+	echo "LOADER_ENTRY_SELECTED: \$ENTRY" > /dev/ttyS0
+fi
 cat <<'SH' > /etc/initramfs-tools/conf.d/vintner-case-${CASE}
 # harmless conf.d change for ${CASE} op boot
 SH

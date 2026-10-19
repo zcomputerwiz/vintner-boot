@@ -179,11 +179,6 @@ def identify_booted(log, firmware, prev, curr):
         if len(changed) == 1:
             return f"os-{changed[0]}"
 
-    if firmware == "uefi" and re.search(r"Linux version \S+", text) and prev is not None:
-        good_gens = [int(g) for g, img in prev.get("images", {}).items() if img.get("state") == "GOOD"]
-        if good_gens:
-            return f"os-{max(good_gens)}"
-
     return "unknown"
 
 def emit(results_file, check_id, case, status, evidence):
@@ -196,7 +191,7 @@ def emit(results_file, check_id, case, status, evidence):
 
 def parse_fsck_anomalies(text):
     if not text:
-        return []
+        return [], []
     ignored_patterns = [
         r"^fsck\.fat\s+\d+",
         r"^.*:\s+\d+\s+files,\s+\d+/\d+\s+clusters$",
@@ -207,25 +202,31 @@ def parse_fsck_anomalies(text):
         r"^There are differences between boot sector and its backup\.",
         r"^This is mostly harmless\.\s*Differences:\s*\(offset:original/backup\)",
         r"^Differences:\s*\(offset:original/backup\)",
-        r"^\s*\d+:\s*[0-9a-fA-F]+/[0-9a-fA-F]+\s*$",
-        r"^Free cluster summary wrong\s*\(\d+\s+vs\.\s+really\s+\d+\)",
-        r"^\s*Auto-correcting\.",
-        r"^\s*Leaving filesystem unchanged\.",
-        r"^Reclaimed\s+\d+\s+unused cluster.*",
+        r"^\s*65:\s*0[01]/0[01]\s*$",
         r"^[1-3]\)\s+Copy\s+",
         r"^[1-3]\)\s+No action",
         r"^\[No action\]",
         r"^\s*Not automatically fixing this\.",
+        r"^\s*Auto-correcting\.",
+        r"^\s*Leaving filesystem unchanged\.",
     ]
-    anomalies = []
+    nonfatal_patterns = [
+        r"^Free cluster summary wrong\s*\(\d+\s+vs\.\s+really\s+\d+\)",
+        r"^Reclaimed\s+\d+\s+unused cluster.*",
+    ]
+    fatal = []
+    nonfatal = []
     for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
         if any(re.search(pat, line) for pat in ignored_patterns):
             continue
-        anomalies.append(line)
-    return anomalies
+        if any(re.search(pat, line) for pat in nonfatal_patterns):
+            nonfatal.append(line)
+        else:
+            fatal.append(line)
+    return fatal, nonfatal
 
 # --- Subcommands ---
 
@@ -1039,10 +1040,10 @@ def evaluate_case(case, fw, out_dir, results_file):
     # Item 20 fsck.fat clean check after boot 1
     b1_fsck_path = f"{prefix}-read-boot1-fsck.txt"
     b1_fsck_text = open(b1_fsck_path).read() if os.path.isfile(b1_fsck_path) else ""
-    fsck_anoms = parse_fsck_anomalies(b1_fsck_text)
-    if fsck_anoms:
+    fatal_anoms, _ = parse_fsck_anomalies(b1_fsck_text)
+    if fatal_anoms:
         p5_ok = False
-        p5_ev.append(f"boot1 fsck corruption: {'; '.join(fsck_anoms)}")
+        p5_ev.append(f"boot1 fsck corruption: {'; '.join(fatal_anoms)}")
     else:
         p5_ev.append("boot1 fsck clean")
 
@@ -1168,8 +1169,8 @@ def evaluate_case(case, fw, out_dir, results_file):
     for r_name in ["pre", "op", "boot1", "rec_op", "boot2"]:
         fsck_path = f"{prefix}-read-{r_name}-fsck.txt"
         fsck_text = open(fsck_path).read() if os.path.isfile(fsck_path) else ""
-        anoms = parse_fsck_anomalies(fsck_text)
-        for a in anoms:
+        fatal_anoms, nonfatal_anoms = parse_fsck_anomalies(fsck_text)
+        for a in fatal_anoms + nonfatal_anoms:
             p8_items.append(f"[{r_name} fsck anomaly] {a}")
 
     p8_ev = "; ".join(p8_items) if p8_items else "none"
@@ -1240,9 +1241,6 @@ def cmd_check_results(args):
         if ch == "P8":
             if status != "OBSERVED":
                 bad_status.append(f"{ch}:{cs} has status {status}, expected OBSERVED")
-        elif (ch, cs) == ("P5", "T4"):
-            if status not in ("PASS", "FAIL"):
-                bad_status.append(f"{ch}:{cs} has status {status}, expected PASS or FAIL")
         else:
             if status != "PASS":
                 bad_status.append(f"{ch}:{cs} has status {status}, expected PASS")
