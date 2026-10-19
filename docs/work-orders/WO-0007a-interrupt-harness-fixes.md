@@ -97,6 +97,13 @@ Line numbers refer to `wo-0007` at `b676aed`. I is `inspector.py`, R is `run.sh`
 18. **Picked-copy regex (I:107).** Anchor it. A missing match is a FAIL in M2.
 19. **PR description.** Say that the `renamed` placement split the `if isBIOS` block in `publish.go`.
 
+### Filesystem integrity (added after the first run with the product fix)
+
+20. **`fsck.fat -n` at every read.** Run `fsck.fat -n` on boot storage after every read, using a partition copy or an offset, never a disk you did not create. Keep its output in the case's output directory.
+    - P5 FAILs if, at the read after boot 1, the output reports anything other than the dirty bit, for example cross-linked clusters, duplicate entries or a bad directory.
+    - P8 lists every such message for every read.
+    - **Why:** in run 39249495883 (UEFI, on `129e3eb`), T4's read after boot 1 still listed `/vintner/staging/os-2/` with its three files and `/vintner/staging/vintner-os-2.efi`. The same files were also in `/vintner/bios/os-2/` and `/EFI/Linux/`. If both directory entries point at the same clusters, deleting the staging copy later would free clusters that a live image still uses. Report what `fsck.fat` shows for T4 on both firmwares, and for every other case where staging is not empty. Do not try to fix it.
+
 ## Validation before you push
 
 - `bash -n` and `shellcheck -x` on `run.sh`.
