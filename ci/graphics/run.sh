@@ -81,13 +81,14 @@ run_qemu_gfx() {
 	timeout "$timeout_secs" qemu-system-x86_64 \
 		-machine "q35,accel=$ACCEL" \
 		-m 2048 -smp 2 -nodefaults \
-		-vga std -display none \
+		-display none \
 		-qmp "unix:$qmp_sock,server,nowait" \
 		-serial "file:$logfile" -no-reboot \
 		"${pflash_args[@]}" \
 		-drive "file=$disk_path,format=$disk_fmt,if=virtio" \
 		-drive "file=$seed_path,format=raw,if=virtio" \
 		-nic "user,model=virtio-net-pci" \
+		-vga std \
 		$extra_qemu_args || true
 }
 
@@ -108,7 +109,8 @@ sudo mkdir -p "$MNT/usr/share/plymouth/themes/vintner-bgrt"
 sudo cp -a graphics/plymouth-theme/. "$MNT/usr/share/plymouth/themes/vintner-bgrt/"
 
 # Install plymouthd.conf
-sudo mkdir -p "$MNT/etc/plymouth"
+sudo mkdir -p "$MNT/etc/plymouth" "$MNT/tmp"
+sudo cp integration/plymouth/plymouthd.conf "$MNT/tmp/repo-plymouthd.conf"
 sudo cp integration/plymouth/plymouthd.conf "$MNT/etc/plymouth/plymouthd.conf"
 
 # Install initramfs hook
@@ -140,6 +142,11 @@ sudo ln -sf /etc/systemd/system/vintner-test-splash.service "$MNT/etc/systemd/sy
 
 sudo tee "$MNT/usr/local/bin/vintner-test-splash.sh" > /dev/null << 'EOF'
 #!/bin/bash
+# Only run during splash boot when plymouth is installed
+if [ ! -f /sbin/plymouthd ] && [ ! -f /sbin/plymouthd.real ]; then
+	exit 0
+fi
+
 # Emit warning message to kmsg for check G2
 echo '<4>vintner-test-warning' > /dev/kmsg
 
@@ -152,6 +159,8 @@ pidof plymouthd >/dev/null 2>&1 && PLYMOUTHD_RUNNING=1
 DEBUG_LOG=""
 if [ -f /var/log/plymouth-debug.log ]; then
 	DEBUG_LOG=$(cat /var/log/plymouth-debug.log)
+elif [ -f /run/plymouth/debug.log ]; then
+	DEBUG_LOG=$(cat /run/plymouth/debug.log)
 fi
 
 FB_NAME="none"
@@ -211,7 +220,9 @@ LOOP=""
 # --- 3. Guest preparation operation -----------------------------------------
 echo "=== Step 3: Installing plymouth in guest and regenerating initramfs ==="
 # shellcheck disable=SC2016
-PREP_CMD='apt-get update && apt-get install -y --no-install-recommends plymouth plymouth-themes
+PREP_CMD='export DEBIAN_FRONTEND=noninteractive
+apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends plymouth plymouth-themes
+[ -f /tmp/repo-plymouthd.conf ] && cp /tmp/repo-plymouthd.conf /etc/plymouth/plymouthd.conf
 if [ -f /sbin/plymouthd ] && [ ! -f /sbin/plymouthd.real ]; then
 	mv /sbin/plymouthd /sbin/plymouthd.real
 	cat << "WRAP" > /sbin/plymouthd

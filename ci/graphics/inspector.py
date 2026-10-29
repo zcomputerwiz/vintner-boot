@@ -495,9 +495,9 @@ def cmd_evaluate(args):
         # The control run replaces the fallback logo with a solid red image.
         # It MUST fail G7 comparison (large MAD).
         if ctrl_mad > 50.0:
-            rows.append(("G7-control", fw, "FAIL", f"control run correctly detected solid red logo mismatch: MAD={ctrl_mad:.2f} > 50.0 (control expectedly failed)"))
+            rows.append(("G7-control", fw, "PASS", f"control run correctly failed G7 comparison: solid red logo MAD={ctrl_mad:.2f} > 50.0 (exceeds threshold {THRESHOLD:.1f})"))
         else:
-            rows.append(("G7-control", fw, "PASS", f"control run unexpectedly passed with MAD={ctrl_mad:.2f}"))
+            rows.append(("G7-control", fw, "FAIL", f"control run unexpectedly matched reference logo: MAD={ctrl_mad:.2f} <= 50.0"))
 
     # --- G8 (BIOS only): Framebuffer ------------------------------------------
     if fw == "bios":
@@ -512,7 +512,19 @@ def cmd_evaluate(args):
     if fw == "uefi":
         bgrt_present = gfx_evidence.get("BGRT_PRESENT", "0") == "1"
         bgrt_details = gfx_evidence.get("BGRT_DETAILS", "none")
-        status_text = f"ACPI BGRT present={bgrt_present} ({bgrt_details})"
+
+        s6_log_file = out_dir / "uefi-bgrt-boot.log"
+        s6_info = "splash run: none"
+        if s6_log_file.is_file():
+            s6_text = s6_log_file.read_text(encoding="utf-8", errors="replace")
+            m_p = re.search(r"BGRT_PRESENT=(\d+)", s6_text)
+            m_d = re.search(r"BGRT_DETAILS=(.*)", s6_text)
+            if m_p:
+                p_val = (m_p.group(1) == "1")
+                d_val = m_d.group(1).strip() if m_d else "none"
+                s6_info = f"splash run: present={p_val} ({d_val})"
+
+        status_text = f"default: present={bgrt_present} ({bgrt_details}); {s6_info}"
         rows.append(("G9", fw, "OBSERVED", status_text))
 
     # Write results.tsv
@@ -567,10 +579,7 @@ def cmd_check_results(args):
     for cid in expected_ids:
         if cid in actual:
             status = actual[cid]
-            if cid == "G7-control":
-                if status != "FAIL":
-                    errors.append(f"{cid} expected FAIL (control run must fail), got {status}")
-            elif cid == "G9":
+            if cid == "G9":
                 if status != "OBSERVED":
                     errors.append(f"{cid} expected OBSERVED, got {status}")
             else:
