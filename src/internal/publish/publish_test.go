@@ -1086,7 +1086,6 @@ func TestPublishInheritsSplashCmdline(t *testing.T) {
 			}
 
 			// Load published manifest
-			stateDir := filepath.Join(bootStorageDir, "vintner", "state")
 			loaded, err := manifest.Load(stateDir)
 			if err != nil {
 				t.Fatalf("manifest.Load: %v", err)
