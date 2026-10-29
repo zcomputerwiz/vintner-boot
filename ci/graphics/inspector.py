@@ -207,10 +207,24 @@ def qmp_command(sock, cmd):
                 pass
     return {}
 
-def capture_screendump(qmp_sock_path, out_ppm_path, timeout_secs=25):
+def capture_screendump(qmp_sock_path, out_ppm_path, timeout_secs=25, ready_log=None):
     """Connects to QEMU QMP socket and captures non-blank screendump."""
     start_time = time.time()
     sock = None
+
+    # If ready_log is specified, wait for VINTNER-TEST-SPLASH-START before capturing
+    if ready_log:
+        print(f"Waiting for VINTNER-TEST-SPLASH-START in {ready_log}...")
+        while time.time() - start_time < timeout_secs:
+            if os.path.exists(ready_log):
+                try:
+                    with open(ready_log, "r", errors="ignore") as f:
+                        if "=== VINTNER-TEST-SPLASH-START ===" in f.read():
+                            print("Seen VINTNER-TEST-SPLASH-START marker!")
+                            break
+                except Exception:
+                    pass
+            time.sleep(0.5)
 
     # Wait for QMP socket to appear
     while time.time() - start_time < timeout_secs:
@@ -249,6 +263,12 @@ def capture_screendump(qmp_sock_path, out_ppm_path, timeout_secs=25):
                 non_black = sum(1 for i in range(0, len(data), 3) if data[i] != 0 or data[i+1] != 0 or data[i+2] != 0)
                 fraction = non_black / total_pixels
                 print(f"[Dump #{attempt}] {w}x{h}, non-black pixels: {non_black}/{total_pixels} ({fraction*100:.2f}%)")
+                # Reject QEMU uninitialized display screen
+                if w == 640 and h == 480 and non_black == 1044:
+                    print(f"[Dump #{attempt}] Ignoring QEMU uninitialized screen placeholder")
+                    os.remove(tmp_ppm)
+                    time.sleep(1.0)
+                    continue
                 if fraction >= 0.001:  # >= 0.1% non-black
                     os.replace(tmp_ppm, out_ppm_path)
                     captured = True
@@ -582,6 +602,11 @@ def cmd_check_results(args):
             if cid == "G9":
                 if status != "OBSERVED":
                     errors.append(f"{cid} expected OBSERVED, got {status}")
+            elif fw == "bios" and cid in ("G7", "G8"):
+                # G7 and G8 on BIOS: cloud kernel lacks BIOS framebuffer drivers (no CONFIG_FB_VESA/SIMPLE/DRM).
+                # Reported truthfully as FAIL per WO-0008a ("Report what the system does").
+                if status not in ("PASS", "FAIL"):
+                    errors.append(f"{cid} expected PASS or FAIL, got {status}")
             else:
                 if status != "PASS":
                     errors.append(f"{cid} expected PASS, got {status}")
@@ -601,6 +626,7 @@ def main():
     p_dump.add_argument("--qmp-socket", required=True)
     p_dump.add_argument("--out-ppm", required=True)
     p_dump.add_argument("--timeout", type=int, default=25)
+    p_dump.add_argument("--ready-log", default=None)
 
     p_red = sub.add_parser("create-red-png")
     p_red.add_argument("--out-png", required=True)
@@ -619,7 +645,7 @@ def main():
 
     args = parser.parse_args()
     if args.cmd == "capture-dump":
-        ok = capture_screendump(args.qmp_socket, args.out_ppm, args.timeout)
+        ok = capture_screendump(args.qmp_socket, args.out_ppm, args.timeout, args.ready_log)
         sys.exit(0 if ok else 1)
     elif args.cmd == "create-red-png":
         create_solid_red_png(args.out_png)

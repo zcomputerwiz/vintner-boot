@@ -118,6 +118,14 @@ sudo mkdir -p "$MNT/etc/initramfs-tools/hooks"
 sudo cp integration/initramfs-hooks/plymouth-vintner "$MNT/etc/initramfs-tools/hooks/plymouth-vintner"
 sudo chmod 755 "$MNT/etc/initramfs-tools/hooks/plymouth-vintner"
 
+# Install zz-vintner hooks so update-initramfs publishes generation 2
+sudo mkdir -p "$MNT/etc/initramfs/post-update.d" "$MNT/etc/kernel/postinst.d"
+sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/etc/kernel/postinst.d/zz-vintner"
+sudo chmod 0755 "$MNT/etc/kernel/postinst.d/zz-vintner"
+sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
+sudo chmod 0755 "$MNT/etc/initramfs/post-update.d/zz-vintner"
+sudo ln -sf /usr/sbin/vintner "$MNT/usr/bin/vintner"
+
 # Install vintner-test-splash.service & helper script
 sudo mkdir -p "$MNT/etc/systemd/system/sysinit.target.wants"
 sudo tee "$MNT/etc/systemd/system/vintner-test-splash.service" > /dev/null << 'EOF'
@@ -149,19 +157,31 @@ fi
 
 # Emit warning message to kmsg for check G2
 echo '<4>vintner-test-warning' > /dev/kmsg
+echo 'vintner-test-warning' > /dev/ttyS0
+
+# Signal that test splash unit is active and Plymouth is displayed
+echo "=== VINTNER-TEST-SPLASH-START ===" > /dev/ttyS0
+
+# Check plymouthd running status while it is active
+PLYMOUTHD_RUNNING=0
+if pidof plymouthd >/dev/null 2>&1 || pidof plymouthd.real >/dev/null 2>&1 || plymouth --ping 2>/dev/null; then
+	PLYMOUTHD_RUNNING=1
+fi
+
+# Sleep 25 seconds per WO-0008a
+sleep 25
 
 CMDLINE=$(cat /proc/cmdline)
 DEFAULT_THEME=$(plymouth-set-default-theme || true)
 PLYMOUTHD_CONF=$(cat /etc/plymouth/plymouthd.conf 2>/dev/null || true)
-PLYMOUTHD_RUNNING=0
-pidof plymouthd >/dev/null 2>&1 && PLYMOUTHD_RUNNING=1
 
 DEBUG_LOG=""
-if [ -f /var/log/plymouth-debug.log ]; then
-	DEBUG_LOG=$(cat /var/log/plymouth-debug.log)
-elif [ -f /run/plymouth/debug.log ]; then
-	DEBUG_LOG=$(cat /run/plymouth/debug.log)
-fi
+for f in /run/plymouth-debug.log /var/log/plymouth-debug.log /run/plymouth/debug.log /var/log/plymouth/debug.log; do
+	if [ -f "$f" ]; then
+		DEBUG_LOG=$(cat "$f")
+		break
+	fi
+done
 
 FB_NAME="none"
 FB_VIRTUAL_SIZE="none"
@@ -221,13 +241,15 @@ LOOP=""
 echo "=== Step 3: Installing plymouth in guest and regenerating initramfs ==="
 # shellcheck disable=SC2016
 PREP_CMD='export DEBIAN_FRONTEND=noninteractive
-apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends plymouth plymouth-themes
+apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends plymouth plymouth-themes systemd-ukify systemd-boot-efi
 [ -f /tmp/repo-plymouthd.conf ] && cp /tmp/repo-plymouthd.conf /etc/plymouth/plymouthd.conf
 if [ -f /sbin/plymouthd ] && [ ! -f /sbin/plymouthd.real ]; then
 	mv /sbin/plymouthd /sbin/plymouthd.real
 	cat << "WRAP" > /sbin/plymouthd
 #!/bin/sh
-exec /sbin/plymouthd.real --debug --debug-file=/var/log/plymouth-debug.log "$@"
+cmdline=""
+[ -f /proc/cmdline ] && cmdline=$(cat /proc/cmdline)
+exec /sbin/plymouthd.real --ignore-serial-consoles --kernel-command-line="$cmdline plymouth.debug=stream:/run/plymouth-debug.log plymouth.ignore-serial-consoles" "$@"
 WRAP
 	chmod 755 /sbin/plymouthd
 fi
@@ -246,7 +268,8 @@ rm -f "$QMP_SOCK" "$OUT/screendump-active.ppm"
 python3 ci/graphics/inspector.py capture-dump \
 	--qmp-socket "$QMP_SOCK" \
 	--out-ppm "$OUT/screendump-active.ppm" \
-	--timeout 25 &
+	--ready-log "$OUT/splash-boot.log" \
+	--timeout 60 &
 DUMP_PID=$!
 
 run_qemu_gfx "$TEST_DISK" "$SPLASH_SEED" "$OUT/splash-boot.log" 180 "$TEST_VARS" "$QMP_SOCK"
@@ -281,7 +304,8 @@ rm -f "$CTRL_QMP_SOCK" "$OUT/screendump-control.ppm"
 python3 ci/graphics/inspector.py capture-dump \
 	--qmp-socket "$CTRL_QMP_SOCK" \
 	--out-ppm "$OUT/screendump-control.ppm" \
-	--timeout 25 &
+	--ready-log "$OUT/ctrl-boot.log" \
+	--timeout 60 &
 CTRL_DUMP_PID=$!
 
 CTRL_BOOT_SEED=$(make_seed "ctrl-boot" "sleep 35; poweroff")
