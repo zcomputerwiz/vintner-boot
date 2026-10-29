@@ -73,20 +73,40 @@ else:
 
 # ---------------------------------------------------------------------------
 # S2: Every image file the theme or plugin loads exists, is a valid PNG
-#     (signature + IHDR header unpack), and matches table dimensions (WxH).
+#     (signature + IHDR header unpack), and matches table dimensions (WxH),
+#     bit depth (8), and color type (6=RGBA) parsed from ci/graphics/README.md.
 # ---------------------------------------------------------------------------
-EXPECTED_ASSETS = {
-    "bgrt-fallback.png": "256x256",
-    "watermark.png": "160x24",
-    "entry.png": "305x34",
-    "lock.png": "35x34",
-    "bullet.png": "10x10",
-    "capslock.png": "24x28",
-    "keyboard.png": "36x36",
-    "keymap-render.png": "25881x50",
-}
-for i in range(1, 37):
-    EXPECTED_ASSETS[f"animation-{i:04d}.png"] = "32x32"
+import re
+
+readme_path = Path("ci/graphics/README.md")
+EXPECTED_ASSETS = {}
+if not readme_path.is_file():
+    check_fail("S2", "README asset table parsing", f"Missing {readme_path}")
+else:
+    in_table = False
+    for line in readme_path.read_text(encoding="utf-8").splitlines():
+        line_clean = line.strip()
+        if "## Theme Asset Dimensions Table" in line_clean:
+            in_table = True
+            continue
+        if in_table:
+            if line_clean.startswith("## ") or line_clean.startswith("Total active"):
+                in_table = False
+                continue
+            m = re.match(r"^\|\s*`([^`]+)`(?:\s*\.\.\.\s*`([^`]+)`)?\s*\|\s*(\d+x\d+)\s*\|\s*(\d+)\s*\|", line_clean)
+            if m:
+                first_file, last_file, dim, count = m.group(1), m.group(2), m.group(3), int(m.group(4))
+                if last_file:
+                    m_pfx = re.match(r"^(.*?)(\d+)(\.png)$", first_file)
+                    m_sfx = re.match(r"^(.*?)(\d+)(\.png)$", last_file)
+                    if m_pfx and m_sfx:
+                        pfx, start_idx, ext = m_pfx.group(1), int(m_pfx.group(2)), m_pfx.group(3)
+                        _, end_idx, _ = m_sfx.group(1), int(m_sfx.group(2)), m_sfx.group(3)
+                        width_pad = len(m_pfx.group(2))
+                        for idx in range(start_idx, end_idx + 1):
+                            EXPECTED_ASSETS[f"{pfx}{idx:0{width_pad}d}{ext}"] = dim
+                else:
+                    EXPECTED_ASSETS[first_file] = dim
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 theme_dir = Path("graphics/plymouth-theme")
@@ -100,7 +120,7 @@ for filename, expected_dim in sorted(EXPECTED_ASSETS.items()):
 
     try:
         data = p.read_bytes()
-        if len(data) < 24:
+        if len(data) < 26:
             s2_errors.append(f"{filename}: File too short for PNG header ({len(data)} bytes)")
             continue
 
@@ -112,17 +132,21 @@ for filename, expected_dim in sorted(EXPECTED_ASSETS.items()):
             s2_errors.append(f"{filename}: Missing IHDR chunk at offset 12")
             continue
 
-        w, h = struct.unpack(">II", data[16:24])
+        w, h, bit_depth, color_type = struct.unpack(">IIBB", data[16:26])
         actual_dim = f"{w}x{h}"
         if actual_dim != expected_dim:
             s2_errors.append(f"{filename}: Dimension mismatch: got {actual_dim}, want {expected_dim}")
+        if bit_depth != 8:
+            s2_errors.append(f"{filename}: Bit depth mismatch: got {bit_depth}, want 8")
+        if color_type != 6:
+            s2_errors.append(f"{filename}: Color type mismatch: got {color_type}, want 6 (RGBA)")
     except Exception as e:
         s2_errors.append(f"{filename}: {e}")
 
 if s2_errors:
     check_fail("S2", "Theme image validity and dimensions", f"{len(s2_errors)} errors: {'; '.join(s2_errors[:3])}")
 else:
-    check_pass("S2", "Theme image validity and dimensions", f"All {len(EXPECTED_ASSETS)} PNG assets valid with exact WxH dimensions")
+    check_pass("S2", "Theme image validity and dimensions", f"All {len(EXPECTED_ASSETS)} PNG assets valid: 8-bit RGBA with exact WxH parsed from README table")
 
 # ---------------------------------------------------------------------------
 # S3: No PNG in graphics/plymouth-theme/ is unlisted in the table

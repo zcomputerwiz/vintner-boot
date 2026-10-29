@@ -22,6 +22,10 @@ MNT="$OUT/mnt"
 RESULTS="$OUT/results.tsv"
 export MTOOLS_SKIP_CHECK=1
 
+# Clean any leftover files from previous runs while preserving mountpoint
+if [ -d "$OUT" ]; then
+	find "$OUT" -maxdepth 1 ! -name "$FIRMWARE" ! -name "mnt" -exec rm -rf {} +
+fi
 mkdir -p "$OUT" "$MNT"
 
 # --- Cleanup handler --------------------------------------------------------
@@ -48,10 +52,11 @@ trap cleanup EXIT
 
 # --- 1. Base image build via shared library ---------------------------------
 echo "=== Step 1: Building base disk with splash cmdline ($FIRMWARE) ==="
-export VINTNER_EXTRA_CMDLINE='quiet splash vt.global_cursor_default=0'
+export VINTNER_EXTRA_CMDLINE='quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log'
 ./ci/lib/vintner-base.sh "$FIRMWARE" "$OUT"
 # shellcheck source=/dev/null # written by vintner-base.sh
 . "$OUT/base.env"
+VINTNER_BIN="$OUT/vintner"
 # shellcheck source=ci/lib/vintner-qemu.sh
 . ci/lib/vintner-qemu.sh
 
@@ -88,7 +93,7 @@ run_qemu_gfx() {
 		-drive "file=$disk_path,format=$disk_fmt,if=virtio" \
 		-drive "file=$seed_path,format=raw,if=virtio" \
 		-nic "user,model=virtio-net-pci" \
-		-vga std \
+		-vga none -device VGA,addr=0x9.0 \
 		$extra_qemu_args || true
 }
 
@@ -118,13 +123,23 @@ sudo mkdir -p "$MNT/etc/initramfs-tools/hooks"
 sudo cp integration/initramfs-hooks/plymouth-vintner "$MNT/etc/initramfs-tools/hooks/plymouth-vintner"
 sudo chmod 755 "$MNT/etc/initramfs-tools/hooks/plymouth-vintner"
 
-# Install zz-vintner hooks so update-initramfs publishes generation 2
-sudo mkdir -p "$MNT/etc/initramfs/post-update.d" "$MNT/etc/kernel/postinst.d"
-sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/etc/kernel/postinst.d/zz-vintner"
-sudo chmod 0755 "$MNT/etc/kernel/postinst.d/zz-vintner"
-sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
-sudo chmod 0755 "$MNT/etc/initramfs/post-update.d/zz-vintner"
+# Stage zz-vintner hooks in /root to be installed in guest prep after apt
+sudo mkdir -p "$MNT/root"
+sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/root/zz-vintner-kernel"
+sudo chmod 0755 "$MNT/root/zz-vintner-kernel"
+sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/root/zz-vintner-initramfs"
+sudo chmod 0755 "$MNT/root/zz-vintner-initramfs"
+sudo cp "$VINTNER_BIN" "$MNT/usr/sbin/vintner"
+sudo chmod 0755 "$MNT/usr/sbin/vintner"
 sudo ln -sf /usr/sbin/vintner "$MNT/usr/bin/vintner"
+
+# Install systemd drop-in override for Plymouth debug logging without wrappers
+sudo mkdir -p "$MNT/etc/systemd/system/plymouth-start.service.d"
+sudo tee "$MNT/etc/systemd/system/plymouth-start.service.d/override.conf" > /dev/null << 'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/plymouthd --mode=boot --pid-file=/run/plymouth/pid --attach-to-session --debug --debug-file=/var/log/plymouth-debug.log
+EOF
 
 # Install vintner-test-splash.service & helper script
 sudo mkdir -p "$MNT/etc/systemd/system/sysinit.target.wants"
@@ -151,20 +166,19 @@ sudo ln -sf /etc/systemd/system/vintner-test-splash.service "$MNT/etc/systemd/sy
 sudo tee "$MNT/usr/local/bin/vintner-test-splash.sh" > /dev/null << 'EOF'
 #!/bin/bash
 # Only run during splash boot when plymouth is installed
-if [ ! -f /sbin/plymouthd ] && [ ! -f /sbin/plymouthd.real ]; then
+if [ ! -f /usr/sbin/plymouthd ] && [ ! -f /sbin/plymouthd ]; then
 	exit 0
 fi
 
-# Emit warning message to kmsg for check G2
+# Emit warning message to kmsg for check G2 (no direct write to ttyS0)
 echo '<4>vintner-test-warning' > /dev/kmsg
-echo 'vintner-test-warning' > /dev/ttyS0
 
 # Signal that test splash unit is active and Plymouth is displayed
 echo "=== VINTNER-TEST-SPLASH-START ===" > /dev/ttyS0
 
 # Check plymouthd running status while it is active
 PLYMOUTHD_RUNNING=0
-if pidof plymouthd >/dev/null 2>&1 || pidof plymouthd.real >/dev/null 2>&1 || plymouth --ping 2>/dev/null; then
+if pidof plymouthd >/dev/null 2>&1 || plymouth --ping 2>/dev/null; then
 	PLYMOUTHD_RUNNING=1
 fi
 
@@ -172,11 +186,12 @@ fi
 sleep 25
 
 CMDLINE=$(cat /proc/cmdline)
-DEFAULT_THEME=$(plymouth-set-default-theme || true)
+DEFAULT_THEME=$(plymouth-set-default-theme 2>/dev/null || true)
 PLYMOUTHD_CONF=$(cat /etc/plymouth/plymouthd.conf 2>/dev/null || true)
+PLYMOUTHD_CONF_SHA256=$(sha256sum /etc/plymouth/plymouthd.conf 2>/dev/null | awk '{print $1}' || echo "none")
 
 DEBUG_LOG=""
-for f in /run/plymouth-debug.log /var/log/plymouth-debug.log /run/plymouth/debug.log /var/log/plymouth/debug.log; do
+for f in /var/log/plymouth/plymouth-debug.log /var/log/plymouth-debug.log /run/plymouth-debug.log /var/log/plymouth/debug.log /run/plymouth/debug.log; do
 	if [ -f "$f" ]; then
 		DEBUG_LOG=$(cat "$f")
 		break
@@ -200,22 +215,40 @@ if [ -d /sys/firmware/acpi/bgrt ]; then
 	BGRT_DETAILS="status=$BGRT_STATUS"
 fi
 
-INITRAMFS_FILES=""
 KERNEL_VER="$(uname -r)"
+BOOTED_INITRD="none"
+INITRAMFS_FILES=""
 if [ -f "/boot/initrd.img-$KERNEL_VER" ]; then
+	BOOTED_INITRD="initrd.img-$KERNEL_VER"
 	INITRAMFS_FILES=$(lsinitramfs "/boot/initrd.img-$KERNEL_VER" 2>/dev/null || true)
 fi
+
+KERNEL_CONFIG_LINES="none"
+if [ -r "/boot/config-$KERNEL_VER" ]; then
+	KERNEL_CONFIG_LINES=$(grep -E '^(CONFIG_DRM|# CONFIG_DRM is|CONFIG_FB_VESA|# CONFIG_FB_VESA is|CONFIG_FB_SIMPLE|# CONFIG_FB_SIMPLE is)' "/boot/config-$KERNEL_VER" 2>/dev/null | tr '\n' '; ' || echo "none")
+fi
+
+KERNEL_DRIVERS_PRESENT=""
+for drv in simpledrm bochs bochs-drm virtio-gpu; do
+	if [ -d "/lib/modules/$KERNEL_VER" ] && find "/lib/modules/$KERNEL_VER" -name "${drv}*.ko*" 2>/dev/null | grep -q .; then
+		KERNEL_DRIVERS_PRESENT="${KERNEL_DRIVERS_PRESENT:+$KERNEL_DRIVERS_PRESENT, }$drv"
+	fi
+done
 
 # Print evidence between markers to ttyS0
 {
 	echo "VINTNER-GFX-BEGIN"
 	echo "CMDLINE=$CMDLINE"
 	echo "DEFAULT_THEME=$DEFAULT_THEME"
+	echo "PLYMOUTHD_CONF_SHA256=$PLYMOUTHD_CONF_SHA256"
 	echo "PLYMOUTHD_RUNNING=$PLYMOUTHD_RUNNING"
 	echo "FB_NAME=$FB_NAME"
 	echo "FB_VIRTUAL_SIZE=$FB_VIRTUAL_SIZE"
 	echo "BGRT_PRESENT=$BGRT_PRESENT"
 	echo "BGRT_DETAILS=$BGRT_DETAILS"
+	echo "BOOTED_INITRD=$BOOTED_INITRD"
+	echo "KERNEL_CONFIG_LINES=$KERNEL_CONFIG_LINES"
+	echo "KERNEL_DRIVERS_PRESENT=$KERNEL_DRIVERS_PRESENT"
 	echo "PLYMOUTHD_CONF<<VINTNER_EOF"
 	echo "$PLYMOUTHD_CONF"
 	echo "VINTNER_EOF"
@@ -228,7 +261,7 @@ fi
 	echo "VINTNER-GFX-END"
 } > /dev/ttyS0
 
-# Keep splash active for 30s
+# Keep splash active
 sleep 30
 EOF
 sudo chmod 755 "$MNT/usr/local/bin/vintner-test-splash.sh"
@@ -238,30 +271,29 @@ sudo losetup -d "$LOOP"
 LOOP=""
 
 # --- 3. Guest preparation operation -----------------------------------------
-echo "=== Step 3: Installing plymouth in guest and regenerating initramfs ==="
+echo "=== Step 3: Installing generic kernel & plymouth in guest ($FIRMWARE) ==="
 # shellcheck disable=SC2016
 PREP_CMD='export DEBIAN_FRONTEND=noninteractive
-apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends plymouth plymouth-themes systemd-ukify systemd-boot-efi
+apt-mark hold linux-image-cloud-amd64 "linux-image-$(uname -r)"
+apt-get update
+apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends plymouth plymouth-themes fontconfig-config fonts-dejavu-core systemd-ukify systemd-boot-efi linux-image-amd64
 [ -f /tmp/repo-plymouthd.conf ] && cp /tmp/repo-plymouthd.conf /etc/plymouth/plymouthd.conf
-if [ -f /sbin/plymouthd ] && [ ! -f /sbin/plymouthd.real ]; then
-	mv /sbin/plymouthd /sbin/plymouthd.real
-	cat << "WRAP" > /sbin/plymouthd
-#!/bin/sh
-cmdline=""
-[ -f /proc/cmdline ] && cmdline=$(cat /proc/cmdline)
-exec /sbin/plymouthd.real --ignore-serial-consoles --kernel-command-line="$cmdline plymouth.debug=stream:/run/plymouth-debug.log plymouth.ignore-serial-consoles" "$@"
-WRAP
-	chmod 755 /sbin/plymouthd
-fi
 plymouth-set-default-theme vintner-bgrt
-update-initramfs -u -k "$(uname -r)"
+
+mkdir -p /etc/kernel/postinst.d /etc/initramfs/post-update.d
+cp /root/zz-vintner-kernel /etc/kernel/postinst.d/zz-vintner && chmod 755 /etc/kernel/postinst.d/zz-vintner
+cp /root/zz-vintner-initramfs /etc/initramfs/post-update.d/zz-vintner && chmod 755 /etc/initramfs/post-update.d/zz-vintner
+
+GENERIC_KVER=$(ls -d /lib/modules/*-amd64 | grep -v cloud | sort -V | tail -n 1 | xargs -n1 basename)
+echo "Generic kernel is $GENERIC_KVER"
+update-initramfs -u -k "$GENERIC_KVER"
 '
 PREP_SEED=$(make_seed "prep" "$PREP_CMD")
-run_qemu "$TEST_DISK" "$PREP_SEED" "$OUT/prep.log" 300 "$TEST_VARS"
+run_qemu "$TEST_DISK" "$PREP_SEED" "$OUT/prep.log" 600 "$TEST_VARS"
 
 # --- 4. Boot generation 2 with display on and QMP screendump ----------------
 echo "=== Step 4: Booting image with splash and taking screendumps ==="
-SPLASH_SEED=$(make_seed "splash" "sleep 35; poweroff")
+SPLASH_SEED=$(make_seed "splash" "true")
 QMP_SOCK="$OUT/qmp.sock"
 rm -f "$QMP_SOCK" "$OUT/screendump-active.ppm"
 
@@ -285,6 +317,8 @@ CTRL_VARS=""
 RED_PNG="$OUT/red-fallback.png"
 python3 ci/graphics/inspector.py create-red-png --out-png "$RED_PNG"
 
+echo "Block devices on host before control losetup:"
+lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 LOOP=$(sudo losetup -P -f --show "$CTRL_DISK")
 sudo mount "${LOOP}p1" "$MNT"
 sudo cp "$RED_PNG" "$MNT/usr/share/plymouth/themes/vintner-bgrt/bgrt-fallback.png"
@@ -292,10 +326,13 @@ sudo umount "$MNT"
 sudo losetup -d "$LOOP"
 LOOP=""
 
-# Rebuild initramfs with red logo
+# Rebuild initramfs with red logo (publishes os-3)
 # shellcheck disable=SC2016
-CTRL_PREP_SEED=$(make_seed "ctrl-prep" 'update-initramfs -u -k "$(uname -r)"')
-run_qemu "$CTRL_DISK" "$CTRL_PREP_SEED" "$OUT/ctrl-prep.log" 180 "$CTRL_VARS"
+CTRL_PREP_SEED=$(make_seed "ctrl-prep" '
+GENERIC_KVER=$(ls -d /lib/modules/*-amd64 | grep -v cloud | sort -V | tail -n 1 | xargs -n1 basename)
+update-initramfs -u -k "$GENERIC_KVER"
+')
+run_qemu "$CTRL_DISK" "$CTRL_PREP_SEED" "$OUT/ctrl-prep.log" 300 "$CTRL_VARS"
 
 # Boot control run and capture screendump
 CTRL_QMP_SOCK="$OUT/ctrl-qmp.sock"
@@ -308,7 +345,7 @@ python3 ci/graphics/inspector.py capture-dump \
 	--timeout 60 &
 CTRL_DUMP_PID=$!
 
-CTRL_BOOT_SEED=$(make_seed "ctrl-boot" "sleep 35; poweroff")
+CTRL_BOOT_SEED=$(make_seed "ctrl-boot" "true")
 run_qemu_gfx "$CTRL_DISK" "$CTRL_BOOT_SEED" "$OUT/ctrl-boot.log" 180 "$CTRL_VARS" "$CTRL_QMP_SOCK"
 wait "$CTRL_DUMP_PID" || true
 
@@ -322,7 +359,7 @@ if [ "$FIRMWARE" = "uefi" ]; then
 fi
 
 # --- 7. Evaluation and Gate Verification -------------------------------------
-echo "=== Step 7: Evaluating checks G1 to G9 ($FIRMWARE) ==="
+echo "=== Step 7: Evaluating checks G0 to G9 ($FIRMWARE) ==="
 python3 ci/graphics/inspector.py evaluate \
 	--firmware "$FIRMWARE" \
 	--out-dir "$OUT" \

@@ -1009,9 +1009,7 @@ func verifyCmdlineTokens(cmdline string, expected []string) error {
 	for _, exp := range expected {
 		found := false
 		for i, tok := range tokens {
-			// Strip any enclosing quotes that might wrap the token in slot.cfg
-			tokClean := strings.Trim(tok, "\"';\n\r")
-			if tokClean == exp {
+			if tok == exp {
 				if i <= lastIdx {
 					return fmt.Errorf("token %q at position %d out of order (previous at %d)", exp, i, lastIdx)
 				}
@@ -1108,7 +1106,14 @@ func TestPublishInheritsSplashCmdline(t *testing.T) {
 					t.Fatalf("failed to read BIOS slot.cfg: %v", err)
 				}
 				content := string(data)
-				if err := verifyCmdlineTokens(content, expectedTokens); err != nil {
+				const prefix = `set vintner_cmdline="`
+				if !strings.HasPrefix(content, prefix) {
+					t.Fatalf("BIOS slot.cfg does not start with %q: %q", prefix, content)
+				}
+				inner := strings.TrimPrefix(content, prefix)
+				inner = strings.TrimSuffix(inner, "\n")
+				inner = strings.TrimSuffix(inner, "\"")
+				if err := verifyCmdlineTokens(inner, expectedTokens); err != nil {
 					t.Errorf("BIOS slot.cfg failed token order check: %v (content=%q)", err, content)
 				}
 			}

@@ -28,23 +28,17 @@ Target installation path on Debian systems: `/usr/share/plymouth/themes/vintner-
 | `keyboard.png` | Keyboard indicator symbol |
 | `keymap-render.png` | Keymap preview / reference layout |
 
-## Configuration
+## Package Installation & Configuration
 
-To activate the theme on an installed Debian system:
+The `vintner-core` package automatically deploys:
+1. Theme assets to `/usr/share/plymouth/themes/vintner-bgrt/` via `debian/vintner-core.install`.
+2. Daemon configuration `/etc/plymouth/plymouthd.conf` (`Theme=vintner-bgrt`, `ShowDelay=0`, `DeviceTimeout=8`) via `debian/vintner-core.install`.
+3. Early initramfs hook `/etc/initramfs-tools/hooks/plymouth-vintner` that includes theme assets and KMS DRM drivers (`simpledrm`, `bochs-drm`, `virtio-gpu`).
+
+To rebuild the initramfs after package installation:
 
 ```sh
-# Set default theme
-plymouth-set-default-theme vintner-bgrt
-
-# Ensure daemon configuration specifies zero show delay
-cat << 'EOF' > /etc/plymouth/plymouthd.conf
-[Daemon]
-Theme=vintner-bgrt
-ShowDelay=0
-DeviceTimeout=8
-EOF
-
-# Update initramfs so theme and DRM drivers are in early userspace
+# Update initramfs so theme and DRM drivers are included in early userspace
 update-initramfs -u
 ```
 

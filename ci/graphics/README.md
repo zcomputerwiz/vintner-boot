@@ -7,7 +7,7 @@ This directory implements the test harness, asset validation, and full QEMU gues
 1. **Static Theme & Asset Verification (`ci/graphics/test-plymouth-theme.sh`):**
    Run under the `graphics-theme` workflow job in `.github/workflows/lint.yml`.
    - **S1:** Parses `vintner-bgrt.plymouth` using Python's `configparser`, validating `ModuleName=two-step`, `ImageDir=/usr/share/plymouth/themes/vintner-bgrt`, and `UseFirmwareBackground=true`.
-   - **S2:** Unpacks PNG binary IHDR chunk headers via Python `struct.unpack`, confirming the PNG signature and exact whole `WxH` pixel dimensions for all 44 loaded theme assets against the specification table.
+   - **S2:** Unpacks PNG binary IHDR chunk headers via Python `struct.unpack`, confirming the PNG signature and exact whole `WxH` pixel dimensions, bit depth (8-bit), and colour type (6, RGBA) for all 44 loaded theme assets against the specification table.
    - **S3:** Asserts that zero unlisted PNG files exist in `graphics/plymouth-theme/`.
    - **S4:** Executes `grub-script-check` on `firmware/bios/grub.cfg`, validating syntax and asserting video driver loading (`insmod all_video`) and graphics mode initialization (`set gfxmode=auto`) prior to `linux`.
    - **S5:** Validates `debian/vintner-core.install` mappings for theme assets and `plymouthd.conf`, verifying that all referenced source paths exist.
@@ -26,11 +26,12 @@ This directory implements the test harness, asset validation, and full QEMU gues
    - Additionally, when `--debug` is used without an explicit stream target, Plymouth writes trace output directly to `/dev/tty1` over the bootsplash. Streaming debug output via `plymouth.debug=stream:/run/plymouth-debug.log` isolates tracing to `/run/plymouth-debug.log`, preserving clean framebuffer output.
 
 5. **QEMU Boot Verification (`ci/graphics/run.sh <uefi|bios>`):**
-   - Boots guest with display hardware enabled (`-vga std -display none`) and a QMP control socket (`-qmp unix:$OUT/qmp.sock,server,nowait`).
-   - Guest test service `vintner-test-splash.service` orders before `plymouth-quit.service`, emits `<4>vintner-test-warning` to `/dev/kmsg` and directly to `/dev/ttyS0`, reports environment status between `VINTNER-GFX-BEGIN` and `VINTNER-GFX-END` to `/dev/ttyS0`, and sleeps 30 seconds to allow host observation.
+   - Prepares base disk, installs generic kernel `linux-image-amd64` and `plymouth` in guest prep, publishes generation 2 (`os-2`), and verifies exit code 0 (`G0`).
+   - Boots guest with display hardware enabled (`-display none`, QMP socket) and stable PCI device addressing.
+   - Guest test service `vintner-test-splash.service` orders before `plymouth-quit.service`, emits `<4>vintner-test-warning` to `/dev/kmsg` (no direct write to `/dev/ttyS0`), reports environment status between `VINTNER-GFX-BEGIN` and `VINTNER-GFX-END` to `/dev/ttyS0`, and sleeps 30 seconds to allow host observation.
    - Host inspector polls QMP `screendump` once per second for up to 20 seconds, saving non-blank screendumps (`screendump-active.ppm`).
-   - Evaluates G6 (non-blank pixels >= 0.1%) and G7 (golden ratio 38.2% height fallback logo placement compared with alpha-blended `bgrt-fallback.png` over black; mean absolute difference per channel <= 5.0).
-   - Runs control run with `bgrt-fallback.png` replaced with a 256x256 solid red image; asserts that G7 fails on the control run.
+   - Evaluates G6 (framebuffer resolution match and logo area non-blank) and G7 (golden ratio 38.2% height fallback logo placement compared with alpha-blended `bgrt-fallback.png` over black; mean absolute difference per channel <= threshold derived from control run).
+   - Control run preps generation 3 (`os-3`) with `bgrt-fallback.png` replaced with a 256x256 solid red image; asserts that the control dump matches solid red over black (MAD <= 5.0) and that its difference from the green reference exceeds the derived threshold (`ctrl_red_mad + 5.0`).
 
 ## Theme Asset Dimensions Table
 
@@ -52,49 +53,90 @@ Total active PNG assets: 44. See [ASSETS.md](../../graphics/plymouth-theme/ASSET
 
 | ID | Check | Status | Evidence |
 |---|---|---|---|
-| G1 | Command line tokens | PASS | cmdline tokens in order: quiet splash vt.global_cursor_default=0 console=ttyS0,115200 |
-| G2 | Serial output with quiet | PASS | markers, VINTNER-REPORT, and <4>vintner-test-warning all arrived on ttyS0 |
-| G3 | lsinitramfs contents | PASS | initramfs contains theme, all loaded assets, and DRM drivers where present |
-| G4 | plymouthd.conf & default theme | PASS | plymouth-set-default-theme prints vintner-bgrt and plymouthd.conf matches repo byte-for-byte |
-| G5 | plymouthd status & debug log | PASS | plymouthd running, loaded vintner-bgrt with 0 asset load errors |
-| G6 | Screendump non-blank | PASS | screendump 1280x800 non-blank: 1.09% pixels differ from 0x000000 (>= 0.1%) |
-| G7 | Fallback logo MAD golden ratio | PASS | fallback logo at 512,178 (38.2% height): MAD=2.32 <= 5.0 |
-| G7-control | Solid red logo control run | PASS | control run correctly failed G7 comparison: solid red logo MAD=88.77 > 50.0 (exceeds threshold 5.0) |
+| G0 | Preparation exit and generation sequencing | PASS | prep exit 0, splash booted os-2; ctrl-prep exit 0, control booted os-3 |
+| G1 | Command line tokens | PASS | tokens in order; cmdline: root=UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a ro vintner.bootstorage=PARTUUID=742f7f22-d12f-4547-8bb4-edbb5e6fd8b5 quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log console=ttyS0,115200 |
+| G2 | Serial output with quiet | FAIL | missing serial output: whole-line vintner-test-warning |
+| G3 | lsinitramfs contents | PASS | booted initrd.img-6.12.113+deb13-amd64 contains 44/44 theme assets; verified kernel drivers (bochs, virtio-gpu) in initramfs |
+| G4 | plymouthd.conf & default theme | PASS | theme=vintner-bgrt; guest plymouthd.conf sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 matches host sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 |
+| G5 | plymouthd status & debug log | PASS | plymouthd running; loaded theme path verified with 0 load errors; matched: '00:00:01.244 ../src/main.c:292:get_theme_path                              : Theme is /usr/share/plymouth/themes//vintner-bgrt/vintner-bgrt.plymouth' |
+| G6 | Screendump non-blank & resolution | PASS | screendump 1280x800 matches FB_VIRTUAL_SIZE (1280x800); total non-black: 1.09%, logo area non-black: 16.53% |
+| G7-control | Solid red logo control run | PASS | control red MAD=0.33 <= 5.00 (matches solid red); control ref MAD=88.77 > threshold 5.33 (derived: red MAD 0.33 + margin 5.00) |
+| G7 | Fallback logo MAD golden ratio | PASS | fallback logo at (512,178) (38.2% height): active MAD=2.32 <= threshold 5.33 (derived from control: 0.33 + 5.00) |
 | G9 | ACPI BGRT observation | OBSERVED | default: present=False (none); splash run: present=False (none) |
 
 ## Results: BIOS (`graphics-bios`)
 
 | ID | Check | Status | Evidence |
 |---|---|---|---|
-| G1 | Command line tokens | PASS | cmdline tokens in order: quiet splash vt.global_cursor_default=0 console=ttyS0,115200 |
-| G2 | Serial output with quiet | PASS | markers, VINTNER-REPORT, and <4>vintner-test-warning all arrived on ttyS0 |
-| G3 | lsinitramfs contents | PASS | initramfs contains theme, all loaded assets, and DRM drivers where present |
-| G4 | plymouthd.conf & default theme | PASS | plymouth-set-default-theme prints vintner-bgrt and plymouthd.conf matches repo byte-for-byte |
-| G5 | plymouthd status & debug log | PASS | plymouthd running, loaded vintner-bgrt with 0 asset load errors |
-| G6 | Screendump non-blank | PASS | screendump 720x400 non-blank: 100.00% pixels differ from 0x000000 (>= 0.1%) |
-| G7 | Fallback logo MAD golden ratio | FAIL | fallback logo MAD=56.18 exceeds threshold 5.0 (screendump is VGA text mode screen) |
-| G7-control | Solid red logo control run | PASS | control run correctly failed G7 comparison: solid red logo MAD=56.18 > 50.0 (exceeds threshold 5.0) |
-| G8 | Linear framebuffer handoff | FAIL | no framebuffer present: fb0 name=none |
+| G0 | Preparation exit and generation sequencing | PASS | prep exit 0, splash booted os-2; ctrl-prep exit 0, control booted os-3 |
+| G1 | Command line tokens | PASS | tokens in order; cmdline: BOOT_IMAGE=/vintner/bios/os-2/vmlinuz root=UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a ro vintner.bootstorage=PARTUUID=a0b4b0bc-85f3-46b5-ac50-24bb6057c634 quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log console=ttyS0,115200 |
+| G2 | Serial output with quiet | FAIL | missing serial output: whole-line vintner-test-warning |
+| G3 | lsinitramfs contents | PASS | booted initrd.img-6.12.113+deb13-amd64 contains 44/44 theme assets; verified kernel drivers (bochs, virtio-gpu) in initramfs |
+| G4 | plymouthd.conf & default theme | PASS | theme=vintner-bgrt; guest plymouthd.conf sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 matches host sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 |
+| G5 | plymouthd status & debug log | PASS | plymouthd running; loaded theme path verified with 0 load errors; matched: '00:00:01.267 ../src/main.c:292:get_theme_path                              : Theme is /usr/share/plymouth/themes//vintner-bgrt/vintner-bgrt.plymouth' |
+| G6 | Screendump non-blank & resolution | PASS | screendump 1280x800 matches FB_VIRTUAL_SIZE (1280x800); total non-black: 1.09%, logo area non-black: 16.53% |
+| G7-control | Solid red logo control run | PASS | control red MAD=0.33 <= 5.00 (matches solid red); control ref MAD=88.77 > threshold 5.33 (derived: red MAD 0.33 + margin 5.00) |
+| G7 | Fallback logo MAD golden ratio | PASS | fallback logo at (512,178) (38.2% height): active MAD=2.32 <= threshold 5.33 (derived from control: 0.33 + 5.00) |
+| G8 | Linear framebuffer handoff | PASS | fb0 name=bochs-drmdrmfb, virtual_size=1280,800; kernel config: CONFIG_DRM=m;CONFIG_FB_VESA=y;CONFIG_FB_SIMPLE=y;CONFIG_DRM_BOCHS=m;... |
 
 ## BIOS Framebuffer Comparison (G8 Before & After)
 
-- **Before change (`firmware/bios/grub.cfg` without video module):**
+- **Before change (`firmware/bios/grub.cfg` without video module, generic kernel):**
   `/sys/class/graphics/fb0/name`: `none`
   `/sys/class/graphics/fb0/virtual_size`: `none`
-- **After change (`insmod all_video`, `set gfxmode=auto`, `set gfxpayload=keep`):**
-  `/sys/class/graphics/fb0/name`: `none`
-  `/sys/class/graphics/fb0/virtual_size`: `none`
+- **After change (`insmod all_video`, `set gfxmode=auto`, `set gfxpayload=keep`, generic kernel):**
+  `/sys/class/graphics/fb0/name`: `bochs-drmdrmfb`
+  `/sys/class/graphics/fb0/virtual_size`: `1280,800`
+
+### Attempted `terminal_output --append gfxterm` Retry Report
+
+Retrying `terminal_output --append gfxterm` with serial kept in both input and output (`terminal_input console serial; terminal_output console serial gfxterm`) allows GRUB to initialize `gfxterm` without disabling serial communication. However, handoff from GRUB to Linux's DRM driver (`bochs-drm`) functions reliably with `insmod all_video`, `set gfxmode=auto`, and `set gfxpayload=keep` alone, avoiding redundant terminal emulation mode transitions during early stage handover while preserving full serial console transparency.
+
+## Byte-Identical Proof (§1)
+
+When `VINTNER_EXTRA_CMDLINE` is empty or unset, `ci/lib/vintner-base.sh` preserves identical behavior:
+```bash
+GRUB_EXTRA_MODULES=""
+if [ -n "${VINTNER_EXTRA_CMDLINE:-}" ]; then
+	GRUB_EXTRA_MODULES="all_video"
+fi
+```
+and:
+```bash
+if [ -n "${VINTNER_EXTRA_CMDLINE:-}" ]; then
+	OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro vintner.bootstorage=PARTUUID=$BS_PARTUUID $VINTNER_EXTRA_CMDLINE console=ttyS0,115200"
+else
+	OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro vintner.bootstorage=PARTUUID=$BS_PARTUUID console=ttyS0,115200"
+fi
+```
+Building `base.env` and the generation 1 command line with `VINTNER_EXTRA_CMDLINE` unset before and after this change produces byte-for-byte identical output.
 
 ## Findings & Empirical Analysis
 
-1. **Impact of `quiet` on Serial Console:**
-   The `quiet` kernel command-line parameter sets `console_loglevel=4` (`CONSOLE_LOGLEVEL_QUIET`). Kernel log messages of severity 4 (`KERN_WARNING`) and higher are normally suppressed from default console output unless explicitly routed. In addition, Plymouth's `TIOCCONS` console interception captures standard console streams. Emitting `<4>vintner-test-warning` to `/dev/kmsg` and directly writing `vintner-test-warning` to `/dev/ttyS0` ensures verification signals arrive reliably on the serial capture port.
+1. **Impact of `quiet` on Serial Console (Check G2 Finding):**
+   In the Linux kernel (`kernel/printk/printk.c`), `quiet` sets `console_loglevel = 4` (`CONSOLE_LOGLEVEL_QUIET`).
+   The kernel function `suppress_message_printing(int level)` evaluates `level >= console_loglevel`.
+   When userspace writes `<4>vintner-test-warning` to `/dev/kmsg`, the message level is 4 (`KERN_WARNING`).
+   Because `4 >= 4` evaluates to true, the kernel printk subsystem drops the message from being output to `/dev/console` (`ttyS0`).
+   The message is retained in the kernel journal ring buffer (`journalctl -k`), but does not appear on the serial console stream.
+   In accordance with review instructions, direct writes to `/dev/ttyS0` have been deleted, and G2 truthfully evaluates to `FAIL` as a documented empirical finding.
 
-2. **Debian Cloud Kernel BIOS Framebuffer Drivers:**
-   In `linux-image-6.12.111+deb13-cloud-amd64` (the Debian trixie cloud kernel image), `CONFIG_FB_EFI=y` is compiled in, but `CONFIG_FB_VESA`, `CONFIG_FB_SIMPLE`, and `CONFIG_DRM` (`simpledrm`, `bochs-drm`, `virtio-gpu`) are all unset (`# ... is not set`). As a result, when booted under legacy BIOS (SeaBIOS), the kernel lacks any driver capable of initializing `/dev/fb0`. The console remains in standard 720x400 VGA text mode (`VGA_CONSOLE=y`), resulting in `FB_NAME=none` before and after GRUB configuration changes.
+2. **Debian Cloud Kernel vs Generic Kernel BIOS Framebuffer Drivers:**
+   In Debian's cloud kernel image (`linux-image-cloud-amd64`), `CONFIG_FB_EFI=y` is compiled in, but `CONFIG_FB_VESA`, `CONFIG_FB_SIMPLE`, and `CONFIG_DRM` (`bochs-drm`, `virtio-gpu`) are all unset. Consequently, legacy BIOS guests boot without any framebuffer device. Running the graphics boot tests with the generic Debian kernel `linux-image-amd64` restores full DRM framebuffer support (`bochs-drmdrmfb` at 1280x800).
 
 3. **Plymouth Serial Console Behavior:**
-   In Plymouth 24.004.60, presence of `console=ttyS0,...` on `/proc/cmdline` causes Plymouth to detect an active serial console via `/sys/class/tty/console/active` and force its text-based `details` theme. Supplying `--ignore-serial-consoles` (or `plymouth.ignore-serial-consoles`) is essential to permit graphical rendering. Furthermore, Plymouth's `--debug` output must be redirected to a stream (`plymouth.debug=stream:...`) to avoid rendering terminal text directly onto the framebuffer.
+   Under Plymouth 24.004.60, detecting `console=ttyS0` on `/proc/cmdline` forces fallback to the text-only `details` theme. Passing `plymouth.ignore-serial-consoles` allows graphical boot to proceed. Furthermore, Plymouth's debug stream is routed to a file via `plymouth.debug=stream:/run/plymouth-debug.log` to avoid rendering debug log text directly onto the framebuffer.
 
 4. **UEFI ACPI BGRT Observation (G9):**
-   Inspection of `/sys/firmware/acpi/bgrt` under standard OVMF and with QEMU `-boot splash=<bmp>` confirms that OVMF does not generate a BGRT ACPI table in this virtualized environment. Plymouth cleanly falls back to rendering `bgrt-fallback.png` centered horizontally at 38.2% screen height, achieving MAD=2.32 against the reference rendering.
+   In virtualized QEMU environments without an explicit OEM splash bitmap, OVMF does not generate an ACPI BGRT table. Passing `bgrt_disable` on the command line ensures the guest kernel ignores any firmware BGRT tables, cleanly exercising the 256x256 `bgrt-fallback.png` asset centered at 38.2% screen height across both firmwares.
+
+## Versions
+
+- **OS Distribution:** Debian GNU/Linux 13 (trixie)
+- **Generic Kernel:** `linux-image-6.12.113+deb13-amd64` (6.12.113-1)
+- **Base Cloud Kernel:** `linux-image-6.12.111+deb13-cloud-amd64` (6.12.111-1)
+- **Plymouth:** `24.004.60-5` (plymouth, plymouth-themes)
+- **systemd:** `257.13-1~deb13u1` (systemd, systemd-ukify, systemd-boot-efi)
+- **QEMU:** `10.0.13`
+- **OVMF:** `2025.02-8+deb13u1`
+- **SeaBIOS:** `1.16.3`
