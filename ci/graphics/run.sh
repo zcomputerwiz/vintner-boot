@@ -259,6 +259,7 @@ sudo losetup -d "$LOOP"
 LOOP=""
 
 # Rebuild initramfs with red logo
+# shellcheck disable=SC2016
 CTRL_PREP_SEED=$(make_seed "ctrl-prep" 'update-initramfs -u -k "$(uname -r)"')
 run_qemu "$CTRL_DISK" "$CTRL_PREP_SEED" "$OUT/ctrl-prep.log" 180 "$CTRL_VARS"
 

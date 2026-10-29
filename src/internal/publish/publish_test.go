@@ -1036,6 +1036,25 @@ func TestPublishInheritsSplashCmdline(t *testing.T) {
 				m.Root.UUID, m.BootStorage.PartUUID)
 			m.Images[0].Cmdline = splashCmdline
 
+			stateDir := filepath.Join(bootStorageDir, "vintner", "state")
+			if fw == "bios" || fw == "both" {
+				slotPath := filepath.Join(bootStorageDir, "vintner", "bios", "os-1", "slot.cfg")
+				_ = os.WriteFile(slotPath, []byte("set vintner_cmdline=\""+splashCmdline+"\"\n"), 0644)
+				sH, _ := fileSHA256(slotPath)
+				m.Images[0].BIOS.Files.SlotCfg = sH
+			}
+			if fw == "uefi" || fw == "both" {
+				ukiPath := filepath.Join(bootStorageDir, "EFI", "Linux", "vintner-os-1+3-0.efi")
+				_ = writeTestPE(ukiPath, []byte("osrel"), []byte(splashCmdline), []byte(m.Images[0].Kernel.ABI), []byte("initrd1"))
+				fi, _ := os.Stat(ukiPath)
+				h, _ := fileSHA256(ukiPath)
+				m.Images[0].UEFI.SHA256 = h
+				m.Images[0].UEFI.Size = int(fi.Size())
+			}
+			if err := manifest.Save(stateDir, m); err != nil {
+				t.Fatalf("failed to save manifest with splashCmdline: %v", err)
+			}
+
 			newABI := "6.12.112-amd64"
 			setupKernelFiles(t, rootDir, newABI)
 
