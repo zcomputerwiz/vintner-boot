@@ -122,7 +122,7 @@ sudo tee "$MNT/etc/systemd/system/vintner-test-splash.service" > /dev/null << 'E
 [Unit]
 Description=Vintner Test Splash Service
 DefaultDependencies=no
-After=local-fs.target
+After=local-fs.target plymouth-start.service
 Before=plymouth-quit.service plymouth-quit-wait.service multi-user.target
 Conflicts=shutdown.target
 
@@ -211,7 +211,7 @@ LOOP=""
 # --- 3. Guest preparation operation -----------------------------------------
 echo "=== Step 3: Installing plymouth in guest and regenerating initramfs ==="
 # shellcheck disable=SC2016
-PREP_CMD='apt-get update && apt-get install -y --no-install-recommends plymouth
+PREP_CMD='apt-get update && apt-get install -y --no-install-recommends plymouth plymouth-themes
 if [ -f /sbin/plymouthd ] && [ ! -f /sbin/plymouthd.real ]; then
 	mv /sbin/plymouthd /sbin/plymouthd.real
 	cat << "WRAP" > /sbin/plymouthd

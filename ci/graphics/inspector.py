@@ -353,6 +353,9 @@ def cmd_evaluate(args):
     # Extract guest report between VINTNER-GFX-BEGIN and VINTNER-GFX-END
     gfx_evidence = {}
     in_gfx = False
+    cur_multiline_key = None
+    cur_multiline_val = []
+
     for line in boot_log.splitlines():
         line_clean = line.strip()
         if "VINTNER-GFX-BEGIN" in line_clean:
@@ -360,10 +363,26 @@ def cmd_evaluate(args):
             continue
         if "VINTNER-GFX-END" in line_clean:
             in_gfx = False
+            if cur_multiline_key is not None:
+                gfx_evidence[cur_multiline_key] = "\n".join(cur_multiline_val)
+                cur_multiline_key = None
+                cur_multiline_val = []
             continue
-        if in_gfx and "=" in line:
-            k, _, v = line.partition("=")
-            gfx_evidence[k.strip()] = v.strip()
+        if in_gfx:
+            if cur_multiline_key is not None:
+                if line_clean == "VINTNER_EOF":
+                    gfx_evidence[cur_multiline_key] = "\n".join(cur_multiline_val)
+                    cur_multiline_key = None
+                    cur_multiline_val = []
+                else:
+                    cur_multiline_val.append(line)
+            elif "<<" in line:
+                k, _, _ = line.partition("<<")
+                cur_multiline_key = k.strip()
+                cur_multiline_val = []
+            elif "=" in line:
+                k, _, v = line.partition("=")
+                gfx_evidence[k.strip()] = v.strip()
 
     # --- G1: Command line tokens ----------------------------------------------
     cmdline_val = gfx_evidence.get("CMDLINE", "")

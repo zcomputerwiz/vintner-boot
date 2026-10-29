@@ -34,6 +34,11 @@ if [ -d "$THEME_DIR" ]; then
 	cp -a "${THEME_DIR}/." "${DESTDIR}${THEME_DIR}/"
 fi
 
+# Copy real plymouthd binary if wrapped
+if [ -x /sbin/plymouthd.real ]; then
+	copy_exec /sbin/plymouthd.real /sbin/plymouthd.real
+fi
+
 # Include early graphics drivers, tolerating missing modules
 for mod in simpledrm bochs bochs-drm virtio-gpu; do
 	manual_add_modules "$mod" 2>/dev/null || true
