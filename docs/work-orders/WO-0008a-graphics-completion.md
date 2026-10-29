@@ -103,7 +103,7 @@ Boot the result under the firmware given to `run.sh`, with the serial console to
 | ID | Expected | Fails when |
 |---|---|---|
 | G1 | The kernel's `Command line:` line, split into tokens, has the whole tokens `quiet`, `splash`, `vt.global_cursor_default=0` and `console=ttyS0,115200`, in that order | a token missing, or in another order |
-| G2 | Serial output still works with `quiet`: the report between the markers and the guest's `VINTNER-REPORT` block both arrive, and a kernel message of level warning or above that the guest prints on purpose (`echo '<4>vintner-test-warning' > /dev/kmsg`) appears on the serial console as a whole line | any of them missing |
+| G2 | Serial output still works with `quiet`: the report between the markers and the guest's `VINTNER-REPORT` block both arrive, and a kernel message of level err that the guest prints on purpose (`echo '<3>vintner-test-error' > /dev/kmsg`) appears on the serial console as a whole line. A second message of level warning (`<4>vintner-test-warning`) must NOT appear: `quiet` sets the console log level to 4, which prints only messages more severe than 4, so this is the control that shows the filter is the one expected | any marker or the err line missing, or the warning line present |
 | G3 | `lsinitramfs` of the booted image lists `usr/share/plymouth/themes/vintner-bgrt/vintner-bgrt.plymouth` and every image the plugin loads, and the three drivers where the kernel has them | any file missing |
 | G4 | `plymouth-set-default-theme` prints `vintner-bgrt`, and `/etc/plymouth/plymouthd.conf` in the guest equals the repository's file byte for byte | a different name or different bytes |
 | G5 | While the test unit runs, `plymouthd` is running, and its log (`--debug`) names `vintner-bgrt` as the theme it loaded and records no image it failed to load | not running, another theme, or any load failure |
@@ -136,3 +136,5 @@ Add `graphics-uefi` and `graphics-bios` to `.github/workflows/qemu-tests.yml`, w
 
 - The architecture's graphics test list (§10) also names real GPUs, encrypted-root prompts, `PixelBltOnly` and EDID-native modes. They need hardware or later work and are not part of this work order.
 - One statement in my review of WO-0008 was wrong: `keymap-render.png` (25881x50) is not a stray file. Plymouth's keyboard-layout indicator loads it, so it stays.
+
+- **Correction (2026-10-29):** the first version of G2 expected a level-4 (warning) message on the console. That was my error: `quiet` sets the console log level to 4, and the console prints only messages with a level below it, so a warning is dropped. G2 now uses a level-3 (err) message and a level-4 control. Every PASS/FAIL row, G2 included, must pass for the script to exit 0.
