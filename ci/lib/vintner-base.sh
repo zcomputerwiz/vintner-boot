@@ -199,7 +199,7 @@ printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' \
 
 trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$ROOT/usr/lib/grub/i386-pc" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
 	biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval \
-	loadenv keystatus serial terminal halt reboot
+	loadenv keystatus serial terminal halt reboot all_video
 
 # Embed core.img and MBR jump code
 python3 - "$DISK" "$EMBED_LBA" "$EMBED_ROOM" "$OUT/core.img" "$ROOT/usr/lib/grub/i386-pc/boot.img" <<'EOF'
@@ -369,7 +369,11 @@ echo "=== Populating ordinary image slots and UKIs ==="
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/vmlinuz" ::/vintner/bios/os-1/vmlinuz
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/initrd.img" ::/vintner/bios/os-1/initrd.img
 
-OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro console=ttyS0,115200 vintner.bootstorage=PARTUUID=$BS_PARTUUID"
+if [ -n "${VINTNER_EXTRA_CMDLINE:-}" ]; then
+	OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro vintner.bootstorage=PARTUUID=$BS_PARTUUID $VINTNER_EXTRA_CMDLINE console=ttyS0,115200"
+else
+	OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro console=ttyS0,115200 vintner.bootstorage=PARTUUID=$BS_PARTUUID"
+fi
 cat <<EOF > "$OUT/os1-slot.cfg"
 set vintner_cmdline="$OS1_CMDLINE"
 EOF

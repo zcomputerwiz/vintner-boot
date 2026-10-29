@@ -1000,3 +1000,123 @@ func TestDefaultLockPath(t *testing.T) {
 		t.Errorf("got %s, want /run/vintner/publish.lock", p2)
 	}
 }
+
+// verifyCmdlineTokens checks that each token in expected appears in cmdline as a whole token,
+// and that their positions in the token list are strictly increasing (in the exact specified order).
+func verifyCmdlineTokens(cmdline string, expected []string) error {
+	tokens := strings.Fields(cmdline)
+	lastIdx := -1
+	for _, exp := range expected {
+		found := false
+		for i, tok := range tokens {
+			// Strip any enclosing quotes that might wrap the token in slot.cfg
+			tokClean := strings.Trim(tok, "\"';\n\r")
+			if tokClean == exp {
+				if i <= lastIdx {
+					return fmt.Errorf("token %q at position %d out of order (previous at %d)", exp, i, lastIdx)
+				}
+				lastIdx = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("token %q not found as a whole token in %q", exp, cmdline)
+		}
+	}
+	return nil
+}
+
+func TestPublishInheritsSplashCmdline(t *testing.T) {
+	for _, fw := range []string{"uefi", "bios", "both"} {
+		t.Run("Firmware_"+fw, func(t *testing.T) {
+			rootDir, bootStorageDir, m := setupTestEnv(t, fw)
+			// Configure image 1 (GOOD) command line with quiet splash vt.global_cursor_default=0 console=ttyS0,115200
+			splashCmdline := fmt.Sprintf("root=UUID=%s ro vintner.bootstorage=PARTUUID=%s quiet splash vt.global_cursor_default=0 console=ttyS0,115200",
+				m.Root.UUID, m.BootStorage.PartUUID)
+			m.Images[0].Cmdline = splashCmdline
+
+			newABI := "6.12.112-amd64"
+			setupKernelFiles(t, rootDir, newABI)
+
+			pkgQuery := mockPackageQuery{pkg: "linux-image-" + newABI, ver: "6.12.112-1"}
+			ukiB := mockUKIBuilder{}
+			clk := mockClock{t: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)}
+			diskCheck := mockDiskChecker{free: 100 * 1024 * 1024}
+
+			var stdout bytes.Buffer
+			opts := Options{
+				KernelABI:        newABI,
+				BootStorageDir:   bootStorageDir,
+				RootDir:          rootDir,
+				LockFile:         filepath.Join(bootStorageDir, "publish.lock"),
+				CmdlineContent:   splashCmdline,
+				PackageQuery:     pkgQuery,
+				UKIBuilder:       ukiB,
+				DiskSpaceChecker: diskCheck,
+				Clock:            clk,
+				Stdout:           &stdout,
+			}
+
+			res, err := Publish(context.Background(), opts)
+			if err != nil {
+				t.Fatalf("Publish failed: %v", err)
+			}
+			if res.Generation != 2 {
+				t.Fatalf("expected generation 2, got %d", res.Generation)
+			}
+
+			// Load published manifest
+			stateDir := filepath.Join(bootStorageDir, "vintner", "state")
+			loaded, err := manifest.Load(stateDir)
+			if err != nil {
+				t.Fatalf("manifest.Load: %v", err)
+			}
+			if len(loaded.Images) != 2 {
+				t.Fatalf("Images count: got %d, want 2", len(loaded.Images))
+			}
+			gen2 := loaded.Images[1]
+
+			expectedTokens := []string{"quiet", "splash", "vt.global_cursor_default=0", "console=ttyS0,115200"}
+			if err := verifyCmdlineTokens(gen2.Cmdline, expectedTokens); err != nil {
+				t.Errorf("published generation 2 command line failed token order check: %v (cmdline=%q)", err, gen2.Cmdline)
+			}
+
+			// On BIOS, check slot.cfg contains vintner_cmdline with options in order
+			if fw == "bios" || fw == "both" {
+				slotPath := filepath.Join(bootStorageDir, "vintner", "bios", "os-2", "slot.cfg")
+				data, err := os.ReadFile(slotPath)
+				if err != nil {
+					t.Fatalf("failed to read BIOS slot.cfg: %v", err)
+				}
+				content := string(data)
+				if err := verifyCmdlineTokens(content, expectedTokens); err != nil {
+					t.Errorf("BIOS slot.cfg failed token order check: %v (content=%q)", err, content)
+				}
+			}
+		})
+	}
+
+	// Test negative cases: verify verifyCmdlineTokens fails when tokens are dropped or reordered
+	t.Run("VerifierFailsWhenDroppedOrReordered", func(t *testing.T) {
+		expectedTokens := []string{"quiet", "splash", "vt.global_cursor_default=0", "console=ttyS0,115200"}
+
+		// Dropped token (missing splash)
+		cmdlineDropped := "root=UUID=123 ro quiet vt.global_cursor_default=0 console=ttyS0,115200"
+		if err := verifyCmdlineTokens(cmdlineDropped, expectedTokens); err == nil {
+			t.Errorf("expected failure when token dropped, but got nil")
+		}
+
+		// Reordered tokens (splash before quiet)
+		cmdlineReordered := "root=UUID=123 ro splash quiet vt.global_cursor_default=0 console=ttyS0,115200"
+		if err := verifyCmdlineTokens(cmdlineReordered, expectedTokens); err == nil {
+			t.Errorf("expected failure when tokens reordered, but got nil")
+		}
+
+		// Partial substring match is not whole token (e.g. splash_screen instead of splash)
+		cmdlineSubstr := "root=UUID=123 ro quiet splash_screen vt.global_cursor_default=0 console=ttyS0,115200"
+		if err := verifyCmdlineTokens(cmdlineSubstr, expectedTokens); err == nil {
+			t.Errorf("expected failure when token is partial substring, but got nil")
+		}
+	})
+}

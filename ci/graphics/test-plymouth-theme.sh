@@ -1,138 +1,264 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# test-plymouth-theme.sh - verify Vintner BGRT Plymouth theme configuration and assets (WO-0008)
+# test-plymouth-theme.sh - static verification of Plymouth theme, assets, GRUB and hooks (WO-0008a)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-THEME_DIR="$REPO_ROOT/graphics/plymouth-theme"
-THEME_FILE="$THEME_DIR/vintner-bgrt.plymouth"
-GRUB_CFG="$REPO_ROOT/firmware/bios/grub.cfg"
-INSTALL_FILE="$REPO_ROOT/debian/vintner-core.install"
+cd "$REPO_ROOT"
 
-PASS_COUNT=0
-FAIL_COUNT=0
+echo "=== Vintner Plymouth Theme Static Verification (WO-0008a) ==="
 
-check() {
-	local desc="$1"
-	local result="$2" # 0 for pass, non-zero for fail
-	local details="${3:-}"
-
-	if [ "$result" -eq 0 ]; then
-		printf "PASS: %s %s\n" "$desc" "$details"
-		PASS_COUNT=$((PASS_COUNT + 1))
-	else
-		printf "FAIL: %s %s\n" "$desc" "$details"
-		FAIL_COUNT=$((FAIL_COUNT + 1))
-	fi
-}
-
-echo "=== Vintner BGRT Boot Logo & Plymouth Theme Verification (WO-0008) ==="
-
-# Check 1: Theme file exists
-if [ -f "$THEME_FILE" ]; then
-	check "Theme file exists" 0 "$THEME_FILE"
-else
-	check "Theme file exists" 1 "missing $THEME_FILE"
-fi
-
-# Check 2: Theme definition uses two-step module and BGRT firmware background
-if grep -q "ModuleName=two-step" "$THEME_FILE" && grep -q "UseFirmwareBackground=true" "$THEME_FILE"; then
-	check "Theme specifies two-step module with UseFirmwareBackground=true" 0
-else
-	check "Theme specifies two-step module with UseFirmwareBackground=true" 1
-fi
-
-# Check 3: Theme specifies expected image directory
-if grep -q "ImageDir=/usr/share/plymouth/themes/vintner-bgrt" "$THEME_FILE"; then
-	check "Theme ImageDir targets /usr/share/plymouth/themes/vintner-bgrt" 0
-else
-	check "Theme ImageDir targets /usr/share/plymouth/themes/vintner-bgrt" 1
-fi
-
-# Check 4: Fallback boot logo exists and is valid PNG
-FALLBACK_PNG="$THEME_DIR/bgrt-fallback.png"
-if [ -f "$FALLBACK_PNG" ] && file "$FALLBACK_PNG" | grep -q "PNG image data"; then
-	DIMENSIONS="$(file "$FALLBACK_PNG" | grep -o '[0-9]\+ x [0-9]\+')"
-	check "bgrt-fallback.png is valid PNG" 0 "($DIMENSIONS)"
-else
-	check "bgrt-fallback.png is valid PNG" 1 "missing or invalid format"
-fi
-
-# Check 5: Watermark image exists and is valid PNG
-WATERMARK_PNG="$THEME_DIR/watermark.png"
-if [ -f "$WATERMARK_PNG" ] && file "$WATERMARK_PNG" | grep -q "PNG image data"; then
-	check "watermark.png is valid PNG" 0
-else
-	check "watermark.png is valid PNG" 1
-fi
-
-# Check 6: Spinner animation frames exist (36 frames)
-ANIM_FRAMES=0
-for i in $(seq -w 1 36); do
-	FRAME="$THEME_DIR/animation-00$i.png"
-	if [ -f "$FRAME" ]; then
-		ANIM_FRAMES=$((ANIM_FRAMES + 1))
-	fi
-done
-if [ "$ANIM_FRAMES" -eq 36 ]; then
-	check "Spinner animation frames complete" 0 "(36/36 frames present)"
-else
-	check "Spinner animation frames complete" 1 "($ANIM_FRAMES/36 frames found)"
-fi
-
-# Check 7: Authentication & password dialog assets present
-DIALOG_ASSETS=("entry.png" "lock.png" "bullet.png" "capslock.png" "keyboard.png")
-MISSING_DIALOG=0
-for asset in "${DIALOG_ASSETS[@]}"; do
-	if [ ! -f "$THEME_DIR/$asset" ]; then
-		MISSING_DIALOG=$((MISSING_DIALOG + 1))
-	fi
-done
-if [ "$MISSING_DIALOG" -eq 0 ]; then
-	check "LUKS / Passphrase dialog assets present" 0 "(all 5 assets found)"
-else
-	check "LUKS / Passphrase dialog assets present" 1 "($MISSING_DIALOG missing)"
-fi
-
-# Check 8: Packaging rules install theme to /usr/share/plymouth/themes/vintner-bgrt/
-if [ -f "$INSTALL_FILE" ] && grep -q "usr/share/plymouth/themes/vintner-bgrt" "$INSTALL_FILE"; then
-	check "Debian packaging installs theme to /usr/share/plymouth/themes/vintner-bgrt" 0
-else
-	check "Debian packaging installs theme to /usr/share/plymouth/themes/vintner-bgrt" 1
-fi
-
-# Check 9: BIOS GRUB script syntax and linear framebuffer mode
-if command -v grub-script-check >/dev/null 2>&1; then
-	if grub-script-check "$GRUB_CFG" && grep -q "set gfxpayload=keep" "$GRUB_CFG"; then
-		check "GRUB static configuration syntax valid with gfxpayload=keep" 0
-	else
-		check "GRUB static configuration syntax valid with gfxpayload=keep" 1
-	fi
-else
-	if grep -q "set gfxpayload=keep" "$GRUB_CFG"; then
-		check "GRUB static configuration has gfxpayload=keep (grub-script-check not installed)" 0
-	else
-		check "GRUB static configuration has gfxpayload=keep" 1
-	fi
-fi
-
-# Check 10: Plymouth keyfile syntax validation
-KEYFILE_STATUS=0
-python3 -c "
+python3 - << 'EOF'
+import sys
+import os
+import glob
+import struct
 import configparser
-config = configparser.ConfigParser()
-config.read('$THEME_FILE')
-assert 'Plymouth Theme' in config, 'Missing Plymouth Theme section'
-assert 'two-step' in config, 'Missing two-step section'
-assert config['Plymouth Theme']['modulename'] == 'two-step', 'Wrong ModuleName'
-assert config['boot-up']['usefirmwarebackground'] == 'true', 'Wrong UseFirmwareBackground'
-" || KEYFILE_STATUS=$?
-check "Theme keyfile syntax parsed cleanly by INI/keyfile parser" "$KEYFILE_STATUS"
+import subprocess
+from pathlib import Path
 
-echo ""
-echo "Summary: $PASS_COUNT passed, $FAIL_COUNT failed."
-if [ "$FAIL_COUNT" -gt 0 ]; then
-	exit 1
-fi
-exit 0
+failures = 0
+
+def check_pass(check_id, desc, details=""):
+    msg = f"PASS: [{check_id}] {desc}"
+    if details:
+        msg += f" - {details}"
+    print(msg)
+
+def check_fail(check_id, desc, error=""):
+    global failures
+    failures += 1
+    msg = f"FAIL: [{check_id}] {desc}"
+    if error:
+        msg += f" - {error}"
+    print(msg, file=sys.stderr)
+
+# ---------------------------------------------------------------------------
+# S1: The theme file parses; [Plymouth Theme] has ModuleName=two-step;
+#     [two-step] has ImageDir=/usr/share/plymouth/themes/vintner-bgrt;
+#     [boot-up] has UseFirmwareBackground=true.
+# ---------------------------------------------------------------------------
+theme_path = Path("graphics/plymouth-theme/vintner-bgrt.plymouth")
+if not theme_path.is_file():
+    check_fail("S1", "Theme file parsing", f"File not found: {theme_path}")
+else:
+    try:
+        cp = configparser.ConfigParser(interpolation=None)
+        with open(theme_path, "r", encoding="utf-8") as f:
+            cp.read_file(f)
+
+        s1_errors = []
+        if not cp.has_section("Plymouth Theme"):
+            s1_errors.append("Missing section [Plymouth Theme]")
+        elif cp.get("Plymouth Theme", "ModuleName", fallback=None) != "two-step":
+            s1_errors.append(f"ModuleName expected 'two-step', got {cp.get('Plymouth Theme', 'ModuleName', fallback=None)!r}")
+
+        if not cp.has_section("two-step"):
+            s1_errors.append("Missing section [two-step]")
+        elif cp.get("two-step", "ImageDir", fallback=None) != "/usr/share/plymouth/themes/vintner-bgrt":
+            s1_errors.append(f"ImageDir expected '/usr/share/plymouth/themes/vintner-bgrt', got {cp.get('two-step', 'ImageDir', fallback=None)!r}")
+
+        if not cp.has_section("boot-up"):
+            s1_errors.append("Missing section [boot-up]")
+        elif cp.get("boot-up", "UseFirmwareBackground", fallback=None) != "true":
+            s1_errors.append(f"UseFirmwareBackground expected 'true', got {cp.get('boot-up', 'UseFirmwareBackground', fallback=None)!r}")
+
+        if s1_errors:
+            check_fail("S1", "Theme file configuration", "; ".join(s1_errors))
+        else:
+            check_pass("S1", "Theme file configuration", "ModuleName=two-step, ImageDir=/usr/share/plymouth/themes/vintner-bgrt, UseFirmwareBackground=true")
+    except Exception as e:
+        check_fail("S1", "Theme file parsing", str(e))
+
+# ---------------------------------------------------------------------------
+# S2: Every image file the theme or plugin loads exists, is a valid PNG
+#     (signature + IHDR header unpack), and matches table dimensions (WxH).
+# ---------------------------------------------------------------------------
+EXPECTED_ASSETS = {
+    "bgrt-fallback.png": "256x256",
+    "watermark.png": "160x24",
+    "entry.png": "305x34",
+    "lock.png": "35x34",
+    "bullet.png": "10x10",
+    "capslock.png": "24x28",
+    "keyboard.png": "36x36",
+    "keymap-render.png": "25881x50",
+}
+for i in range(1, 37):
+    EXPECTED_ASSETS[f"animation-{i:04d}.png"] = "32x32"
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+theme_dir = Path("graphics/plymouth-theme")
+
+s2_errors = []
+for filename, expected_dim in sorted(EXPECTED_ASSETS.items()):
+    p = theme_dir / filename
+    if not p.is_file():
+        s2_errors.append(f"Missing file: {filename}")
+        continue
+
+    try:
+        data = p.read_bytes()
+        if len(data) < 24:
+            s2_errors.append(f"{filename}: File too short for PNG header ({len(data)} bytes)")
+            continue
+
+        if data[:8] != PNG_SIGNATURE:
+            s2_errors.append(f"{filename}: Invalid PNG signature")
+            continue
+
+        if data[12:16] != b"IHDR":
+            s2_errors.append(f"{filename}: Missing IHDR chunk at offset 12")
+            continue
+
+        w, h = struct.unpack(">II", data[16:24])
+        actual_dim = f"{w}x{h}"
+        if actual_dim != expected_dim:
+            s2_errors.append(f"{filename}: Dimension mismatch: got {actual_dim}, want {expected_dim}")
+    except Exception as e:
+        s2_errors.append(f"{filename}: {e}")
+
+if s2_errors:
+    check_fail("S2", "Theme image validity and dimensions", f"{len(s2_errors)} errors: {'; '.join(s2_errors[:3])}")
+else:
+    check_pass("S2", "Theme image validity and dimensions", f"All {len(EXPECTED_ASSETS)} PNG assets valid with exact WxH dimensions")
+
+# ---------------------------------------------------------------------------
+# S3: No PNG in graphics/plymouth-theme/ is unlisted in the table
+# ---------------------------------------------------------------------------
+actual_pngs = {p.name for p in theme_dir.glob("*.png")}
+unlisted = sorted(actual_pngs - set(EXPECTED_ASSETS.keys()))
+
+if unlisted:
+    check_fail("S3", "Unlisted PNG files", f"Found {len(unlisted)} unlisted PNG files: {unlisted}")
+else:
+    check_pass("S3", "Unlisted PNG files", f"No stray PNGs ({len(actual_pngs)} PNGs match table exactly)")
+
+# ---------------------------------------------------------------------------
+# S4: grub-script-check firmware/bios/grub.cfg passes, and the file loads a
+#     video module and sets gfxmode before the linux command.
+# ---------------------------------------------------------------------------
+grub_cfg = Path("firmware/bios/grub.cfg")
+if not grub_cfg.is_file():
+    check_fail("S4", "GRUB configuration check", f"Missing {grub_cfg}")
+else:
+    # Check grub-script-check command
+    gsc_found = any(os.access(os.path.join(path, "grub-script-check"), os.X_OK) for path in os.environ.get("PATH", "").split(os.pathsep))
+    if not gsc_found:
+        check_fail("S4", "GRUB configuration check", "grub-script-check is missing from PATH (do not fall back to text search)")
+    else:
+        r = subprocess.run(["grub-script-check", str(grub_cfg)], capture_output=True, text=True)
+        if r.returncode != 0:
+            check_fail("S4", "GRUB configuration syntax", f"grub-script-check failed: {r.stderr.strip()}")
+        else:
+            # Check for video module and gfxmode before linux command
+            lines = grub_cfg.read_text(encoding="utf-8").splitlines()
+            linux_idx = -1
+            video_mod_idx = -1
+            gfxmode_idx = -1
+
+            for idx, line in enumerate(lines):
+                line_stripped = line.strip()
+                if line_stripped.startswith("#"):
+                    continue
+                if "linux " in line_stripped and linux_idx == -1:
+                    linux_idx = idx
+                if ("insmod all_video" in line_stripped or "insmod vbe" in line_stripped) and video_mod_idx == -1:
+                    video_mod_idx = idx
+                if ("set gfxmode=" in line_stripped or "gfxmode=" in line_stripped) and gfxmode_idx == -1:
+                    gfxmode_idx = idx
+
+            s4_errors = []
+            if linux_idx == -1:
+                s4_errors.append("No 'linux' command found in grub.cfg")
+            if video_mod_idx == -1:
+                s4_errors.append("No video module loaded ('insmod all_video')")
+            elif linux_idx != -1 and video_mod_idx >= linux_idx:
+                s4_errors.append(f"Video module loaded at line {video_mod_idx+1} after linux command at line {linux_idx+1}")
+
+            if gfxmode_idx == -1:
+                s4_errors.append("No 'set gfxmode=' found")
+            elif linux_idx != -1 and gfxmode_idx >= linux_idx:
+                s4_errors.append(f"gfxmode set at line {gfxmode_idx+1} after linux command at line {linux_idx+1}")
+
+            if s4_errors:
+                check_fail("S4", "GRUB configuration structure", "; ".join(s4_errors))
+            else:
+                check_pass("S4", "GRUB configuration check", "grub-script-check passes; video module loaded and gfxmode set before linux")
+
+# ---------------------------------------------------------------------------
+# S5: debian/vintner-core.install installs theme files and plymouthd.conf to
+#     the paths above, and every source path it names exists.
+# ---------------------------------------------------------------------------
+install_file = Path("debian/vintner-core.install")
+if not install_file.is_file():
+    check_fail("S5", "Debian packaging rules", f"Missing {install_file}")
+else:
+    s5_errors = []
+    has_theme_install = False
+    has_plymouthd_install = False
+
+    for line_num, line in enumerate(install_file.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            s5_errors.append(f"Line {line_num}: Malformed install entry: {line}")
+            continue
+
+        src_pattern, dst_dir = parts[0], parts[1]
+        matches = glob.glob(src_pattern)
+        if not matches:
+            s5_errors.append(f"Line {line_num}: Source pattern {src_pattern!r} matches no files")
+
+        if "usr/share/plymouth/themes/vintner-bgrt" in dst_dir:
+            has_theme_install = True
+        if "etc/plymouth" in dst_dir and "plymouthd.conf" in src_pattern:
+            has_plymouthd_install = True
+
+    if not has_theme_install:
+        s5_errors.append("No rule installing to usr/share/plymouth/themes/vintner-bgrt/")
+    if not has_plymouthd_install:
+        s5_errors.append("No rule installing plymouthd.conf to etc/plymouth/")
+
+    if s5_errors:
+        check_fail("S5", "Debian packaging rules", "; ".join(s5_errors))
+    else:
+        check_pass("S5", "Debian packaging rules", "Theme assets and plymouthd.conf correctly mapped and all source files exist")
+
+# ---------------------------------------------------------------------------
+# S6: The initramfs hook is executable in git, has the right shebang, and sh -n passes.
+# ---------------------------------------------------------------------------
+hook_path = Path("integration/initramfs-hooks/plymouth-vintner")
+if not hook_path.is_file():
+    check_fail("S6", "Initramfs hook check", f"Missing {hook_path}")
+else:
+    s6_errors = []
+    # Check git executable bit
+    r = subprocess.run(["git", "ls-files", "-s", str(hook_path)], capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.startswith("100755"):
+        s6_errors.append(f"Git mode is not 100755 (got {r.stdout.strip()})")
+
+    # Check shebang
+    first_line = hook_path.read_text(encoding="utf-8").splitlines()[0].strip() if hook_path.stat().st_size > 0 else ""
+    if first_line != "#!/bin/sh":
+        s6_errors.append(f"Expected shebang '#!/bin/sh', got {first_line!r}")
+
+    # Check sh -n syntax
+    r_sh = subprocess.run(["sh", "-n", str(hook_path)], capture_output=True, text=True)
+    if r_sh.returncode != 0:
+        s6_errors.append(f"sh -n failed: {r_sh.stderr.strip()}")
+
+    if s6_errors:
+        check_fail("S6", "Initramfs hook validation", "; ".join(s6_errors))
+    else:
+        check_pass("S6", "Initramfs hook validation", "Executable mode 100755, '#!/bin/sh' shebang, and 'sh -n' syntax valid")
+
+print(f"\nVerification summary: {6 - failures}/6 checks passed.")
+if failures > 0:
+    sys.exit(1)
+EOF
+
+echo "All static Plymouth theme checks passed successfully."

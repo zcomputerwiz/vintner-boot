@@ -9,7 +9,7 @@ Modern UEFI platforms draw an OEM boot logo on screen during early firmware POST
 This theme implements the Plymouth `two-step` module configured for seamless BGRT preservation:
 1. **UEFI with BGRT:** When `/sys/firmware/acpi/bgrt/image` is available, Plymouth retains the OEM firmware logo directly from the framebuffer without flickering or redrawing, and positions the spinner animation at `VerticalAlignment=0.7` beneath the logo.
 2. **BIOS / Non-BGRT Fallback:** On SeaBIOS, legacy BIOS, or virtual machines where BGRT is absent, Plymouth loads `bgrt-fallback.png` and centers it at the golden ratio (vertical 38.2%), matching the standard UEFI/Microsoft boot logo geometry.
-3. **Password & Decryption Prompts:** Disk encryption (LUKS) passphrase prompts use `entry.png`, `lock.png`, `bullet.png`, and `capslock.png` without clearing the boot splash unless dialogs explicitly require it (`DialogClearsFirmwareBackground=true`).
+3. **Password & Decryption Prompts:** Disk encryption (LUKS) passphrase prompts use `entry.png`, `lock.png`, `bullet.png`, and `capslock.png`. For legibility against unknown OEM artwork, password prompts clear the firmware logo (`DialogClearsFirmwareBackground=true`); the splash returns afterwards.
 
 ## Files and Directory Layout
 
@@ -21,7 +21,6 @@ Target installation path on Debian systems: `/usr/share/plymouth/themes/vintner-
 | `bgrt-fallback.png` | Fallback boot logo (256x256 RGBA) when ACPI BGRT is unavailable |
 | `watermark.png` | Subtle branding watermark displayed at bottom center |
 | `animation-*.png` | Spinner animation sequence (frames 0001 to 0036) |
-| `throbber-*.png` | Alternative pulsing indicator frames (frames 0001 to 0030) |
 | `entry.png` | Password input box background |
 | `lock.png` | Encryption lock symbol for password prompts |
 | `bullet.png` | Password character mask bullet |
