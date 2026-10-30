@@ -132,6 +132,30 @@ func cmdBless(args []string) {
 		bootedGen = gen
 	}
 
+	// A booted image still STAGED was interrupted before it was fully published
+	// (for example BIOS never armed). Finish that now, or the GOOD mark below
+	// would hide it from reconciliation.
+	for _, img := range m.Images {
+		if img.Generation == bootedGen && img.State == "STAGED" {
+			v, err := state.Scan(*bootStorage)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "vintner bless: failed to scan boot storage: %v\n", err)
+				osExit(1)
+				return
+			}
+			actions, _ := state.Reconcile(m, v)
+			for _, a := range actions {
+				fmt.Printf("ACTION: %s\n", a)
+				if err := state.Apply(*bootStorage, a); err != nil {
+					fmt.Fprintf(os.Stderr, "vintner bless: %s failed: %v\n", a.Type, err)
+					osExit(1)
+					return
+				}
+			}
+			break
+		}
+	}
+
 	// Update manifest
 	foundRecord := false
 	for i := range m.Images {
