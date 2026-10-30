@@ -1,0 +1,3 @@
+graphics/plymouth-theme/vintner-bgrt.plymouth usr/share/plymouth/themes/vintner-bgrt/
+graphics/plymouth-theme/*.png usr/share/plymouth/themes/vintner-bgrt/
+integration/plymouth/plymouthd.conf etc/plymouth/

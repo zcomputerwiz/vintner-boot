@@ -1,0 +1,42 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+set -e
+
+PREREQ="plymouth"
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+# Leave initramfs unchanged on a system without plymouth installed, and exit 0.
+if ! command -v plymouth >/dev/null 2>&1 && [ ! -x /bin/plymouth ] && [ ! -x /usr/bin/plymouth ]; then
+	exit 0
+fi
+
+if [ ! -r /usr/share/initramfs-tools/hook-functions ]; then
+	exit 0
+fi
+
+. /usr/share/initramfs-tools/hook-functions
+
+# Include the theme directory in full
+THEME_DIR="/usr/share/plymouth/themes/vintner-bgrt"
+if [ -d "$THEME_DIR" ]; then
+	mkdir -p "${DESTDIR}${THEME_DIR}"
+	cp -a "${THEME_DIR}/." "${DESTDIR}${THEME_DIR}/"
+fi
+
+# Include early graphics drivers, tolerating missing modules
+for mod in simpledrm bochs bochs-drm virtio-gpu; do
+	manual_add_modules "$mod" 2>/dev/null || true
+done
+
+exit 0
