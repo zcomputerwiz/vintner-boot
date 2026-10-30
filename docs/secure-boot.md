@@ -1,0 +1,82 @@
+# Secure Boot design (WP-008, phase 4)
+
+Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Nothing here is implemented yet: `publish.Publish` refuses every `secure_boot_tier` except `none` (`src/internal/publish/publish.go`).
+
+## 1. Scope of the first slice
+
+**Tier A with a per-machine key in firmware `db`, no shim.** The reasons:
+
+- It is the only tier that can be tested completely in QEMU: `virt-fw-vars` writes the variable store, so no console interaction is needed (tier B needs a person in MokManager).
+- It exercises every piece that tiers B and C reuse: signing in the publisher, signature verification before publication, signed loader and recovery, fallback on a rejected image.
+- It matches decision D2 (per-machine keys, no shared site key).
+
+Out of scope for this slice, in this order of later work: tier B (shim and MOK), tier C (Type #1 entries under Debian's signed shim), the Microsoft CA 2011/2023 and SBAT/DBX rows (they need shim), dm-verity, TPM measurements and anti-rollback (D3).
+
+## 2. Chain of trust
+
+```text
+firmware db: machine certificate  ──trusts──►  systemd-boot (project-signed)
+                                  ──trusts──►  every UKI (project-signed)
+                                  ──trusts──►  recovery UKIs (project-signed)
+```
+
+- There is no shim in tier A. The firmware verifies the loader and, through `LoadImage()`, every UKI that systemd-boot starts, against `db`. Both use the same machine key, so one enrollment covers the whole chain.
+- **Loader.** `systemd-boot-efi` carries the unsigned binary (`systemd-bootx64.efi`). The installer signs it with the machine key (`sbsign`) and installs the signed copy. Debian's `systemd-boot-efi-amd64-signed` is signed by a Debian key that is not in `db`, so tier A does not use it. A platform update (loader payload) is signed with the same procedure before it replaces the old one, as §12 risk 8 requires.
+- **UKI.** `ukify build` signs the UKI itself (`--secureboot-private-key`, `--secureboot-certificate`, `--signtool=sbsign`). The signature covers the stub, kernel, initrd, command line and `.osrel` sections, so T4 (changed command line or initramfs) is closed in tier A. Signed addons and credentials stay out of scope (T6 forbids side-loaded files in v1).
+- **Recovery.** The installer signs the recovery UKIs with the machine key, at installation and at every recovery update (architecture §8, "Recovery freshness").
+- **Module signatures.** Unchanged: the per-build ephemeral kernel key stays inside each image (§6.1).
+
+## 3. Keys
+
+| Item | Decision |
+|---|---|
+| Key type | RSA 3072, SHA-256, X.509 v3 with a 20-year validity, subject `CN=vintner machine <installation_id>`. `db` ignores expiry (firmware has no trusted clock), so expiry is informational. |
+| Location | `/etc/vintner/secureboot/key.pem` (mode 0600, root) and `cert.pem` (0644). Never on the ESP, boot storage or recovery media (R11). |
+| Creation | `vintner secureboot init` at installation. It refuses to overwrite an existing key. |
+| Enrollment | Not done by the publisher. The installer enrolls `cert.pem` in `db` where firmware allows it (setup mode, or `efi-updatevar` with an authenticated variable) and otherwise writes the certificate to `/loader/keys/` for manual enrollment. In CI, `virt-fw-vars --add-db` writes it. |
+| Backup | Not stored by the project. Losing the key means re-enrolling a new certificate (documented rehearsal in WP-008). |
+
+## 4. Publisher changes
+
+1. **Tier gate.** `Publish` accepts tier `A`. Tier `B` and `C` stay refused until their slices exist.
+2. **Signing.** `RealUKIBuilder.Build` takes the key and certificate paths and passes the `ukify` signing options. `UKIRequest` gains `SecureBootKey` and `SecureBootCert`, both empty for tier `none`.
+3. **Verification before publication.** Step 10 gets one more check on the staged UKI: `sbverify --cert <cert.pem> <uki>` must succeed. This is the check that the state machine already names ("verified (hash, size, signature where the tier requires one)"). A failure is a failed publish: staging is removed by the next reconcile, nothing reaches `/EFI/Linux/`.
+4. **Manifest.** The record of each image gains `uefi.signed` (boolean, true in tier A) and the manifest a `signing` object with `cert_sha256`. The health service compares `cert_sha256` with the certificate on disk and reports a mismatch.
+5. **Fallback behaviour is unchanged.** A UKI that the firmware refuses to load makes systemd-boot return to the firmware menu or continue with the next entry (ADR-0003, finding 5). Option B of ADR-0003 already bumps the counter before loading, so a repeatedly refused image becomes bad and is skipped. The tests in §6 verify that this holds with a real Secure Boot refusal, not only with a missing file.
+
+## 5. Failure behaviour the design accepts
+
+| Event | Result |
+|---|---|
+| Newest UKI unsigned, or signed by another key, or modified | Firmware refuses it; systemd-boot ends on the next entry; the refused image's counter reaches 0 and the health service records `FAILED`. |
+| Every ordinary UKI refused | Recovery boots (§4.1 policy). |
+| Recovery UKI modified | It is refused like any other entry. If an ordinary image still boots, the machine boots; the health service reports the recovery image as invalid (new report). |
+| Loader modified or unsigned | The firmware refuses to start it and falls to its next boot option. No on-disk recovery helps (T11 residual risk); only external media does. |
+| Certificate removed from `db`, or `db` replaced | Nothing signed by it boots. Same as above; documented in the rehearsal. |
+| Certificate listed in `dbx` | Same as a refused image. Tested as the revocation row. |
+| Secure Boot off in firmware | The signatures are not checked. The health service reports `secure_boot=off` when the manifest says tier A (new report, read from `SecureBoot` and `SetupMode`). |
+
+## 6. Test plan (feeds WO-0009b)
+
+Run under OVMF with Secure Boot enforced (`OVMF_VARS_4M.fd` converted with `virt-fw-vars --set-pk` and `--add-db`, then `-global driver=cfi.pflash01,property=secure,value=on`). Each case is a QEMU run with serial capture; a check passes only on evidence from the serial log and the host's reads of boot storage.
+
+| ID | Setup | Expected |
+|---|---|---|
+| S0 | Signed loader and UKI; `db` holds the machine cert | Boots os-1; the kernel log shows Secure Boot enabled (`secureboot: Secure boot enabled`); bless marks os-1 `GOOD`. Control for every other row. |
+| S1 | Publish generation 2, then replace its UKI with an unsigned one | Boot 1 does not run os-2; os-1 boots; os-2 ends `FAILED`. |
+| S2 | Generation 2 signed by a second, unenrolled key | Same as S1. |
+| S3 | One byte flipped in generation 2's initrd section of a validly signed UKI | Same as S1. |
+| S4 | Modified recovery UKI, ordinary image intact | os-1 boots; the recovery image is reported invalid. |
+| S5 | Modified recovery UKI and every ordinary UKI refused | Machine does not boot an image. The expected result is recorded (no recovery available); it documents the limit of on-disk recovery. |
+| S6 | The machine cert's hash added to `dbx` | Nothing boots from disk. Recorded, as T11. |
+| S7 | Loader replaced by the unsigned Debian binary | Firmware refuses it; recorded, as T11. |
+| S8 | Publisher with a wrong key (the cert on disk does not match the key) | The publish fails at step 10; nothing is published; the previous image still boots. |
+| S9 | Secure Boot disabled in firmware, tier A in the manifest | Boots; the health service reports `secure_boot=off`. |
+
+S0 to S4 and S8 are blocking for phase 4. S5, S6, S7 and S9 record behaviour and are reported, not asserted against a bootable outcome.
+
+## 7. Open decisions
+
+1. **Loader signing at update time.** Who signs a loader update when the machine key is on the same root: the publisher's platform-update path (same trust as UKI signing, T3), or an offline step. This design takes the first for v1 and records the residual risk already in T3.
+2. **`db` enrollment on real hardware.** The first slice proves the chain in QEMU only. Real firmware needs the key in `db`, and many machines need setup mode for that. That belongs to the installer slice (WP-007) and to the hardware pilot list.
+3. **`sbsigntool` dependency.** `sbsign` and `sbverify` come from `sbsigntool` (Debian main). The package `vintner-core` gains a dependency on it, or the publisher falls back to `pesign`; this design picks `sbsigntool` because `ukify` supports it directly.
