@@ -2,7 +2,7 @@
 
 - **For:** the agent that delivered WO-0008 (`wo-0008`, commit `3406af9`). It needs a Linux environment with `sudo`, KVM, loop devices with partition scanning (`losetup -P`), Go 1.24 and outbound network access.
 - **Issued:** 2026-10-29
-- **Status:** ready.
+- **Status:** done. Delivered in #52; results in `ci/graphics/README.md`.
 - **Branch:** keep working on `wo-0008`. First merge `origin/main` into it with a merge commit, not a rebase; `main` carries this work order. Then open one pull request against `main`.
 
 ## Why
