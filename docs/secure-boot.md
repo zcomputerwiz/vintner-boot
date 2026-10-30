@@ -75,8 +75,8 @@ Run under OVMF with Secure Boot enforced (`OVMF_VARS_4M.fd` converted with `virt
 
 S0 to S4 and S8 are blocking for phase 4. S5, S6, S7 and S9 record behaviour and are reported, not asserted against a bootable outcome.
 
-## 7. Open decisions
+## 7. Decisions
 
-1. **Loader signing at update time.** Who signs a loader update when the machine key is on the same root: the publisher's platform-update path (same trust as UKI signing, T3), or an offline step. This design takes the first for v1 and records the residual risk already in T3.
-2. **`db` enrollment on real hardware.** The first slice proves the chain in QEMU only. Real firmware needs the key in `db`, and many machines need setup mode for that. That belongs to the installer slice (WP-007) and to the hardware pilot list.
-3. **`sbsigntool` dependency.** `sbsign` and `sbverify` come from `sbsigntool` (Debian main). The package `vintner-core` gains a dependency on it, or the publisher falls back to `pesign`; this design picks `sbsigntool` because `ukify` supports it directly.
+1. **Loader signing at update time (decided).** The machine key signs loader updates too, in the publisher's platform-update path. This has the same trust as UKI signing: root can read the key (T3), and the residual risk stays as T3 records it. An offline or hardware-backed step is a later, higher-assurance option.
+2. **`db` enrollment on real hardware (open).** The first slice proves the chain in QEMU only. Real firmware needs the key in `db`, and many machines need setup mode for that. That belongs to the installer slice (WP-007) and to the hardware pilot list.
+3. **Signing tool (decided): `sbsigntool`.** `sbsign` and `sbverify` are in Debian main, `ukify` supports them directly (`--signtool=sbsign`), and they are widely used for exactly this. `vintner-core` gains a dependency on `sbsigntool`. `pesign` is not used.
