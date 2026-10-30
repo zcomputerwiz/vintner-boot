@@ -524,19 +524,24 @@ def cmd_evaluate(args):
     has_gfx_markers = ("VINTNER-GFX-BEGIN" in boot_log) and ("VINTNER-GFX-END" in boot_log)
     has_vintner_report_end = ("=== VINTNER-REPORT-END ===" in boot_log)
     
-    # Match kernel warning from /dev/kmsg as a whole line
-    m_kmsg = re.search(r"^(\[[^\]]+\]\s*)?vintner-test-warning\s*$", boot_log, re.M)
-    has_kmsg_warning = bool(m_kmsg)
-    kmsg_line = m_kmsg.group(0).strip() if m_kmsg else ""
+    # Match kernel error (<3>) from /dev/kmsg as a whole line
+    m_kmsg_err = re.search(r"^(\[[^\]]+\]\s*)?vintner-test-error\s*$", boot_log, re.M)
+    has_kmsg_err = bool(m_kmsg_err)
+    kmsg_err_line = m_kmsg_err.group(0).strip() if m_kmsg_err else ""
 
-    if has_gfx_markers and has_vintner_report_end and has_kmsg_warning:
-        rows.append(("G2", fw, "PASS", f"matched whole line: {kmsg_line!r}, observed '=== VINTNER-REPORT-END ===' and GFX markers"))
+    # Check that warning (<4>) from /dev/kmsg is ABSENT (filtered by quiet console_loglevel=4)
+    m_kmsg_warn = re.search(r"^(\[[^\]]+\]\s*)?vintner-test-warning\s*$", boot_log, re.M)
+    has_kmsg_warn = bool(m_kmsg_warn)
+
+    if has_gfx_markers and has_vintner_report_end and has_kmsg_err and not has_kmsg_warn:
+        rows.append(("G2", fw, "PASS", f"matched whole line {kmsg_err_line!r}, level-4 warning absent, observed '=== VINTNER-REPORT-END ===' and GFX markers"))
     else:
-        missing = []
-        if not has_gfx_markers: missing.append("GFX markers")
-        if not has_vintner_report_end: missing.append("=== VINTNER-REPORT-END ===")
-        if not has_kmsg_warning: missing.append("whole-line vintner-test-warning")
-        rows.append(("G2", fw, "FAIL", f"missing serial output: {', '.join(missing)}"))
+        reasons = []
+        if not has_gfx_markers: reasons.append("missing GFX markers")
+        if not has_vintner_report_end: reasons.append("missing '=== VINTNER-REPORT-END ==='")
+        if not has_kmsg_err: reasons.append("missing whole-line vintner-test-error")
+        if has_kmsg_warn: reasons.append("level-4 warning unexpectedly present on serial console")
+        rows.append(("G2", fw, "FAIL", f"G2 failed: {', '.join(reasons)}"))
 
     # --- G3: lsinitramfs contents ---------------------------------------------
     initramfs_files = gfx_evidence.get("INITRAMFS_FILES", "")
@@ -751,10 +756,6 @@ def cmd_check_results(args):
             if cid == "G9":
                 if status != "OBSERVED":
                     errors.append(f"{cid} expected OBSERVED, got {status}")
-            elif cid == "G2":
-                # Review item 6: If quiet drops the line, G2 is a FAIL and a finding
-                if status not in ("PASS", "FAIL"):
-                    errors.append(f"{cid} expected PASS or FAIL, got {status}")
             else:
                 if status != "PASS":
                     errors.append(f"{cid} expected PASS, got {status}")

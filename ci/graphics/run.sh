@@ -170,7 +170,8 @@ if [ ! -f /usr/sbin/plymouthd ] && [ ! -f /sbin/plymouthd ]; then
 	exit 0
 fi
 
-# Emit warning message to kmsg for check G2 (no direct write to ttyS0)
+# Emit err (<3>) and warning (<4>) messages to kmsg for check G2 (no direct write to ttyS0)
+echo '<3>vintner-test-error' > /dev/kmsg
 echo '<4>vintner-test-warning' > /dev/kmsg
 
 # Signal that test splash unit is active and Plymouth is displayed
