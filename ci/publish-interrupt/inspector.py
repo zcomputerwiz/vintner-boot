@@ -128,8 +128,11 @@ def state_of(read, gen):
     img = (read.get("images") or {}).get(str(gen))
     return img.get("state") if img else "missing"
 
-def find_console_line(log_text, pattern_regex):
-    full_re = re.compile(r"^(?:\[\s*\d+\.\d+\]\s*)?(?:vintner\[\d+\]:\s*)?(?:(?:OPLOG:\s*)*(?:REPORT:\s*)?)?" + pattern_regex + r"$")
+def find_console_line(log_text, pattern_regex, presence=False):
+    if presence:
+        full_re = re.compile(r"^\[\s*\d+\.\d+\]\s*vintner\[\d+\]:\s*" + pattern_regex + r"$")
+    else:
+        full_re = re.compile(r"^(?:\[\s*\d+\.\d+\]\s*)?(?:vintner\[\d+\]:\s*)?(?:(?:OPLOG:\s*)*(?:REPORT:\s*)?)?" + pattern_regex + r"$")
     return [l for l in log_text.splitlines() if full_re.fullmatch(l.strip())]
 
 def quote_meta(s):
@@ -847,7 +850,7 @@ def evaluate_case(case, fw, out_dir, results_file):
 
     elif case == "T4":
         p_img = b1_read.get("images", {}).get(str(p))
-        arm_matches = find_console_line(b1_log, re.escape(f"ACTION: arm_bios generation {p}"))
+        arm_matches = find_console_line(b1_log, re.escape(f"ACTION: arm_bios generation {p}"), presence=True)
         if not arm_matches:
             p5_ok = False
             p5_ev.append(f"missing bless line 'ACTION: arm_bios generation {p}'")
@@ -1090,7 +1093,7 @@ def evaluate_case(case, fw, out_dir, results_file):
         else:
             p5_ev.append("VINTNER_T_1 absent")
 
-        r7_matches = find_console_line(b1_log, re.escape('generation 1 has BIOS counter ""'))
+        r7_matches = find_console_line(b1_log, re.escape('generation 1 has BIOS counter ""'), presence=True)
         if not r7_matches:
             p5_ok = False
             p5_ev.append('missing report: generation 1 has BIOS counter ""')
@@ -1103,12 +1106,12 @@ def evaluate_case(case, fw, out_dir, results_file):
         else:
             p5_ev.append("VINTNER_ORDER=['4', '3', '2']")
 
-        c4 = (grubenv or {}).get("VINTNER_T_4")
-        if c4 != "xxx":
+        c_p = (grubenv or {}).get(f"VINTNER_T_{p}")
+        if c_p != "xxx":
             p5_ok = False
-            p5_ev.append(f"VINTNER_T_4={c4}, expected xxx")
+            p5_ev.append(f"VINTNER_T_{p}={c_p}, expected xxx")
         else:
-            p5_ev.append("VINTNER_T_4=xxx")
+            p5_ev.append(f"VINTNER_T_{p}=xxx")
 
     elif case == "G3":
         p_img = b1_read.get("images", {}).get(str(p))
@@ -1145,7 +1148,7 @@ def evaluate_case(case, fw, out_dir, results_file):
         else:
             p5_ev.append("VINTNER_T_1 absent")
 
-        missing_matches = find_console_line(b1_log, re.escape("missing files for generation 1"))
+        missing_matches = find_console_line(b1_log, re.escape("missing files for generation 1"), presence=True)
         if not missing_matches:
             p5_ok = False
             p5_ev.append("missing report: missing files for generation 1")
@@ -1158,12 +1161,12 @@ def evaluate_case(case, fw, out_dir, results_file):
         else:
             p5_ev.append("VINTNER_ORDER=['4', '3', '2']")
 
-        c4 = (grubenv or {}).get("VINTNER_T_4")
-        if c4 != "xxx":
+        c_p = (grubenv or {}).get(f"VINTNER_T_{p}")
+        if c_p != "xxx":
             p5_ok = False
-            p5_ev.append(f"VINTNER_T_4={c4}, expected xxx")
+            p5_ev.append(f"VINTNER_T_{p}={c_p}, expected xxx")
         else:
-            p5_ev.append("VINTNER_T_4=xxx")
+            p5_ev.append(f"VINTNER_T_{p}=xxx")
 
     # Item 20 fsck.fat clean check after boot 1
     b1_fsck_path = f"{prefix}-read-boot1-fsck.txt"
