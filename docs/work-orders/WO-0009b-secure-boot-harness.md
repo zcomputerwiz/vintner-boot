@@ -3,8 +3,8 @@
 - **For:** the agent that delivers the Secure Boot test harness (`ci/secure-boot/`). It works from `docs/secure-boot.md` (design; read it first, §2, §4 and §6 in particular).
 - **Issued:** 2026-10-30
 - **Status:** open.
-- **Branch:** `wo-0009b`, from `origin/main` after the Secure Boot design PR is merged. If it is not merged yet, branch from `origin/claude/festive-tesla-9ekjn5` (it carries the design) and say so in the PR.
-- **Depends on:** WO-0009c (product: signing in the publisher). Until that lands, this work order builds the signing and verification steps inside the harness (see §3) and keeps them in one place so that they are replaced by the product commands later.
+- **Branch:** `wo-0009b`, from `origin/main` (the design is merged). Open a PR against `main`.
+- **Independent of** WO-0009c (product: signing in the publisher), which is developed in parallel. This work order builds the signing and verification steps inside the harness (see §3) and keeps them in one place so that they can be replaced by the product commands later.
 
 ## Why
 
