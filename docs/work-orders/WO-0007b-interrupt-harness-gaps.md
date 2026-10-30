@@ -2,7 +2,7 @@
 
 - **For:** the agent that delivered WO-0007 and WO-0007a (`ci/publish-interrupt/`).
 - **Issued:** 2026-10-30
-- **Status:** open.
+- **Status:** done. Delivered in #55 (product changes in the same merge); results in `ci/publish-interrupt/README.md`.
 - **Branch:** create `wo-0007b` from `origin/claude/festive-tesla-9ekjn5` (it carries the product change below). Open a PR against `main`. Do not rebase; merge `origin/main` with a merge commit if you need to.
 
 ## Why
