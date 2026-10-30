@@ -30,11 +30,31 @@ firmware db: machine certificate  ──trusts──►  systemd-boot (project-s
 
 | Item | Decision |
 |---|---|
-| Key type | RSA 3072, SHA-256, X.509 v3 with a 20-year validity, subject `CN=vintner machine <installation_id>`. `db` ignores expiry (firmware has no trusted clock), so expiry is informational. |
+| Key type | RSA 2048, SHA-256, X.509 v3, subject `CN=vintner machine <installation_id>`, code-signing extended key usage, 10-year validity (the `ukify genkey` default is 3650 days). RSA 2048 because the Debian wiki reports that shim failed on a 4096-bit key in MokList (2022); 2048 is also the size every firmware accepts. `db` ignores expiry (firmware has no trusted clock), so expiry is informational. |
 | Location | `/etc/vintner/secureboot/key.pem` (mode 0600, root) and `cert.pem` (0644). Never on the ESP, boot storage or recovery media (R11). |
-| Creation | `vintner secureboot init` at installation. It refuses to overwrite an existing key. |
-| Enrollment | Not done by the publisher. The installer enrolls `cert.pem` in `db` where firmware allows it (setup mode, or `efi-updatevar` with an authenticated variable) and otherwise writes the certificate to `/loader/keys/` for manual enrollment. In CI, `virt-fw-vars --add-db` writes it. |
+| Creation | `vintner secureboot init` at installation. It refuses to overwrite an existing key. It can call `ukify genkey` (it refuses existing output files, which gives the same guarantee) or `openssl`; either gives the key, a PEM certificate for `sbsign`/`sbverify`, and a DER copy for `mokutil`. |
+| Enrollment | Not done by the publisher. See §3.1. |
 | Backup | Not stored by the project. Losing the key means re-enrolling a new certificate (documented rehearsal in WP-008). |
+
+### 3.1 Enrollment: what existing implementations do
+
+Checked against the Debian trixie manual pages and the Debian wiki (2026-10-30).
+
+**Tier B, MOK (`mokutil` 0.7.2-1).**
+- `mokutil --import <cert.der>` stages an enrolling request for shim. The file must be DER. It asks for a one-time password (`--password`, or `--hash-file`, `--root-pw` and `--generate-hash` for scripted use); `--timeout` sets the MokManager prompt timeout; `--list-new` shows the pending request; `--test-key` and `--list-enrolled` check enrollment; `--sb-state` shows the Secure Boot state.
+- The request is confirmed only on the console at the next boot, in MokManager, with that password (Debian wiki: changes to the MOK "may only be confirmed directly from the console at boot time"). This is the one unavoidable manual step of tier B.
+- Debian's DKMS does exactly this for module signing: it creates `/var/lib/dkms/mok.key` and `mok.pub` on first build (or with `dkms generate_mok`; `mok_signing_key` and `mok_certificate` in `/etc/dkms/framework.conf` select other files), and the person enrolls `mok.pub` manually with `mokutil --import`. Debian does **not** ship Ubuntu's `update-secureboot-policy` (the `shim-signed` package in trixie contains only `shimx64.efi.signed`). Ubuntu keeps its key under `/var/lib/shim-signed/mok/`.
+- The wiki documents signing a kernel with `sbsign` and a MOK key, but says nothing about UKIs or about whether a MOK-trusted key is accepted for images that systemd-boot loads. That stays risk 1 in architecture §12 and the tier B test matrix.
+
+**Tier A, firmware `db` (systemd-boot `loader.conf`, `secure-boot-enroll`, since systemd 253).**
+- Key sets live under `/loader/keys/<NAME>/` on the ESP or boot storage, each with three authenticated UEFI variable files: `PK.auth`, `KEK.auth` and `db.auth`. They must be `.auth` files, not bare certificates (the manual page builds them with `sbsiglist` and `sbvarsign`; `efitools` and `sbctl` do the same job).
+- It acts only when the firmware is in setup mode. Values: `off`; `manual` (the loader adds boot entries for each key set and a person selects one to enroll); `if-safe` (as `manual`, and enrolls the set named `auto` automatically only when it considers that safe, which today means inside a virtual machine); `force` (always enrolls `auto`, with a warning and timeout when not known to be safe). The manual page warns that the feature "might soft-brick your device if used improperly" and states no default.
+- Consequences for us: in QEMU the harness enrolls with `virt-fw-vars` instead, so none of this is needed there. On real hardware `if-safe` does nothing, so the installer uses `manual` (a person picks the key set at the next boot) or `force` (unattended, with the warning screen). The first slice documents `manual` and records `force` as an option.
+- The key set must contain a PK, so enrolling it replaces the platform key. Whether the vendor's `KEK` and `db` entries (Microsoft's keys, which Windows and many option ROMs rely on) must be carried over is **not verified** here: the `sbctl` README does not say. Treat it as a hardware risk to settle in the pilot before any real-hardware claim: never enroll a set that drops the existing `db` entries on a machine that dual-boots Windows or needs vendor option ROMs.
+
+**Signing tools.**
+- `ukify build` signs with `--secureboot-private-key` and `--secureboot-certificate` and a `--signtool` of `sbsign` (the default), `pesign` or `systemd-sbsign`. `ukify genkey` creates a Secure Boot key and certificate (`--secureboot-certificate-validity` days, default 3650) and refuses to overwrite its outputs.
+- `sbsign` needs the private key and certificate in PEM. `sbverify --cert` checks a signature. These two come from `sbsigntool`.
 
 ## 4. Publisher changes
 
@@ -78,5 +98,5 @@ S0 to S4 and S8 are blocking for phase 4. S5, S6, S7 and S9 record behaviour and
 ## 7. Decisions
 
 1. **Loader signing at update time (decided).** The machine key signs loader updates too, in the publisher's platform-update path. This has the same trust as UKI signing: root can read the key (T3), and the residual risk stays as T3 records it. An offline or hardware-backed step is a later, higher-assurance option.
-2. **`db` enrollment on real hardware (open).** The first slice proves the chain in QEMU only. Real firmware needs the key in `db`, and many machines need setup mode for that. That belongs to the installer slice (WP-007) and to the hardware pilot list.
+2. **`db` enrollment on real hardware (open).** §3.1 records what systemd-boot offers. The first slice proves the chain in QEMU only. Real hardware needs the vendor-key question in §3.1 answered, and setup mode. That belongs to the installer slice (WP-007) and the hardware pilot list.
 3. **Signing tool (decided): `sbsigntool`.** `sbsign` and `sbverify` are in Debian main, `ukify` supports them directly (`--signtool=sbsign`), and they are widely used for exactly this. `vintner-core` gains a dependency on `sbsigntool`. `pesign` is not used.
