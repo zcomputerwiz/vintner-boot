@@ -187,13 +187,11 @@ func cmdBless(args []string) {
 	}
 
 	for _, a := range actions {
-		if a.Type == "remove_staging" {
-			p := filepath.Join(*bootStorage, "vintner", "staging", a.Name)
-			if err := os.RemoveAll(p); err != nil {
-				fmt.Fprintf(os.Stderr, "vintner bless: failed to remove %s: %v\n", p, err)
-				osExit(1)
-				return
-			}
+		fmt.Printf("ACTION: %s\n", a)
+		if err := state.Apply(*bootStorage, a); err != nil {
+			fmt.Fprintf(os.Stderr, "vintner bless: %s failed: %v\n", a.Type, err)
+			osExit(1)
+			return
 		}
 	}
 

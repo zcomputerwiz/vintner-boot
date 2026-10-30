@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
@@ -64,7 +65,7 @@ func TestReconcile(t *testing.T) {
 			images:   []manifest.Image{biosImg(43, "STAGED")},
 			v: &View{BIOSDirs: map[string]map[string]string{}, GrubEnv: env(),
 				Staging: []string{"os-43", "vintner-os-43.efi", "os-430", "vintner-os-430.efi"}},
-			wantActions: []Action{{"remove_staging", "vintner-os-43.efi"}, {"remove_staging", "os-43"}},
+			wantActions: []Action{{Type: "remove_staging", Name: "vintner-os-43.efi"}, {Type: "remove_staging", Name: "os-43"}},
 			wantStates:  []string{},
 		},
 		{
@@ -73,6 +74,24 @@ func TestReconcile(t *testing.T) {
 			images:      []manifest.Image{uefiImg(44, "STAGED")},
 			v:           &View{UEFIFiles: map[string]string{"vintner-os-44+3-0.efi": "other"}, Staging: []string{"vintner-os-44.efi"}},
 			wantReports: []string{"generation 44 is STAGED and in place but does not verify"},
+			wantStates:  []string{"STAGED"},
+		},
+		{
+			name:     "rule 1b: STAGED BIOS slot in place, never armed, is armed and becomes TRYING",
+			firmware: "bios",
+			images:   []manifest.Image{biosImg(46, "STAGED")},
+			v: &View{BIOSDirs: map[string]map[string]string{"os-46": biosSlot}, GrubEnv: env("VINTNER_ORDER", "1"),
+				Staging: []string{}},
+			wantActions: []Action{{Type: "arm_bios", Generation: 46, Tries: 3}},
+			wantStates:  []string{"TRYING"},
+		},
+		{
+			name:     "rule 1b: BIOS slot files that do not match the record are not armed",
+			firmware: "bios",
+			images:   []manifest.Image{biosImg(47, "STAGED")},
+			v: &View{BIOSDirs: map[string]map[string]string{"os-47": {"vmlinuz": "x", "initrd.img": "h2", "slot.cfg": "h3"}},
+				GrubEnv: env("VINTNER_ORDER", "1")},
+			wantReports: []string{"generation 47 is STAGED and in place but does not verify"},
 			wantStates:  []string{"STAGED"},
 		},
 		{
@@ -135,7 +154,7 @@ func TestReconcile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := &manifest.Manifest{Firmware: tt.firmware, Images: tt.images}
+			m := &manifest.Manifest{Firmware: tt.firmware, Tries: 3, Images: tt.images}
 			gotActions, gotReports := Reconcile(m, tt.v)
 			if len(gotActions)+len(tt.wantActions) > 0 && !reflect.DeepEqual(gotActions, tt.wantActions) {
 				t.Errorf("actions = %v, want %v", gotActions, tt.wantActions)
@@ -246,5 +265,33 @@ func TestKeep(t *testing.T) {
 				t.Errorf("overBudget = %v, want %v", over, tt.wantOverBudget)
 			}
 		})
+	}
+}
+
+func TestApplyArm(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "grub", "grubenv")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blank := "# GRUB Environment Block\n" + strings.Repeat("#", 1024-len("# GRUB Environment Block\n"))
+	if err := os.WriteFile(path, []byte(blank), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := grubenv.Write(path, env("VINTNER_ORDER", "1", "VINTNER_T_1", "xxx")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Apply(dir, Action{Type: "arm_bios", Generation: 2, Tries: 3}); err != nil {
+		t.Fatal(err)
+	}
+	e, err := grubenv.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o, _ := e.Get("VINTNER_ORDER"); o != "2 1" {
+		t.Errorf("VINTNER_ORDER = %q, want %q", o, "2 1")
+	}
+	if c, _ := e.Get("VINTNER_T_2"); c != "xxx" {
+		t.Errorf("VINTNER_T_2 = %q, want xxx", c)
 	}
 }

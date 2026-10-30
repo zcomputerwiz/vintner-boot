@@ -114,11 +114,43 @@ func StagingNames(g int) []string {
 	return []string{fmt.Sprintf("vintner-os-%d.efi", g), fmt.Sprintf("os-%d", g)}
 }
 
-// Action is a boot-storage change Reconcile asks for. The only kind is
-// removing a staging file or directory (rule 2).
+// Action is a boot-storage change Reconcile asks for: removing a staging file
+// or directory (rule 2), or finishing the BIOS arming of an image whose files
+// are in place (rule 1b).
 type Action struct {
-	Type string // "remove_staging"
-	Name string // name in /vintner/staging/
+	Type       string // "remove_staging" or "arm_bios"
+	Name       string // remove_staging: name in /vintner/staging/
+	Generation int    // arm_bios: the generation to arm
+	Tries      int    // arm_bios: counter length, the manifest's tries
+}
+
+// String renders a as "<type> <target>", the form the ACTION: lines use.
+func (a Action) String() string {
+	if a.Type == "arm_bios" {
+		return fmt.Sprintf("%s generation %d", a.Type, a.Generation)
+	}
+	return a.Type + " " + a.Name
+}
+
+// Apply carries out a. Arming writes VINTNER_T_<g> and prepends g to
+// VINTNER_ORDER in one grubenv write, as the publisher's step 11 does.
+func Apply(bootStorage string, a Action) error {
+	switch a.Type {
+	case "remove_staging":
+		return os.RemoveAll(filepath.Join(bootStorage, "vintner", "staging", a.Name))
+	case "arm_bios":
+		path := filepath.Join(bootStorage, "grub", "grubenv")
+		env, err := grubenv.Read(path)
+		if err != nil {
+			return fmt.Errorf("arm generation %d: %w", a.Generation, err)
+		}
+		g := strconv.Itoa(a.Generation)
+		env.Set("VINTNER_T_"+g, strings.Repeat("x", a.Tries))
+		order, _ := env.Get("VINTNER_ORDER")
+		env.Set("VINTNER_ORDER", strings.TrimSpace(g+" "+order))
+		return grubenv.Write(path, env)
+	}
+	return fmt.Errorf("unknown action %q", a.Type)
 }
 
 // uefiFile returns the file in /EFI/Linux/ for stem, with any counter.
@@ -134,7 +166,7 @@ func (v *View) uefiFile(stem string) (bls.Entry, string, bool) {
 // inPlace reports whether any and all of img's final files are present, and
 // whether all of them verify. For BIOS, verifying also needs the generation in
 // VINTNER_ORDER and a counter set, as the STAGED to TRYING transition writes.
-func (v *View) inPlace(img manifest.Image, uefi, bios bool) (anyPresent, allPresent, verifies bool) {
+func (v *View) inPlace(img manifest.Image, uefi, bios bool) (anyPresent, allPresent, verifies, filesVerify bool) {
 	allPresent, verifies = true, true
 	if uefi {
 		_, f, ok := v.uefiFile("vintner-os-" + strconv.Itoa(img.Generation))
@@ -146,13 +178,25 @@ func (v *View) inPlace(img manifest.Image, uefi, bios bool) (anyPresent, allPres
 		files, ok := v.BIOSDirs["os-"+strconv.Itoa(img.Generation)]
 		anyPresent = anyPresent || ok
 		allPresent = allPresent && ok
-		verifies = verifies && ok && img.BIOS != nil &&
+		biosFiles := ok && img.BIOS != nil &&
 			files["vmlinuz"] == img.BIOS.Files.Vmlinuz &&
 			files["initrd.img"] == img.BIOS.Files.InitrdImg &&
-			files["slot.cfg"] == img.BIOS.Files.SlotCfg &&
+			files["slot.cfg"] == img.BIOS.Files.SlotCfg
+		filesVerify = biosFiles
+		verifies = verifies && biosFiles &&
 			v.inOrder(img.Generation) && v.counter(img.Generation) != ""
 	}
-	return anyPresent, allPresent, verifies
+	return anyPresent, allPresent, verifies, filesVerify
+}
+
+// uefiVerifies reports whether img's UKI is in place and matches its record;
+// true when the manifest has no UEFI side.
+func (v *View) uefiVerifies(img manifest.Image, uefi bool) bool {
+	if !uefi {
+		return true
+	}
+	_, f, ok := v.uefiFile("vintner-os-" + strconv.Itoa(img.Generation))
+	return ok && img.UEFI != nil && v.UEFIFiles[f] == img.UEFI.SHA256
 }
 
 func (v *View) counter(g int) string {
@@ -176,7 +220,7 @@ func (v *View) inOrder(g int) bool {
 	return false
 }
 
-// Reconcile applies the five rules in schema/state-machine.md "Reconciliation"
+// Reconcile applies the rules in schema/state-machine.md "Reconciliation"
 // to m in memory. Where the rules are ambiguous it takes the safer reading and
 // reports instead of changing anything:
 //   - a STAGED record with some or all files in place that do not verify;
@@ -218,10 +262,15 @@ func Reconcile(m *manifest.Manifest, v *View) (actions []Action, reports []strin
 	images := []manifest.Image{}
 	for _, img := range m.Images {
 		g := img.Generation
-		anyPresent, allPresent, verifies := v.inPlace(img, uefi, bios)
+		armed := false
+		anyPresent, allPresent, verifies, biosFilesVerify := v.inPlace(img, uefi, bios)
 		switch {
 		case img.State == "STAGED" && verifies: // rule 1
 			img.State = "TRYING"
+		case img.State == "STAGED" && bios && biosFilesVerify && allPresent && v.GrubEnv != nil &&
+			!v.inOrder(g) && v.counter(g) == "" && v.uefiVerifies(img, uefi): // rule 1b
+			actions = append(actions, Action{Type: "arm_bios", Generation: g, Tries: m.Tries})
+			img.State, armed = "TRYING", true
 		case img.State == "STAGED" && !anyPresent: // rule 2
 			for _, s := range StagingNames(g) {
 				if staging[s] {
@@ -234,7 +283,7 @@ func Reconcile(m *manifest.Manifest, v *View) (actions []Action, reports []strin
 		case !allPresent: // rule 4
 			reports = append(reports, fmt.Sprintf("missing files for generation %d", g))
 		}
-		if img.State == "TRYING" || img.State == "GOOD" { // rule 5
+		if !armed && (img.State == "TRYING" || img.State == "GOOD") { // rule 5
 			if e, _, ok := v.uefiFile("vintner-os-" + strconv.Itoa(g)); uefi && ok && e.Bad() {
 				img.State = "FAILED"
 			}
