@@ -45,3 +45,13 @@ jobs:
       - run: go test -tags vintner_testpoints ./internal/testpoint/
       - name: Static build
         run: CGO_ENABLED=0 go build -o /dev/null ./cmd/vintner
+
+  graphics-theme:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends grub-common python3
+      - name: Verify Plymouth theme and assets
+        run: bash ci/graphics/test-plymouth-theme.sh
+
