@@ -38,10 +38,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: src/go.mod
+      - name: Install Secure Boot tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends sbsigntool systemd-ukify systemd-boot-efi
       - name: gofmt
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test -v ./...
       - run: go test -tags vintner_testpoints ./internal/testpoint/
       - name: Static build
         run: CGO_ENABLED=0 go build -o /dev/null ./cmd/vintner

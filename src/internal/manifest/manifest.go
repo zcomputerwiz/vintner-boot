@@ -29,6 +29,7 @@ type Manifest struct {
 	MachineID      string      `json:"machine_id"`
 	Firmware       string      `json:"firmware"`
 	SecureBootTier string      `json:"secure_boot_tier"`
+	Signing        *Signing    `json:"signing,omitempty"`
 	Root           Root        `json:"root"`
 	BootStorage    BootStorage `json:"boot_storage"`
 	Tries          int         `json:"tries"`
@@ -38,6 +39,10 @@ type Manifest struct {
 	Recovery       []Recovery  `json:"recovery"`
 
 	LoadedCopy string `json:"-"`
+}
+
+type Signing struct {
+	CertSHA256 string `json:"cert_sha256"`
 }
 
 type Root struct {
@@ -79,6 +84,7 @@ type UEFIFile struct {
 	Entry  string `json:"entry"`
 	SHA256 string `json:"sha256"`
 	Size   int    `json:"size"`
+	Signed bool   `json:"signed,omitempty"`
 }
 
 type BIOSFiles struct {
@@ -303,6 +309,21 @@ func (m *Manifest) Validate() error {
 	default:
 		return fmt.Errorf("invalid secure_boot_tier: %s", m.SecureBootTier)
 	}
+	if m.SecureBootTier == "A" {
+		if m.Firmware == "bios" {
+			return errors.New("tier A requires firmware uefi or both")
+		}
+		if m.Signing == nil {
+			return errors.New("tier A requires signing")
+		}
+		if !sha256Re.MatchString(m.Signing.CertSHA256) {
+			return fmt.Errorf("invalid cert_sha256 in signing: %q", m.Signing.CertSHA256)
+		}
+	} else if m.SecureBootTier == "none" {
+		if m.Signing != nil {
+			return errors.New("tier none must not have signing")
+		}
+	}
 	if !uuidRe.MatchString(m.Root.PartUUID) {
 		return fmt.Errorf("invalid root partuuid")
 	}
@@ -389,6 +410,12 @@ func (m *Manifest) Validate() error {
 
 		expectedStem := fmt.Sprintf("vintner-os-%d", img.Generation)
 		if img.UEFI != nil {
+			if m.SecureBootTier == "A" && !img.UEFI.Signed {
+				return fmt.Errorf("tier A requires uefi.signed to be true in image %d", i)
+			}
+			if m.SecureBootTier == "none" && img.UEFI.Signed {
+				return fmt.Errorf("tier none must not have uefi.signed in image %d", i)
+			}
 			if img.UEFI.Entry != expectedStem {
 				return fmt.Errorf("invalid uefi entry in image %d: expected %s", i, expectedStem)
 			}

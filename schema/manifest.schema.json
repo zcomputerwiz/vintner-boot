@@ -13,6 +13,14 @@
     "machine_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
     "firmware": {"enum": ["uefi", "bios", "both"]},
     "secure_boot_tier": {"enum": ["A", "B", "C", "none"]},
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cert_sha256"],
+      "properties": {
+        "cert_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "root": {
       "type": "object",
       "additionalProperties": false,
@@ -49,7 +57,8 @@
       "properties": {
         "entry": {"type": "string", "pattern": "^vintner-(os-[1-9][0-9]*|recovery-[ab])$"},
         "sha256": {"$ref": "#/$defs/sha256"},
-        "size": {"type": "integer", "minimum": 1}
+        "size": {"type": "integer", "minimum": 1},
+        "signed": {"type": "boolean"}
       }
     },
     "bios_files": {
