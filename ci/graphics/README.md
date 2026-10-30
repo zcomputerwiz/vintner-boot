@@ -54,14 +54,16 @@ Total active PNG assets: 44. See [ASSETS.md](../../graphics/plymouth-theme/ASSET
 
 ## Results: UEFI (`graphics-uefi`)
 
+Results observed in CI run [41077296429](https://github.com/zcomputerwiz/vintner-boot/actions/runs/41077296429) (commit `c79f592`). Per-run values such as PARTUUIDs, timestamps, and message offsets differ on every run.
+
 | ID | Check | Status | Evidence |
 |---|---|---|---|
 | G0 | Preparation exit and generation sequencing | PASS | prep exit 0, splash booted os-2; ctrl-prep exit 0, control booted os-3 |
-| G1 | Command line tokens | PASS | tokens in order; cmdline: root=UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a ro vintner.bootstorage=PARTUUID=6a97ff75-8425-425f-94fe-24161ca45432 quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log console=ttyS0,115200 |
-| G2 | Serial output with quiet | PASS | matched whole line '[    4.383360] vintner-test-error', level-4 warning absent, observed '=== VINTNER-REPORT-END ===' and GFX markers |
+| G1 | Command line tokens | PASS | tokens in order; cmdline: root=UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a ro vintner.bootstorage=PARTUUID=290fc718-da7d-40fc-87ca-2f786212099e quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log console=ttyS0,115200 |
+| G2 | Serial output with quiet | PASS | matched whole line '[    4.201496] vintner-test-error', level-4 warning absent, observed '=== VINTNER-REPORT-END ===' and GFX markers |
 | G3 | lsinitramfs contents | PASS | booted initrd.img-6.12.113+deb13-amd64 contains 44/44 theme assets; verified kernel drivers (bochs, virtio-gpu) in initramfs |
 | G4 | plymouthd.conf & default theme | PASS | theme=vintner-bgrt; guest plymouthd.conf sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 matches host sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 |
-| G5 | plymouthd status & debug log | PASS | plymouthd running; loaded theme path verified with 0 load errors; matched: '00:00:01.363 ../src/main.c:292:get_theme_path                              : Theme is /usr/share/plymouth/themes//vintner-bgrt/vintner-bgrt.plymouth' |
+| G5 | plymouthd status & debug log | PASS | plymouthd running; loaded theme path verified with 0 load errors; matched: '00:00:01.433 ../src/main.c:292:get_theme_path                              : Theme is /usr/share/plymouth/themes//vintner-bgrt/vintner-bgrt.plymouth' |
 | G6 | Screendump non-blank & resolution | PASS | screendump 1280x800 matches FB_VIRTUAL_SIZE (1280x800); total non-black: 1.09%, logo area non-black: 16.53% |
 | G7-control | Solid red logo control run | PASS | control red MAD=0.33 <= 5.00 (matches solid red); control ref MAD=88.77 > threshold 5.33 (derived: red MAD 0.33 + margin 5.00) |
 | G7 | Fallback logo MAD golden ratio | PASS | fallback logo at (512,178) (38.2% height): active MAD=2.32 <= threshold 5.33 (derived from control: 0.33 + 5.00) |
@@ -69,18 +71,20 @@ Total active PNG assets: 44. See [ASSETS.md](../../graphics/plymouth-theme/ASSET
 
 ## Results: BIOS (`graphics-bios`)
 
+Results observed in CI run [41077296429](https://github.com/zcomputerwiz/vintner-boot/actions/runs/41077296429) (commit `c79f592`). Per-run values such as PARTUUIDs, timestamps, and message offsets differ on every run.
+
 | ID | Check | Status | Evidence |
 |---|---|---|---|
 | G0 | Preparation exit and generation sequencing | PASS | prep exit 0, splash booted os-2; ctrl-prep exit 0, control booted os-3 |
-| G1 | Command line tokens | PASS | tokens in order; cmdline: BOOT_IMAGE=/vintner/bios/os-2/vmlinuz root=UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a ro vintner.bootstorage=PARTUUID=61ddb42e-9320-4b4f-9ae9-4af4696b4c26 quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log console=ttyS0,115200 |
-| G2 | Serial output with quiet | PASS | matched whole line '[    4.321259] vintner-test-error', level-4 warning absent, observed '=== VINTNER-REPORT-END ===' and GFX markers |
+| G1 | Command line tokens | PASS | tokens in order; cmdline: BOOT_IMAGE=/vintner/bios/os-2/vmlinuz root=UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a ro vintner.bootstorage=PARTUUID=839c57e5-2106-47af-bb28-3da789a30761 quiet splash vt.global_cursor_default=0 bgrt_disable plymouth.ignore-serial-consoles plymouth.debug=stream:/run/plymouth-debug.log console=ttyS0,115200 |
+| G2 | Serial output with quiet | PASS | matched whole line '[    4.650057] vintner-test-error', level-4 warning absent, observed '=== VINTNER-REPORT-END ===' and GFX markers |
 | G3 | lsinitramfs contents | PASS | booted initrd.img-6.12.113+deb13-amd64 contains 44/44 theme assets; verified kernel drivers (bochs, virtio-gpu) in initramfs |
 | G4 | plymouthd.conf & default theme | PASS | theme=vintner-bgrt; guest plymouthd.conf sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 matches host sha256 df7a1455cacff776d47b56ea9bed44f23cbc3d28c5620c88ef15859af145a9d0 |
-| G5 | plymouthd status & debug log | PASS | plymouthd running; loaded theme path verified with 0 load errors; matched: '00:00:01.393 ../src/main.c:292:get_theme_path                              : Theme is /usr/share/plymouth/themes//vintner-bgrt/vintner-bgrt.plymouth' |
+| G5 | plymouthd status & debug log | PASS | plymouthd running; loaded theme path verified with 0 load errors; matched: '00:00:01.595 ../src/main.c:292:get_theme_path                              : Theme is /usr/share/plymouth/themes//vintner-bgrt/vintner-bgrt.plymouth' |
 | G6 | Screendump non-blank & resolution | PASS | screendump 1280x800 matches FB_VIRTUAL_SIZE (1280x800); total non-black: 1.09%, logo area non-black: 16.53% |
 | G7-control | Solid red logo control run | PASS | control red MAD=0.33 <= 5.00 (matches solid red); control ref MAD=88.77 > threshold 5.33 (derived: red MAD 0.33 + margin 5.00) |
 | G7 | Fallback logo MAD golden ratio | PASS | fallback logo at (512,178) (38.2% height): active MAD=2.32 <= threshold 5.33 (derived from control: 0.33 + 5.00) |
-| G8 | Linear framebuffer handoff | PASS | fb0 name=bochs-drmdrmfb, virtual_size=1280,800; kernel config: CONFIG_DRM=m;CONFIG_DRM_MIPI_DSI=y;CONFIG_DRM_KMS_HELPER=m;CONFIG_DRM_CLIENT_SELECTION=y;CONFIG_DRM_CLIENT_SETUP=y;CONFIG_DRM_FBDEV_EMULATION=y;CONFIG_DRM_FBDEV_OVERALLOC=100;CONFIG_DRM_LOAD_EDID_FIRMWARE=y;CONFIG_DRM_DISPLAY_HELPER=m;CONFIG_DRM_DISPLAY_DP_AUX_CEC=y;CONFIG_DRM_DISPLAY_DP_AUX_CHARDEV=y;CONFIG_DRM_DISPLAY_DP_HELPER=y;CONFIG_DRM_DISPLAY_DP_TUNNEL=y;CONFIG_DRM_DISPLAY_HDCP_HELPER=y;CONFIG_DRM_DISPLAY_HDMI_HELPER=y;CONFIG_DRM_TTM=m;CONFIG_DRM_EXEC=m;CONFIG_DRM_GPUVM=m;CONFIG_DRM_BUDDY=m;CONFIG_DRM_VRAM_HELPER=m;CONFIG_DRM_TTM_HELPER=m;CONFIG_DRM_GEM_SHMEM_HELPER=m;CONFIG_DRM_SUBALLOC_HELPER=m;CONFIG_DRM_SCHED=m;CONFIG_DRM_I2C_CH7006=m;CONFIG_DRM_I2C_SIL164=m;CONFIG_DRM_RADEON=m;CONFIG_DRM_AMDGPU=m;CONFIG_DRM_AMDGPU_SI=y;CONFIG_DRM_AMDGPU_CIK=y;CONFIG_DRM_AMDGPU_USERPTR=y;CONFIG_DRM_AMD_ACP=y;CONFIG_DRM_AMD_DC=y;CONFIG_DRM_AMD_DC_FP=y;CONFIG_DRM_AMD_DC_SI=y;CONFIG_DRM_NOUVEAU=m;CONFIG_DRM_NOUVEAU_BACKLIGHT=y;CONFIG_DRM_NOUVEAU_GSP_DEFAULT=y;CONFIG_DRM_I915=m;CONFIG_DRM_I915_FORCE_PROBE="";CONFIG_DRM_I915_CAPTURE_ERROR=y;CONFIG_DRM_I915_COMPRESS_ERROR=y;CONFIG_DRM_I915_USERPTR=y;CONFIG_DRM_I915_GVT_KVMGT=m;CONFIG_DRM_I915_PXP=y;CONFIG_DRM_I915_DP_TUNNEL=y;CONFIG_DRM_I915_REQUEST_TIMEOUT=20000;CONFIG_DRM_I915_FENCE_TIMEOUT=10000;CONFIG_DRM_I915_USERFAULT_AUTOSUSPEND=250;CONFIG_DRM_I915_HEARTBEAT_INTERVAL=2500;CONFIG_DRM_I915_PREEMPT_TIMEOUT=640;CONFIG_DRM_I915_PREEMPT_TIMEOUT_COMPUTE=7500;CONFIG_DRM_I915_MAX_REQUEST_BUSYWAIT=8000;CONFIG_DRM_I915_STOP_TIMEOUT=100;CONFIG_DRM_I915_TIMESLICE_DURATION=1;CONFIG_DRM_I915_GVT=y;CONFIG_DRM_XE=m;CONFIG_DRM_XE_DISPLAY=y;CONFIG_DRM_XE_FORCE_PROBE="";CONFIG_DRM_XE_JOB_TIMEOUT_MAX=10000;CONFIG_DRM_XE_JOB_TIMEOUT_MIN=1;CONFIG_DRM_XE_TIMESLICE_MAX=10000000;CONFIG_DRM_XE_TIMESLICE_MIN=1;CONFIG_DRM_XE_PREEMPT_TIMEOUT=640000;CONFIG_DRM_XE_PREEMPT_TIMEOUT_MAX=10000000;CONFIG_DRM_XE_PREEMPT_TIMEOUT_MIN=1;CONFIG_DRM_XE_ENABLE_SCHEDTIMEOUT_LIMIT=y;CONFIG_DRM_VGEM=m;CONFIG_DRM_VMWGFX=m;CONFIG_DRM_GMA500=m;CONFIG_DRM_UDL=m;CONFIG_DRM_AST=m;CONFIG_DRM_MGAG200=m;CONFIG_DRM_QXL=m;CONFIG_DRM_VIRTIO_GPU=m;CONFIG_DRM_VIRTIO_GPU_KMS=y;CONFIG_DRM_PANEL=y;CONFIG_DRM_BRIDGE=y;CONFIG_DRM_PANEL_BRIDGE=y;CONFIG_DRM_BOCHS=m;CONFIG_DRM_CIRRUS_QEMU=m;CONFIG_DRM_XEN=y;CONFIG_DRM_XEN_FRONTEND=m;CONFIG_DRM_VBOXVIDEO=m;CONFIG_DRM_HYPERV=m;CONFIG_DRM_PRIVACY_SCREEN=y;CONFIG_DRM_PANEL_ORIENTATION_QUIRKS=y;CONFIG_FB_VESA=y;CONFIG_FB_SIMPLE=y;CONFIG_DRM_ACCEL=y;CONFIG_DRM_ACCEL_HABANALABS=m;CONFIG_DRM_ACCEL_IVPU=m; |
+| G8 | Linear framebuffer handoff | PASS | fb0 name=bochs-drmdrmfb, virtual_size=1280,800; kernel config: CONFIG_FB_VESA=y;CONFIG_FB_SIMPLE=y;CONFIG_DRM=m;CONFIG_DRM_BOCHS=m;CONFIG_DRM_VIRTIO_GPU=m |
 
 ## BIOS Framebuffer Comparison (G8 Before & After)
 
