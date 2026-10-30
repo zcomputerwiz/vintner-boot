@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
@@ -401,10 +402,9 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		fmt.Fprintln(stderr, "REPORT:", r)
 	}
 	for _, a := range actions {
-		fmt.Fprintf(stdout, "ACTION: %s %s\n", a.Type, a.Name)
-		if a.Type == "remove_staging" {
-			p := filepath.Join(bootStorageDir, "vintner", "staging", a.Name)
-			_ = os.RemoveAll(p)
+		fmt.Fprintf(stdout, "ACTION: %s\n", a)
+		if err := state.Apply(bootStorageDir, a); err != nil {
+			return nil, fmt.Errorf("reconcile action %s: %w", a.Type, err)
 		}
 	}
 	if len(actions) > 0 || len(reports) > 0 {
@@ -908,20 +908,11 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 	isUEFI := (m.Firmware == "uefi" || m.Firmware == "both")
 	grubenvPath := filepath.Join(bootStorageDir, "grub", "grubenv")
 
+	// Each step leaves boot storage consistent if the power fails after it, and
+	// a later publish repeats the whole removal: the record goes last, so an
+	// interrupted removal is still a removal candidate.
 	for _, remGen := range remove {
-		// 1. remove its record (Save)
-		for idx, im := range m.Images {
-			if im.Generation == remGen {
-				m.Images = append(m.Images[:idx], m.Images[idx+1:]...)
-				break
-			}
-		}
-		if err := manifest.Save(stateDir, m); err != nil {
-			return nil, fmt.Errorf("save manifest gc: %w", err)
-		}
-		testpoint.Hit("gc-record-removed")
-
-		// 2. on BIOS, remove from VINTNER_ORDER and unset counter in one grubenv write
+		// 1. on BIOS, remove from VINTNER_ORDER and unset the counter in one grubenv write
 		if isBIOS {
 			env, err := grubenv.Read(grubenvPath)
 			if err != nil {
@@ -943,18 +934,36 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 			testpoint.Hit("gc-grubenv-written")
 		}
 
-		// 3. remove its BIOS directory and its UKI (found by stem with bls.Find)
+		// 2. remove its BIOS directory and its UKI (found by stem with bls.Find)
 		if isBIOS {
 			biosSlotDir := filepath.Join(bootStorageDir, "vintner", "bios", fmt.Sprintf("os-%d", remGen))
-			_ = os.RemoveAll(biosSlotDir)
+			if err := os.RemoveAll(biosSlotDir); err != nil {
+				return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, biosSlotDir, err)
+			}
 		}
 		if isUEFI {
 			efiDir := filepath.Join(bootStorageDir, "EFI", "Linux")
 			stem := fmt.Sprintf("vintner-os-%d", remGen)
 			if ukiFile, err := bls.Find(efiDir, stem); err == nil {
-				_ = os.Remove(filepath.Join(efiDir, ukiFile))
+				if err := os.Remove(filepath.Join(efiDir, ukiFile)); err != nil {
+					return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, ukiFile, err)
+				}
 			}
 		}
+		syscall.Sync() // vfat: make the removals durable before the record goes
+		testpoint.Hit("gc-files-removed")
+
+		// 3. remove its record (Save)
+		for idx, im := range m.Images {
+			if im.Generation == remGen {
+				m.Images = append(m.Images[:idx], m.Images[idx+1:]...)
+				break
+			}
+		}
+		if err := manifest.Save(stateDir, m); err != nil {
+			return nil, fmt.Errorf("save manifest gc: %w", err)
+		}
+		testpoint.Hit("gc-record-removed")
 		fmt.Fprintf(stdout, "vintner publish: removed generation %d\n", remGen)
 	}
 

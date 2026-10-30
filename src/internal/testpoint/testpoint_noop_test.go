@@ -18,8 +18,9 @@ func TestHitDefaultBuild(t *testing.T) {
 		"renamed",
 		"grubenv-written",
 		"trying-recorded",
-		"gc-record-removed",
 		"gc-grubenv-written",
+		"gc-files-removed",
+		"gc-record-removed",
 		"manifest-written",
 	}
 

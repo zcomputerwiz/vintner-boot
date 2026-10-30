@@ -820,3 +820,71 @@ func TestBlessReconcileErrorDoesNotUndoRearm(t *testing.T) {
 		t.Errorf("expected os-1 state GOOD, got %s", img1.State)
 	}
 }
+
+// A UEFI boot of an image whose BIOS side was never armed (power cut between
+// the slot rename and the grubenv write) must arm it before marking it GOOD.
+func TestBlessUEFIArmsStagedBIOSSide(t *testing.T) {
+	uki := []byte("os2-uki")
+	files := map[string][]byte{"vmlinuz": []byte("k"), "initrd.img": []byte("i"), "slot.cfg": []byte("c")}
+	m := newTestManifest("both", []manifest.Image{{
+		Generation: 2,
+		State:      "STAGED",
+		Kernel:     manifest.Kernel{ABI: "6.12.0-1"},
+		Created:    "2026-10-16T00:00:00Z",
+		Cmdline:    "console=ttyS0",
+		UEFI:       &manifest.UEFIFile{Entry: "vintner-os-2", SHA256: calcSHA256(uki), Size: len(uki)},
+		BIOS: &manifest.BIOSFiles{Dir: "/vintner/bios/os-2", Files: manifest.BIOSFilesMap{
+			Vmlinuz: calcSHA256(files["vmlinuz"]), InitrdImg: calcSHA256(files["initrd.img"]), SlotCfg: calcSHA256(files["slot.cfg"])}},
+	}})
+	m.NextGeneration = 3
+	h := strings.Repeat("0", 64)
+	m.Recovery = []manifest.Recovery{{
+		Slot: "a", Version: "1",
+		UEFI: &manifest.UEFIFile{Entry: "vintner-recovery-a", SHA256: h, Size: 100},
+		BIOS: &manifest.BIOSFiles{Dir: "/vintner/bios/recovery-a", Files: manifest.BIOSFilesMap{Vmlinuz: h, InitrdImg: h, SlotCfg: h}},
+	}}
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	bootStorage, efivarsDir := setupTestEnv(t, true, m)
+	stateDir := filepath.Join(bootStorage, "vintner", "state")
+
+	efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+	if err := os.WriteFile(filepath.Join(efiDir, "vintner-os-2+3-0.efi"), uki, 0644); err != nil {
+		t.Fatal(err)
+	}
+	slot := filepath.Join(bootStorage, "vintner", "bios", "os-2")
+	os.MkdirAll(slot, 0755)
+	for n, d := range files {
+		if err := os.WriteFile(filepath.Join(slot, n), d, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.MkdirAll(filepath.Join(bootStorage, "grub"), 0755)
+	envPath := filepath.Join(bootStorage, "grub", "grubenv")
+	os.WriteFile(envPath, bytes.Repeat([]byte{'#'}, 1024), 0644)
+	env := &grubenv.Env{}
+	env.Set("VINTNER_ORDER", "1")
+	if err := grubenv.Write(envPath, env); err != nil {
+		t.Fatal(err)
+	}
+	efivar.SetString(efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo, 0, "\\EFI\\Linux\\vintner-os-2+3-0.efi")
+
+	out := blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+	if !hasLine(out, "ACTION: arm_bios generation 2") {
+		t.Errorf("missing arm action in output: %q", out)
+	}
+	got, err := grubenv.Read(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o, _ := got.Get("VINTNER_ORDER"); o != "2 1" {
+		t.Errorf("VINTNER_ORDER = %q, want %q", o, "2 1")
+	}
+	if c, _ := got.Get("VINTNER_T_2"); c != "xxx" {
+		t.Errorf("VINTNER_T_2 = %q, want xxx", c)
+	}
+	if s := getManifestGen(t, stateDir, 2).State; s != "GOOD" {
+		t.Errorf("state = %s, want GOOD", s)
+	}
+}

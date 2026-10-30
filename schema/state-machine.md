@@ -22,7 +22,7 @@ This document defines the states of an ordinary boot image and the transitions b
 | `TRYING`, `GOOD` | `GOOD` | `boot-complete.target` reached on a boot of this image | Re-arm the counter to `tries` (rename to `+<tries>-0`, or set `VINTNER_T_<g>`). Then the manifest: `state`, `first_good` if unset, and `last_good` |
 | `TRYING`, `GOOD` | `FAILED` | Counter seen at zero | Manifest only |
 | `FAILED` | `TRYING` | Operator runs `vintner image rearm <g>` | Counter set to `tries`; manifest |
-| any | (removed) | Garbage collection (below) | Manifest first, then the files |
+| any | (removed) | Garbage collection (below) | BIOS: `grubenv` first (one write unsets the counter and drops the generation from `VINTNER_ORDER`). Then the files, made durable. The record last |
 
 The boot loader decrements the counter itself on every boot of a counted image. Userspace never decrements.
 
@@ -31,6 +31,7 @@ The boot loader decrements the counter itself on every boot of a counted image. 
 The publisher and the health service compare the manifest with boot storage before they do anything else, and repair what an interrupted run left behind:
 
 - **A `STAGED` record whose file is in its final place and verifies** becomes `TRYING`.
+- **A `STAGED` BIOS record whose slot files are in place and match the record, with the generation neither in `VINTNER_ORDER` nor holding a counter** was interrupted between the rename and the `grubenv` write. Reconciliation finishes the transition: one `grubenv` write sets `VINTNER_T_<g>` and prepends `g` to `VINTNER_ORDER`; then the record becomes `TRYING`. With firmware `both`, the UKI must also be in place and match.
 - **A `STAGED` record whose file is not in its final place** has its staging file and record removed.
 - **A file in `/EFI/Linux/` or `/vintner/bios/` that matches `vintner-os-*` but has no record** is reported and left alone (threat model T5).
 - **A record whose file is missing** is reported. It is removed from the manifest only by garbage collection or an operator command.
@@ -42,7 +43,7 @@ Staging names: generation `g` stages its UKI as `/vintner/staging/vintner-os-<g>
 
 ## Garbage collection
 
-Garbage collection runs after a successful publish and never touches recovery images. It keeps:
+Garbage collection runs after a successful publish and never touches recovery images. It removes one image at a time in this order: BIOS `grubenv`, then the image's files (made durable), then its manifest record. A power cut leaves the record in place until the files are gone, so the next publish selects the same image again and finishes the job; no file is left without a record. It keeps:
 
 1. the newest `GOOD` image that is not `stale`;
 2. the newest `GOOD` image whose ABI differs from that of image 1, so that a module tree changed in place under one ABI cannot remove every fallback (architecture §6.1);

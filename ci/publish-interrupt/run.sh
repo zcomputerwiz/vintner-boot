@@ -74,6 +74,26 @@ if ! grep -a -q -F "VINTNER_TEST_INTERRUPT" "$TAGGED_BIN" || ! grep -a -q -F "vi
 	echo "FAIL: tagged binary missing testpoint strings!" >&2
 	exit 1
 fi
+
+TESTPOINT_NAMES=(
+	"staged-recorded"
+	"staging-written"
+	"staging-verified"
+	"renamed"
+	"grubenv-written"
+	"trying-recorded"
+	"gc-grubenv-written"
+	"gc-files-removed"
+	"gc-record-removed"
+	"manifest-written"
+)
+for tp in "${TESTPOINT_NAMES[@]}"; do
+	if grep -a -q -F "$tp" "$DEFAULT_BIN"; then
+		echo "FAIL: default binary contains testpoint name '$tp'!" >&2
+		exit 1
+	fi
+done
+
 echo "Pre-check passed: default build contains no testpoint strings, tagged build contains both."
 
 # read_disk <disk> <prefix>
@@ -252,7 +272,7 @@ DUMMY_SEED=$(make_seed "dummy-boot" "true")
 
 # --- 4. Cases Execution (§3) -------------------------------------------------
 
-CASES=("C0" "T1" "T2" "T3" "T4" "T5" "T6" "M1" "M2" "G1" "G2")
+CASES=("C0" "T1" "T2" "T3" "T4" "T5" "T6" "M1" "M2" "G1" "G2" "G3")
 
 for CASE in "${CASES[@]}"; do
 	echo "=================================================================="
@@ -262,7 +282,7 @@ for CASE in "${CASES[@]}"; do
 	CASE_DISK="$OUT/${CASE}.raw"
 	CASE_VARS=""
 
-	if [ "$CASE" = "G1" ] || [ "$CASE" = "G2" ]; then
+	if [ "$CASE" = "G1" ] || [ "$CASE" = "G2" ] || [ "$CASE" = "G3" ]; then
 		cp --sparse=always "$GC_PREPARED_RAW" "$CASE_DISK"
 		if [ "$FIRMWARE" = "uefi" ]; then
 			CASE_VARS="$OUT/${CASE}-vars.fd"
@@ -293,6 +313,7 @@ for CASE in "${CASES[@]}"; do
 		M2) TESTPOINT="manifest-written#2" ;;
 		G1) TESTPOINT="gc-record-removed" ;;
 		G2) TESTPOINT="gc-grubenv-written" ;;
+		G3) TESTPOINT="gc-files-removed" ;;
 	esac
 
 	# Step 1: Operation Boot
@@ -367,6 +388,14 @@ EOF
 
 	read_disk "$CASE_DISK" "${CASE}-read-op"
 
+	if [ "$CASE" = "T4" ]; then
+		echo "=== Extra evidence for T4 (after operation boot) ==="
+		echo "--- T4 grubenv lines (after op boot) ---"
+		cat "$OUT/T4-read-op-grubenv.txt" 2>/dev/null || true
+		echo "--- T4 manifest image 2 (after op boot) ---"
+		python3 -c "import json; d=json.load(open('$OUT/T4-read-op.json')); print(json.dumps(d.get('images', {}).get('2'), indent=2))" 2>/dev/null || true
+	fi
+
 	# Step 2: Boot 1
 	echo "[$CASE] Step 2: Boot 1..."
 	python3 ci/publish-interrupt/inspector.py run-boot \
@@ -382,6 +411,14 @@ EOF
 		--meta-out "$OUT/${CASE}-boot1-meta.json"
 
 	read_disk "$CASE_DISK" "${CASE}-read-boot1"
+
+	if [ "$CASE" = "T4" ]; then
+		echo "=== Extra evidence for T4 (after boot 1) ==="
+		echo "--- T4 grubenv lines (after boot 1) ---"
+		cat "$OUT/T4-read-boot1-grubenv.txt" 2>/dev/null || true
+		echo "--- T4 manifest image 2 (after boot 1) ---"
+		python3 -c "import json; d=json.load(open('$OUT/T4-read-boot1.json')); print(json.dumps(d.get('images', {}).get('2'), indent=2))" 2>/dev/null || true
+	fi
 
 	# Step 3: Recovery publish
 	echo "[$CASE] Step 3: Recovery publish..."
@@ -409,6 +446,14 @@ EOF
 		--meta-out "$OUT/${CASE}-rec-op-meta.json"
 
 	read_disk "$CASE_DISK" "${CASE}-read-rec-op"
+
+	if [ "$CASE" = "T4" ]; then
+		echo "=== Extra evidence for T4 (after recovery publish) ==="
+		echo "--- T4 grubenv lines (after rec op) ---"
+		cat "$OUT/T4-read-rec-op-grubenv.txt" 2>/dev/null || true
+		echo "--- T4 manifest image 2 (after rec op) ---"
+		python3 -c "import json; d=json.load(open('$OUT/T4-read-rec-op.json')); print(json.dumps(d.get('images', {}).get('2'), indent=2))" 2>/dev/null || true
+	fi
 
 	# Step 4: Boot 2
 	echo "[$CASE] Step 4: Boot 2..."
