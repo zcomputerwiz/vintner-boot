@@ -1,0 +1,118 @@
+{
+  "format": 1,
+  "seq": 7,
+  "installation_id": "0f8e2d6c-4b1a-4c3d-9e8f-7a6b5c4d3e2f",
+  "machine_id": "3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f",
+  "firmware": "uefi",
+  "secure_boot_tier": "A",
+  "signing": {
+    "cert_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "root": {
+    "partuuid": "6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b",
+    "uuid": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e"
+  },
+  "boot_storage": {
+    "partuuid": "9d8c7b6a-5f4e-4d3c-2b1a-0e9f8d7c6b5a"
+  },
+  "tries": 3,
+  "retain": 3,
+  "next_generation": 4,
+  "images": [
+    {
+      "generation": 3,
+      "state": "TRYING",
+      "stale": false,
+      "kernel": {
+        "abi": "6.12.48+deb13-amd64",
+        "package": "linux-image-6.12.48+deb13-amd64",
+        "version": "6.12.48-1"
+      },
+      "module_tree": {
+        "kernel_sha256": "2f5052c9fd15b19a18c584d01363568198613f0c34e84409ef7938709a159ec2",
+        "modules_dep_sha256": "153812ae5fea0b73a011bf28bd7cea93644437c3fe3260b7b2d7e1e2f9f46bde",
+        "dkms_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet",
+      "uefi": {
+        "entry": "vintner-os-3",
+        "sha256": "011e39efe22590f4a339ad19cd180f4d855e32feba602d1ec8e154780838c99c",
+        "size": 98765432,
+        "signed": true
+      },
+      "created": "2026-10-14T20:00:00Z",
+      "first_good": null,
+      "last_good": null
+    },
+    {
+      "generation": 2,
+      "state": "GOOD",
+      "stale": false,
+      "kernel": {
+        "abi": "6.12.43+deb13-amd64",
+        "package": "linux-image-6.12.43+deb13-amd64",
+        "version": "6.12.43-1"
+      },
+      "module_tree": {
+        "kernel_sha256": "015f7e6bc5aeaf483724089e9252cc13b50951a6b69412522765cff4d780306e",
+        "modules_dep_sha256": "29c1b289e7522195b362e44f54e05470b69ad20540ab60a18a05e5bf6951f13d",
+        "dkms_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet",
+      "uefi": {
+        "entry": "vintner-os-2",
+        "sha256": "6ca202c88e549dff68c09bfafbfc60b2fac074debc1e6777e9ba4b6c703ed114",
+        "size": 98765432,
+        "signed": true
+      },
+      "created": "2026-10-14T20:00:00Z",
+      "first_good": "2026-10-01T08:00:00Z",
+      "last_good": "2026-10-01T08:00:00Z"
+    },
+    {
+      "generation": 1,
+      "state": "FAILED",
+      "stale": false,
+      "kernel": {
+        "abi": "6.12.41+deb13-amd64",
+        "package": "linux-image-6.12.41+deb13-amd64",
+        "version": "6.12.41-1"
+      },
+      "module_tree": {
+        "kernel_sha256": "6ab9f1eb8f7d3388f4f9d586f66e99fd54080df2c446f0e58668b09c08a16dd0",
+        "modules_dep_sha256": "ca0df2c95aa144c1d0ff2ff3c8f967fdc1de9ef0c4120b3726416701b519d619",
+        "dkms_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet",
+      "uefi": {
+        "entry": "vintner-os-1",
+        "sha256": "bb82030dbc2bcaba32a90bf2e207a84a856fc5f033b77c480836ab6f77f40f19",
+        "size": 98765432,
+        "signed": true
+      },
+      "created": "2026-10-14T20:00:00Z",
+      "first_good": null,
+      "last_good": null
+    }
+  ],
+  "recovery": [
+    {
+      "slot": "a",
+      "version": "20261014-1563826",
+      "uefi": {
+        "entry": "vintner-recovery-a",
+        "sha256": "37e7702e5ce449c1225fa1b3b3ed8e2dff35d24464d9264a4c2bebf3e0deee05",
+        "size": 123456789
+      }
+    },
+    {
+      "slot": "b",
+      "version": "20261001-becda5e",
+      "uefi": {
+        "entry": "vintner-recovery-b",
+        "sha256": "64f232610aa64e4f7f03c51728b5050d82d294b55c3040704f0e5d83c129b8f0",
+        "size": 123000000
+      }
+    }
+  ]
+}

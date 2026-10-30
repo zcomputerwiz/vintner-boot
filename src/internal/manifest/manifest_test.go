@@ -148,6 +148,20 @@ func TestValidation(t *testing.T) {
 		t.Errorf("example manifest failed validation: %v", err)
 	}
 
+	// Read tier A example manifest
+	exampleTierAPath := "../../../schema/examples/manifest-uefi-tier-a.json"
+	dataTierA, err := os.ReadFile(exampleTierAPath)
+	if err != nil {
+		t.Fatalf("failed to read tier A example manifest: %v", err)
+	}
+	var mTierA Manifest
+	if err := json.Unmarshal(dataTierA, &mTierA); err != nil {
+		t.Fatalf("unmarshal tier A example: %v", err)
+	}
+	if err := mTierA.Validate(); err != nil {
+		t.Errorf("tier A example manifest failed validation: %v", err)
+	}
+
 	tests := []struct {
 		name    string
 		mutate  func(*Manifest)
@@ -241,6 +255,55 @@ func TestValidation(t *testing.T) {
 				}
 			},
 			wantErr: "duplicate recovery slot",
+		},
+		{
+			name: "tier A without signing",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "A"
+				m.Signing = nil
+				for i := range m.Images {
+					if m.Images[i].UEFI != nil {
+						m.Images[i].UEFI.Signed = true
+					}
+				}
+			},
+			wantErr: "tier A requires signing",
+		},
+		{
+			name: "tier A with bios firmware",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "A"
+				m.Firmware = "bios"
+				m.Signing = &Signing{CertSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+			},
+			wantErr: "tier A requires firmware uefi or both",
+		},
+		{
+			name: "tier none with signing",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "none"
+				m.Signing = &Signing{CertSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+				for i := range m.Images {
+					if m.Images[i].UEFI != nil {
+						m.Images[i].UEFI.Signed = false
+					}
+				}
+			},
+			wantErr: "tier none must not have signing",
+		},
+		{
+			name: "tier A image with signed false",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "A"
+				m.Signing = &Signing{CertSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+				for i := range m.Images {
+					if m.Images[i].UEFI != nil {
+						m.Images[i].UEFI.Signed = true
+					}
+				}
+				m.Images[0].UEFI.Signed = false
+			},
+			wantErr: "tier A requires uefi.signed to be true",
 		},
 		{
 			name: "invalid uefi sha256",
