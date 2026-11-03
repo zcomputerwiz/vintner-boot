@@ -23,6 +23,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/testpoint"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/uki"
@@ -33,13 +34,15 @@ type PackageQuery interface {
 }
 
 type UKIRequest struct {
-	LinuxPath     string
-	InitrdPath    string
-	StubPath      string
-	OSReleasePath string
-	Cmdline       string
-	Uname         string
-	OutputPath    string
+	LinuxPath      string
+	InitrdPath     string
+	StubPath       string
+	OSReleasePath  string
+	Cmdline        string
+	Uname          string
+	OutputPath     string
+	SecureBootKey  string
+	SecureBootCert string
 }
 
 type UKIBuilder interface {
@@ -105,15 +108,23 @@ func (RealUKIBuilder) Build(ctx context.Context, req UKIRequest) error {
 		return fmt.Errorf("stub not found: %s", req.StubPath)
 	}
 
-	cmd := exec.CommandContext(ctx, ukifyPath, "build",
-		"--linux="+req.LinuxPath,
-		"--initrd="+req.InitrdPath,
-		"--stub="+req.StubPath,
-		"--os-release=@"+req.OSReleasePath,
-		"--cmdline="+req.Cmdline,
-		"--uname="+req.Uname,
-		"--output="+req.OutputPath,
-	)
+	args := []string{"build",
+		"--linux=" + req.LinuxPath,
+		"--initrd=" + req.InitrdPath,
+		"--stub=" + req.StubPath,
+		"--os-release=@" + req.OSReleasePath,
+		"--cmdline=" + req.Cmdline,
+		"--uname=" + req.Uname,
+		"--output=" + req.OutputPath,
+	}
+	if req.SecureBootKey != "" && req.SecureBootCert != "" {
+		args = append(args,
+			"--secureboot-private-key="+req.SecureBootKey,
+			"--secureboot-certificate="+req.SecureBootCert,
+			"--signtool=sbsign",
+		)
+	}
+	cmd := exec.CommandContext(ctx, ukifyPath, args...)
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
@@ -142,6 +153,8 @@ type Options struct {
 	LockFile         string
 	CmdlineFile      string
 	CmdlineContent   string
+	SecureBootDir    string
+	Verifier         secureboot.Verifier
 	PackageQuery     PackageQuery
 	UKIBuilder       UKIBuilder
 	DiskSpaceChecker DiskSpaceChecker
@@ -280,6 +293,10 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if ukiBuilder == nil {
 		ukiBuilder = RealUKIBuilder{}
 	}
+	verifier := opts.Verifier
+	if verifier == nil {
+		verifier = secureboot.SbverifyVerifier{}
+	}
 	diskChecker := opts.DiskSpaceChecker
 	if diskChecker == nil {
 		diskChecker = RealDiskSpaceChecker{}
@@ -387,8 +404,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("boot storage partuuid mismatch: manifest=%s, cmdline=%s", m.BootStorage.PartUUID, bsPartUUID)
 	}
 
-	if m.SecureBootTier != "none" {
-		return nil, fmt.Errorf("unsupported secure boot tier %q (only \"none\" supported)", m.SecureBootTier)
+	if m.SecureBootTier != "none" && m.SecureBootTier != "A" {
+		return nil, fmt.Errorf("unsupported secure boot tier %q (only \"none\" and \"A\" supported)", m.SecureBootTier)
 	}
 
 	// 4. Reconcile.
@@ -549,6 +566,30 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// 8. Build the image files under /var/tmp/.
+	var sbKeyPath, sbCertPath string
+	if m.SecureBootTier == "A" {
+		sbDir := opts.SecureBootDir
+		if sbDir == "" {
+			sbDir = "/etc/vintner/secureboot"
+		}
+		sbKeyPath = filepath.Join(sbDir, "key.pem")
+		sbCertPath = filepath.Join(sbDir, "cert.pem")
+		if err := secureboot.KeyMatchesCert(sbKeyPath, sbCertPath); err != nil {
+			return nil, fmt.Errorf("secure boot key/cert verification failed: %w", err)
+		}
+		certFP, err := secureboot.CertSHA256(sbCertPath)
+		if err != nil {
+			return nil, fmt.Errorf("calculate certificate fingerprint: %w", err)
+		}
+		manifestFP := ""
+		if m.Signing != nil {
+			manifestFP = m.Signing.CertSHA256
+		}
+		if certFP != manifestFP {
+			return nil, fmt.Errorf("certificate fingerprint %s does not match manifest %s", certFP, manifestFP)
+		}
+	}
+
 	varTmpDir := filepath.Join(rootDir, "var", "tmp")
 	_ = os.MkdirAll(varTmpDir, 0755)
 	buildDir, err := os.MkdirTemp(varTmpDir, "vintner-publish-*")
@@ -589,13 +630,15 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 		ukiBuiltPath = filepath.Join(buildDir, fmt.Sprintf("vintner-os-%d.efi", g))
 		err = ukiBuilder.Build(ctx, UKIRequest{
-			LinuxPath:     srcVmlinuz,
-			InitrdPath:    srcInitrd,
-			StubPath:      stubPath,
-			OSReleasePath: osReleaseTmp,
-			Cmdline:       baseCmdline,
-			Uname:         abi,
-			OutputPath:    ukiBuiltPath,
+			LinuxPath:      srcVmlinuz,
+			InitrdPath:     srcInitrd,
+			StubPath:       stubPath,
+			OSReleasePath:  osReleaseTmp,
+			Cmdline:        baseCmdline,
+			Uname:          abi,
+			OutputPath:     ukiBuiltPath,
+			SecureBootKey:  sbKeyPath,
+			SecureBootCert: sbCertPath,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("build UKI: %w", err)
@@ -685,6 +728,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			Entry:  fmt.Sprintf("vintner-os-%d", g),
 			SHA256: ukiSHA,
 			Size:   ukiSize,
+			Signed: m.SecureBootTier == "A",
 		}
 	}
 	if isBIOS {
@@ -808,6 +852,12 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		sSHA, _ := fileSHA256(filepath.Join(stagedSlotDir, "slot.cfg"))
 		if vSHA != vmlinuzSHA || iSHA != initrdSHA || sSHA != slotCfgSHA {
 			return nil, cleanupStagingAndRefuse(errors.New("readback BIOS file hashes mismatch"))
+		}
+	}
+
+	if m.SecureBootTier == "A" && isUEFI {
+		if err := verifier.Verify(ctx, stagedUKI, sbCertPath); err != nil {
+			return nil, cleanupStagingAndRefuse(fmt.Errorf("signature check failed: %w", err))
 		}
 	}
 

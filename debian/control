@@ -8,6 +8,7 @@ Rules-Requires-Root: no
 
 Package: vintner-core
 Architecture: all
+Depends: sbsigntool
 Recommends: plymouth, plymouth-themes
 Description: vintner boot platform - core tools, publisher and health checks
  Common boot metadata schema, manifest validation, state model, CLI and
