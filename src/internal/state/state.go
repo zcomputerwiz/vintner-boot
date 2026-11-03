@@ -35,6 +35,11 @@ type View struct {
 	GrubEnvErr error
 	// Staging lists the names in /vintner/staging/, files and directories.
 	Staging []string
+	// LoaderEntries lists file names in /loader/entries/.
+	LoaderEntries []string
+	// SideLoaded lists paths of side-loaded files in /loader/addons/,
+	// /loader/credentials/ or *.extra.d directories.
+	SideLoaded []string
 }
 
 // Scan builds a View from a mounted boot storage directory.
@@ -51,6 +56,59 @@ func Scan(bootStorage string) (*View, error) {
 		if !e.IsDir() {
 			if v.UEFIFiles[e.Name()], err = fileSHA256(filepath.Join(efiDir, e.Name())); err != nil {
 				return nil, err
+			}
+		} else if strings.HasSuffix(e.Name(), ".extra.d") {
+			extraFiles, err := readDir(filepath.Join(efiDir, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			for _, ef := range extraFiles {
+				if !ef.IsDir() {
+					v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("EFI", "Linux", e.Name(), ef.Name())))
+				}
+			}
+		}
+	}
+
+	entriesDir := filepath.Join(bootStorage, "loader", "entries")
+	if entries, err := readDir(entriesDir); err != nil {
+		return nil, err
+	} else {
+		for _, e := range entries {
+			if !e.IsDir() {
+				v.LoaderEntries = append(v.LoaderEntries, e.Name())
+			} else if strings.HasSuffix(e.Name(), ".extra.d") {
+				extraFiles, err := readDir(filepath.Join(entriesDir, e.Name()))
+				if err != nil {
+					return nil, err
+				}
+				for _, ef := range extraFiles {
+					if !ef.IsDir() {
+						v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("loader", "entries", e.Name(), ef.Name())))
+					}
+				}
+			}
+		}
+	}
+
+	addonsDir := filepath.Join(bootStorage, "loader", "addons")
+	if entries, err := readDir(addonsDir); err != nil {
+		return nil, err
+	} else {
+		for _, e := range entries {
+			if !e.IsDir() {
+				v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("loader", "addons", e.Name())))
+			}
+		}
+	}
+
+	credsDir := filepath.Join(bootStorage, "loader", "credentials")
+	if entries, err := readDir(credsDir); err != nil {
+		return nil, err
+	} else {
+		for _, e := range entries {
+			if !e.IsDir() {
+				v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("loader", "credentials", e.Name())))
 			}
 		}
 	}
@@ -86,6 +144,10 @@ func Scan(bootStorage string) (*View, error) {
 	for _, e := range entries {
 		v.Staging = append(v.Staging, e.Name())
 	}
+
+	sort.Strings(v.LoaderEntries)
+	sort.Strings(v.SideLoaded)
+
 	return v, nil
 }
 
@@ -366,17 +428,36 @@ func Keep(m *manifest.Manifest) (keep, remove []int, overBudget bool) {
 
 // CheckHealth performs health checks for vintner bless (the health service):
 // - Verifies Secure Boot firmware state if the manifest specifies Tier A and running on UEFI.
+// - Reports when LoaderEntryDefault, LoaderConfigTimeout, or LoaderEntryOneShot is set in efivars.
 // - Verifies the machine certificate on disk against manifest.signing.cert_sha256 if configured.
 // - Verifies that recovery images on boot storage exist and match the manifest.
+// - Reports foreign entries in /EFI/Linux/ and /loader/entries/.
+// - Reports unlisted vintner-* files on boot storage.
+// - Reports side-loaded files in /loader/addons/, /loader/credentials/ or *.extra.d directories.
 func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string, isUEFI bool) []string {
 	var reports []string
 
 	uefi := m.Firmware == "uefi" || m.Firmware == "both"
 	bios := m.Firmware == "bios" || m.Firmware == "both"
 
-	if m.SecureBootTier == "A" && isUEFI {
-		if !efivar.SecureBootEnabled(efivarsDir) {
-			reports = append(reports, "secure_boot=off")
+	if isUEFI {
+		dir := efivarsDir
+		if dir == "" {
+			dir = efivar.DefaultDir
+		}
+		if m.SecureBootTier == "A" {
+			if !efivar.SecureBootEnabled(dir) {
+				reports = append(reports, "secure_boot=off")
+			}
+		}
+		if _, val, err := efivar.GetString(dir, "LoaderEntryDefault", efivar.LoaderInfo); err == nil && val != "" {
+			reports = append(reports, fmt.Sprintf("LoaderEntryDefault is set: %s", val))
+		}
+		if _, val, err := efivar.GetString(dir, "LoaderConfigTimeout", efivar.LoaderInfo); err == nil && val != "" {
+			reports = append(reports, fmt.Sprintf("LoaderConfigTimeout is set: %s", val))
+		}
+		if _, val, err := efivar.GetString(dir, "LoaderEntryOneShot", efivar.LoaderInfo); err == nil && val != "" {
+			reports = append(reports, fmt.Sprintf("LoaderEntryOneShot is set: %s", val))
 		}
 	}
 
@@ -412,6 +493,64 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 						files["slot.cfg"] != rec.BIOS.Files.SlotCfg {
 						reports = append(reports, fmt.Sprintf("invalid recovery image: file mismatch for slot %s", slotName))
 					}
+				}
+			}
+		}
+
+		// Side-loaded files (Threat Model T6)
+		for _, sf := range v.SideLoaded {
+			reports = append(reports, fmt.Sprintf("side-loaded file: %s", sf))
+		}
+
+		// Foreign entries in /loader/entries/ (Threat Model T5, Architecture §4.1)
+		for _, le := range v.LoaderEntries {
+			reports = append(reports, fmt.Sprintf("foreign entry in /loader/entries: %s", le))
+		}
+
+		// Known sets for checking boot storage files
+		knownRecovery := make(map[string]bool, len(m.Recovery))
+		for _, rec := range m.Recovery {
+			knownRecovery[rec.Slot] = true
+		}
+
+		// Foreign and unlisted entries in /EFI/Linux/ (Threat Model T5, Architecture §4.1)
+		if uefi {
+			for _, f := range sortedKeys(v.UEFIFiles) {
+				if !strings.HasPrefix(f, "vintner-") {
+					reports = append(reports, fmt.Sprintf("foreign entry in /EFI/Linux: %s", f))
+					continue
+				}
+				parsed, ok := bls.Parse(f)
+				if !ok {
+					reports = append(reports, fmt.Sprintf("unlisted vintner file: %s", f))
+					continue
+				}
+				if _, isOrd := bls.IsVintnerOrdinary(parsed.Stem); isOrd {
+					// Ordinary vintner-os-* without a record is reported by Reconcile Rule 3 ("untracked uefi file ...")
+					continue
+				} else if slot, isRec := bls.IsVintnerRecovery(parsed.Stem); isRec {
+					if !knownRecovery[slot] {
+						reports = append(reports, fmt.Sprintf("unlisted vintner file: %s", f))
+					}
+				} else {
+					reports = append(reports, fmt.Sprintf("unlisted vintner file: %s", f))
+				}
+			}
+		}
+
+		// Unlisted and foreign entries in /vintner/bios/
+		if bios {
+			for _, d := range sortedKeys(v.BIOSDirs) {
+				if strings.HasPrefix(d, "os-") {
+					// Ordinary os-<gen> without a record is reported by Reconcile Rule 3 ("untracked bios directory ...")
+					continue
+				} else if strings.HasPrefix(d, "recovery-") {
+					slot := strings.TrimPrefix(d, "recovery-")
+					if !knownRecovery[slot] {
+						reports = append(reports, fmt.Sprintf("unlisted bios directory: %s", d))
+					}
+				} else {
+					reports = append(reports, fmt.Sprintf("foreign entry in /vintner/bios: %s", d))
 				}
 			}
 		}
