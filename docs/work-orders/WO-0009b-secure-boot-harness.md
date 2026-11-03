@@ -2,7 +2,7 @@
 
 - **For:** the agent that delivers the Secure Boot test harness (`ci/secure-boot/`). It works from `docs/secure-boot.md` (design; read it first, §2, §4 and §6 in particular).
 - **Issued:** 2026-10-30
-- **Status:** open.
+- **Status:** done. Delivered in #59; results in `ci/secure-boot/README.md`.
 - **Branch:** `wo-0009b`, from `origin/main` (the design is merged). Open a PR against `main`.
 - **Independent of** WO-0009c (product: signing in the publisher), which is developed in parallel. This work order builds the signing and verification steps inside the harness (see §3) and keeps them in one place so that they can be replaced by the product commands later.
 

@@ -2,7 +2,7 @@
 
 - **For:** the agent that delivers the Go side of Secure Boot (`src/`). Read `docs/secure-boot.md` first: §2 (chain of trust), §3 (keys), §4 (publisher changes), §5 (accepted failures).
 - **Issued:** 2026-10-30
-- **Status:** open.
+- **Status:** done. Delivered in #58; verified with TestRealSigningRoundTrip and CI.
 - **Branch:** `wo-0009c`, from `origin/main`. Open a PR against `main`. WO-0009b (the QEMU harness) is developed in parallel and does not depend on this work order; it uses its own `sbsign`/`sbverify` shell functions until this lands.
 
 ## Goal
