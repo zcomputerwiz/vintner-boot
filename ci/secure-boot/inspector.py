@@ -128,7 +128,7 @@ def cmd_run_boot(args):
     ]
     if args.seed and os.path.exists(args.seed):
         cmd.extend(["-drive", f"file={args.seed},format=raw,if=virtio"])
-    cmd.extend(["-nic", "user,model=virtio-net-pci"])
+    cmd.extend(["-nic", "none"])
 
     start_time = time.time()
     proc = subprocess.Popen(cmd)
