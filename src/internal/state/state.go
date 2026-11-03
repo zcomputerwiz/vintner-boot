@@ -16,8 +16,10 @@ import (
 	"strings"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 )
 
 // View describes what is on boot storage.
@@ -360,4 +362,60 @@ func Keep(m *manifest.Manifest) (keep, remove []int, overBudget bool) {
 		}
 	}
 	return keep, remove, overBudget
+}
+
+// CheckHealth performs health checks for vintner bless (the health service):
+// - Verifies Secure Boot firmware state if the manifest specifies Tier A and running on UEFI.
+// - Verifies the machine certificate on disk against manifest.signing.cert_sha256 if configured.
+// - Verifies that recovery images on boot storage exist and match the manifest.
+func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string, isUEFI bool) []string {
+	var reports []string
+
+	uefi := m.Firmware == "uefi" || m.Firmware == "both"
+	bios := m.Firmware == "bios" || m.Firmware == "both"
+
+	if m.SecureBootTier == "A" && isUEFI {
+		if !efivar.SecureBootEnabled(efivarsDir) {
+			reports = append(reports, "secure_boot=off")
+		}
+	}
+
+	if m.Signing != nil && m.Signing.CertSHA256 != "" {
+		certPath := filepath.Join(secureBootDir, "cert.pem")
+		fp, err := secureboot.CertSHA256(certPath)
+		if err != nil {
+			reports = append(reports, fmt.Sprintf("secureboot certificate unreadable: %v", err))
+		} else if fp != m.Signing.CertSHA256 {
+			reports = append(reports, fmt.Sprintf("secureboot certificate mismatch: disk %s, manifest %s", fp, m.Signing.CertSHA256))
+		}
+	}
+
+	if v != nil {
+		for _, rec := range m.Recovery {
+			slotName := rec.Slot
+			if uefi && rec.UEFI != nil {
+				_, f, ok := v.uefiFile("vintner-recovery-" + slotName)
+				if !ok {
+					reports = append(reports, fmt.Sprintf("invalid recovery image: missing uefi file for slot %s", slotName))
+				} else if v.UEFIFiles[f] != rec.UEFI.SHA256 {
+					reports = append(reports, fmt.Sprintf("invalid recovery image: hash mismatch for slot %s", slotName))
+				}
+			}
+			if bios && rec.BIOS != nil {
+				slotDir := "recovery-" + slotName
+				files, ok := v.BIOSDirs[slotDir]
+				if !ok {
+					reports = append(reports, fmt.Sprintf("invalid recovery image: missing bios directory for slot %s", slotName))
+				} else {
+					if files["vmlinuz"] != rec.BIOS.Files.Vmlinuz ||
+						files["initrd.img"] != rec.BIOS.Files.InitrdImg ||
+						files["slot.cfg"] != rec.BIOS.Files.SlotCfg {
+						reports = append(reports, fmt.Sprintf("invalid recovery image: file mismatch for slot %s", slotName))
+					}
+				}
+			}
+		}
+	}
+
+	return reports
 }

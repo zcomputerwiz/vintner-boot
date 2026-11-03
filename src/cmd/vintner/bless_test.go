@@ -18,6 +18,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 )
 
 func copyFile(src, dst string) error {
@@ -886,5 +887,113 @@ func TestBlessUEFIArmsStagedBIOSSide(t *testing.T) {
 	}
 	if s := getManifestGen(t, stateDir, 2).State; s != "GOOD" {
 		t.Errorf("state = %s, want GOOD", s)
+	}
+}
+
+func TestBlessHealthReporting(t *testing.T) {
+	// Setup test directory and keys
+	sbDir := t.TempDir()
+	certFP, err := secureboot.GenerateKey(sbDir, "00000000-0000-0000-0000-000000000001")
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
+	}
+
+	mPath := "../../../schema/examples/manifest-uefi-tier-a.json"
+	data, err := os.ReadFile(mPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m manifest.Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	// Use our test certificate fingerprint
+	m.Signing.CertSHA256 = certFP
+
+	bootStorage, efivarsDir := setupTestEnv(t, true, &m)
+
+	// Create ordinary EFI file for generation 1 so bless succeeds
+	efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+	ordinaryContent := []byte("uki-data-os-1")
+	h := sha256.Sum256(ordinaryContent)
+	m.Images[0].UEFI.SHA256 = hex.EncodeToString(h[:])
+	m.Images[0].UEFI.Size = len(ordinaryContent)
+
+	stateDir := filepath.Join(bootStorage, "vintner", "state")
+	if err := manifest.Save(stateDir, &m); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(efiDir, "vintner-os-1+3-0.efi"), ordinaryContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	efivar.SetString(efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo, 0, "\\EFI\\Linux\\vintner-os-1+3-0.efi")
+
+	// 1. Without SecureBoot enabled in efivars -> secure_boot=off is reported
+	out := blessOutput(t, []string{
+		"--boot-storage", bootStorage,
+		"--efivars", efivarsDir,
+		"--secureboot-dir", sbDir,
+	})
+	if !hasLine(out, "secure_boot=off") {
+		t.Errorf("expected secure_boot=off in output, got: %q", out)
+	}
+	if !hasLine(out, "invalid recovery image: missing uefi file for slot a") {
+		t.Errorf("expected missing recovery report in output, got: %q", out)
+	}
+
+	// 2. Enable SecureBoot in efivars, and provide valid recovery UKI
+	if err := efivar.Set(efivarsDir, "SecureBoot", efivar.GlobalVariable, 0x7, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.Set(efivarsDir, "SetupMode", efivar.GlobalVariable, 0x7, []byte{0}); err != nil {
+		t.Fatal(err)
+	}
+
+	recContent := []byte("recovery-data-a")
+	recH := sha256.Sum256(recContent)
+	m.Recovery[0].UEFI.SHA256 = hex.EncodeToString(recH[:])
+	m.Recovery[0].UEFI.Size = len(recContent)
+	if err := manifest.Save(stateDir, &m); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(efiDir, "vintner-recovery-a+3-0.efi"), recContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out = blessOutput(t, []string{
+		"--boot-storage", bootStorage,
+		"--efivars", efivarsDir,
+		"--secureboot-dir", sbDir,
+	})
+	if hasLine(out, "secure_boot=off") {
+		t.Errorf("unexpected secure_boot=off when SecureBoot is enabled: %q", out)
+	}
+	if hasLine(out, "invalid recovery image: missing uefi file for slot a") {
+		t.Errorf("unexpected missing recovery report when recovery file is present: %q", out)
+	}
+
+	// 3. Mismatched certificate directory -> reports mismatch
+	otherSBDir := t.TempDir()
+	_, err = secureboot.GenerateKey(otherSBDir, "00000000-0000-0000-0000-000000000002")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out = blessOutput(t, []string{
+		"--boot-storage", bootStorage,
+		"--efivars", efivarsDir,
+		"--secureboot-dir", otherSBDir,
+	})
+	foundMismatch := false
+	for _, l := range out {
+		if strings.Contains(l, "secureboot certificate mismatch") {
+			foundMismatch = true
+			break
+		}
+	}
+	if !foundMismatch {
+		t.Errorf("expected certificate mismatch report, got: %q", out)
 	}
 }

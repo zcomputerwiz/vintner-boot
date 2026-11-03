@@ -85,3 +85,43 @@ func TestEfivar_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound for deleting missing variable, got %v", err)
 	}
 }
+
+func TestEfivar_SecureBootEnabled(t *testing.T) {
+	// Missing directory or variable
+	dir := t.TempDir()
+	if SecureBootEnabled(dir) {
+		t.Errorf("expected SecureBootEnabled to be false when variable is absent")
+	}
+
+	// SecureBoot=0, SetupMode absent
+	if err := Set(dir, "SecureBoot", GlobalVariable, 0x7, []byte{0x00}); err != nil {
+		t.Fatal(err)
+	}
+	if SecureBootEnabled(dir) {
+		t.Errorf("expected SecureBootEnabled to be false when SecureBoot=0")
+	}
+
+	// SecureBoot=1, SetupMode absent
+	if err := Set(dir, "SecureBoot", GlobalVariable, 0x7, []byte{0x01}); err != nil {
+		t.Fatal(err)
+	}
+	if !SecureBootEnabled(dir) {
+		t.Errorf("expected SecureBootEnabled to be true when SecureBoot=1 and SetupMode absent")
+	}
+
+	// SecureBoot=1, SetupMode=0
+	if err := Set(dir, "SetupMode", GlobalVariable, 0x7, []byte{0x00}); err != nil {
+		t.Fatal(err)
+	}
+	if !SecureBootEnabled(dir) {
+		t.Errorf("expected SecureBootEnabled to be true when SecureBoot=1 and SetupMode=0")
+	}
+
+	// SecureBoot=1, SetupMode=1
+	if err := Set(dir, "SetupMode", GlobalVariable, 0x7, []byte{0x01}); err != nil {
+		t.Fatal(err)
+	}
+	if SecureBootEnabled(dir) {
+		t.Errorf("expected SecureBootEnabled to be false when SetupMode=1")
+	}
+}
