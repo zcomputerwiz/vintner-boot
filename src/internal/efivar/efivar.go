@@ -20,6 +20,9 @@ const (
 	// LoaderInfo GUID.
 	LoaderInfo GUID = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 
+	// GlobalVariable GUID (EFI_GLOBAL_VARIABLE).
+	GlobalVariable GUID = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
+
 	// FS_IOC_GETFLAGS and FS_IOC_SETFLAGS from linux/fs.h
 	fsIocGetFlags = 0x80086601
 	fsIocSetFlags = 0x40086602
@@ -159,4 +162,18 @@ func SetString(dir, name string, guid GUID, attrs uint32, s string) error {
 	}
 
 	return Set(dir, name, guid, attrs, data)
+}
+
+// SecureBootEnabled reports whether UEFI Secure Boot is active in dir.
+// It returns true when the SecureBoot variable has value 1 and SetupMode is not 1.
+func SecureBootEnabled(dir string) bool {
+	_, data, err := Get(dir, "SecureBoot", GlobalVariable)
+	if err != nil || len(data) == 0 || data[0] != 1 {
+		return false
+	}
+	_, smData, smErr := Get(dir, "SetupMode", GlobalVariable)
+	if smErr == nil && len(smData) > 0 && smData[0] == 1 {
+		return false
+	}
+	return true
 }

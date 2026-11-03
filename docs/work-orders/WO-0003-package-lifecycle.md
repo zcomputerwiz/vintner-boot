@@ -2,6 +2,7 @@
 
 - **For:** an agent with a local Linux environment that has root via `sudo`, KVM, loop devices with partition scanning (`losetup -P`) and outbound network access for the guest (QEMU user networking).
 - **Issued:** 2026-10-15
+- **Status:** done: `ci/lifecycle/packages/`, reviewed and run in CI.
 - **Base branch:** `main`. Work on branch `wo-0003` and open one pull request against `main`.
 
 ## Why

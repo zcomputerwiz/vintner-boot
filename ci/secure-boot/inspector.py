@@ -458,7 +458,8 @@ def cmd_evaluate(args):
     b1_no_rec = (id1 == "os-1")
     b2_no_rec = (id2 != "recovery" and id2 != "recovery-a" and id2 != "recovery-b")
     ok = b1_no_rec and b2_no_rec
-    ev = f"boot 1={id1} (recovery not run), boot 2 (recovery entry selected)={id2} (recovery refused, not run)"
+    rec_reported = any("invalid recovery image" in l for l in clean_ansi(s4_b1["log"]).splitlines()) if s4_b1 else False
+    ev = f"boot 1={id1} (recovery not run, recovery_invalid_reported={rec_reported}), boot 2 (recovery entry selected)={id2} (recovery refused, not run)"
     emit_row("B6", "S4", "PASS" if ok else "FAIL", ev)
 
     # B7: S5 to S7, S9
@@ -476,7 +477,8 @@ def cmd_evaluate(args):
         dur = meta.get("duration", "0")
         if c == "S9":
             has_sb = any("secureboot: Secure boot enabled" in l for l in lines)
-            ev = f"how_ended: {how} in {dur}s; secureboot_enabled_line_present={has_sb}; serial ending: {last_chunk}"
+            has_sb_off = any("secure_boot=off" in l for l in lines)
+            ev = f"how_ended: {how} in {dur}s; secureboot_enabled_line_present={has_sb}; health_report_sb_off={has_sb_off}; serial ending: {last_chunk}"
         else:
             ev = f"how_ended: {how} in {dur}s; serial ending: {last_chunk}"
         emit_row("B7", c, "OBSERVED", ev)

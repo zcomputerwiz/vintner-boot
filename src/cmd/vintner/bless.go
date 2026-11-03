@@ -26,6 +26,7 @@ func cmdBless(args []string) {
 	bootStorage := fs.String("boot-storage", "", "boot storage directory (default: mount the partition named by vintner.bootstorage= on demand)")
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
+	secureBootDir := fs.String("secureboot-dir", "/etc/vintner/secureboot", "directory holding machine keys and certificates")
 
 	fs.Parse(args)
 
@@ -205,6 +206,7 @@ func cmdBless(args []string) {
 	}
 
 	actions, reports := state.Reconcile(m, v)
+	reports = append(reports, state.CheckHealth(m, v, *efivarsDir, *secureBootDir, isUEFI)...)
 
 	for _, r := range reports {
 		fmt.Println(r)

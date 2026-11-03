@@ -2,7 +2,7 @@
 
 - **For:** an agent with a Linux environment (Debian 13 or Ubuntu 24.04), `plymouth`, Go 1.24, and QEMU.
 - **Issued:** 2026-10-27
-- **Status:** in progress. Work on branch `wo-0008` and open one pull request against `main`.
+- **Status:** done. Delivered in #52; results in `ci/graphics/README.md`.
 - **Base branch:** `main`.
 
 ## Why

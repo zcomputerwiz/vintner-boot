@@ -11,8 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 )
 
 func env(kv ...string) *grubenv.Env {
@@ -293,5 +295,185 @@ func TestApplyArm(t *testing.T) {
 	}
 	if c, _ := e.Get("VINTNER_T_2"); c != "xxx" {
 		t.Errorf("VINTNER_T_2 = %q, want xxx", c)
+	}
+}
+
+func TestCheckHealth_Recovery(t *testing.T) {
+	recA := manifest.Recovery{
+		Slot: "a",
+		UEFI: &manifest.UEFIFile{Entry: "vintner-recovery-a", SHA256: "sha_a"},
+		BIOS: &manifest.BIOSFiles{Files: manifest.BIOSFilesMap{Vmlinuz: "k_a", InitrdImg: "i_a", SlotCfg: "c_a"}},
+	}
+	recB := manifest.Recovery{
+		Slot: "b",
+		UEFI: &manifest.UEFIFile{Entry: "vintner-recovery-b", SHA256: "sha_b"},
+		BIOS: &manifest.BIOSFiles{Files: manifest.BIOSFilesMap{Vmlinuz: "k_b", InitrdImg: "i_b", SlotCfg: "c_b"}},
+	}
+
+	validUEFI := map[string]string{
+		"vintner-recovery-a+3-0.efi": "sha_a",
+		"vintner-recovery-b.efi":     "sha_b",
+	}
+	validBIOS := map[string]map[string]string{
+		"recovery-a": {"vmlinuz": "k_a", "initrd.img": "i_a", "slot.cfg": "c_a"},
+		"recovery-b": {"vmlinuz": "k_b", "initrd.img": "i_b", "slot.cfg": "c_b"},
+	}
+
+	// 1. Valid recovery on both firmwares -> no reports
+	m := &manifest.Manifest{Firmware: "both", Recovery: []manifest.Recovery{recA, recB}}
+	v := &View{UEFIFiles: validUEFI, BIOSDirs: validBIOS, GrubEnv: env()}
+	reports := CheckHealth(m, v, "", "", false)
+	if len(reports) != 0 {
+		t.Errorf("expected 0 reports for valid recovery, got %q", reports)
+	}
+
+	// 2. Missing UEFI file for slot a
+	vMissingUEFI := &View{
+		UEFIFiles: map[string]string{"vintner-recovery-b.efi": "sha_b"},
+		BIOSDirs:  validBIOS,
+		GrubEnv:   env(),
+	}
+	reports = CheckHealth(m, vMissingUEFI, "", "", true)
+	want := []string{"invalid recovery image: missing uefi file for slot a"}
+	if !reflect.DeepEqual(reports, want) {
+		t.Errorf("missing UEFI recovery: reports = %q, want %q", reports, want)
+	}
+
+	// 3. Hash mismatch for slot a (like S4)
+	vMismatchUEFI := &View{
+		UEFIFiles: map[string]string{"vintner-recovery-a+3-0.efi": "sha_corrupt", "vintner-recovery-b.efi": "sha_b"},
+		BIOSDirs:  validBIOS,
+		GrubEnv:   env(),
+	}
+	reports = CheckHealth(m, vMismatchUEFI, "", "", true)
+	want = []string{"invalid recovery image: hash mismatch for slot a"}
+	if !reflect.DeepEqual(reports, want) {
+		t.Errorf("mismatch UEFI recovery: reports = %q, want %q", reports, want)
+	}
+
+	// 4. Missing BIOS directory for slot b
+	vMissingBIOS := &View{
+		UEFIFiles: validUEFI,
+		BIOSDirs:  map[string]map[string]string{"recovery-a": validBIOS["recovery-a"]},
+		GrubEnv:   env(),
+	}
+	reports = CheckHealth(m, vMissingBIOS, "", "", false)
+	want = []string{"invalid recovery image: missing bios directory for slot b"}
+	if !reflect.DeepEqual(reports, want) {
+		t.Errorf("missing BIOS recovery: reports = %q, want %q", reports, want)
+	}
+
+	// 5. File mismatch inside BIOS directory for slot a
+	vMismatchBIOS := &View{
+		UEFIFiles: validUEFI,
+		BIOSDirs: map[string]map[string]string{
+			"recovery-a": {"vmlinuz": "bad_k", "initrd.img": "i_a", "slot.cfg": "c_a"},
+			"recovery-b": validBIOS["recovery-b"],
+		},
+		GrubEnv: env(),
+	}
+	reports = CheckHealth(m, vMismatchBIOS, "", "", false)
+	want = []string{"invalid recovery image: file mismatch for slot a"}
+	if !reflect.DeepEqual(reports, want) {
+		t.Errorf("mismatch BIOS recovery: reports = %q, want %q", reports, want)
+	}
+}
+
+func TestCheckHealth(t *testing.T) {
+	efivarsDir := t.TempDir()
+	sbDir := t.TempDir()
+
+	// Generate a real key/cert for testing certificate check
+	fp, err := secureboot.GenerateKey(sbDir, "test-install-uuid")
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
+	}
+
+	// Tier none -> no reports
+	mNone := &manifest.Manifest{SecureBootTier: "none"}
+	if r := CheckHealth(mNone, nil, efivarsDir, sbDir, true); len(r) != 0 {
+		t.Errorf("tier none: expected 0 reports, got %q", r)
+	}
+
+	// Tier A + UEFI, SecureBoot disabled -> secure_boot=off
+	mA := &manifest.Manifest{
+		SecureBootTier: "A",
+		Signing:        &manifest.Signing{CertSHA256: fp},
+	}
+	r := CheckHealth(mA, nil, efivarsDir, sbDir, true)
+	if !reflect.DeepEqual(r, []string{"secure_boot=off"}) {
+		t.Errorf("tier A without SecureBoot: reports = %q, want [\"secure_boot=off\"]", r)
+	}
+
+	// Enable SecureBoot in efivars
+	if err := efivar.Set(efivarsDir, "SecureBoot", efivar.GlobalVariable, 0x7, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.Set(efivarsDir, "SetupMode", efivar.GlobalVariable, 0x7, []byte{0}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now with SecureBoot enabled and matching cert -> 0 reports
+	if r := CheckHealth(mA, nil, efivarsDir, sbDir, true); len(r) != 0 {
+		t.Errorf("tier A healthy: expected 0 reports, got %q", r)
+	}
+
+	// SetupMode=1 -> secure_boot=off
+	if err := efivar.Set(efivarsDir, "SetupMode", efivar.GlobalVariable, 0x7, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	if r := CheckHealth(mA, nil, efivarsDir, sbDir, true); !reflect.DeepEqual(r, []string{"secure_boot=off"}) {
+		t.Errorf("tier A with SetupMode=1: reports = %q, want [\"secure_boot=off\"]", r)
+	}
+	_ = efivar.Set(efivarsDir, "SetupMode", efivar.GlobalVariable, 0x7, []byte{0})
+
+	// Certificate mismatch
+	mAMismatch := &manifest.Manifest{
+		SecureBootTier: "A",
+		Signing:        &manifest.Signing{CertSHA256: strings.Repeat("0", 64)},
+	}
+	r = CheckHealth(mAMismatch, nil, efivarsDir, sbDir, true)
+	if len(r) != 1 || !strings.Contains(r[0], "secureboot certificate mismatch") {
+		t.Errorf("certificate mismatch: reports = %q, want mismatch report", r)
+	}
+
+	// Missing certificate file
+	missingSBDir := t.TempDir()
+	r = CheckHealth(mA, nil, efivarsDir, missingSBDir, true)
+	if len(r) != 1 || !strings.Contains(r[0], "secureboot certificate unreadable") {
+		t.Errorf("missing cert: reports = %q, want unreadable report", r)
+	}
+
+	// Tier A on BIOS (isUEFI = false) -> SecureBoot efivar not checked
+	if r := CheckHealth(mA, nil, efivarsDir, sbDir, false); len(r) != 0 {
+		t.Errorf("tier A on BIOS: expected 0 reports, got %q", r)
+	}
+
+	// Recovery image integrity checks via CheckHealth
+	recManifest := &manifest.Manifest{
+		Firmware: "both",
+		Recovery: []manifest.Recovery{
+			{Slot: "a", UEFI: &manifest.UEFIFile{SHA256: "good_sha"}, BIOS: &manifest.BIOSFiles{Files: manifest.BIOSFilesMap{Vmlinuz: "k", InitrdImg: "i", SlotCfg: "c"}}},
+		},
+	}
+	vGoodRec := &View{
+		UEFIFiles: map[string]string{"vintner-recovery-a.efi": "good_sha"},
+		BIOSDirs:  map[string]map[string]string{"recovery-a": {"vmlinuz": "k", "initrd.img": "i", "slot.cfg": "c"}},
+	}
+	if r := CheckHealth(recManifest, vGoodRec, efivarsDir, sbDir, false); len(r) != 0 {
+		t.Errorf("healthy recovery: expected 0 reports, got %q", r)
+	}
+
+	vBadRec := &View{
+		UEFIFiles: map[string]string{"vintner-recovery-a.efi": "bad_sha"},
+		BIOSDirs:  map[string]map[string]string{"recovery-a": {"vmlinuz": "bad_k", "initrd.img": "i", "slot.cfg": "c"}},
+	}
+	r = CheckHealth(recManifest, vBadRec, efivarsDir, sbDir, false)
+	wantRecReports := []string{
+		"invalid recovery image: hash mismatch for slot a",
+		"invalid recovery image: file mismatch for slot a",
+	}
+	if !reflect.DeepEqual(r, wantRecReports) {
+		t.Errorf("bad recovery: reports = %q, want %q", r, wantRecReports)
 	}
 }
