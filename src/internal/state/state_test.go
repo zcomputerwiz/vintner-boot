@@ -477,3 +477,133 @@ func TestCheckHealth(t *testing.T) {
 		t.Errorf("bad recovery: reports = %q, want %q", r, wantRecReports)
 	}
 }
+
+func TestCheckHealth_SelectionPolicy(t *testing.T) {
+	efivarsDir := t.TempDir()
+	sbDir := t.TempDir()
+
+	m := &manifest.Manifest{
+		Firmware: "both",
+		Images: []manifest.Image{
+			{Generation: 1},
+		},
+		Recovery: []manifest.Recovery{
+			{Slot: "a", UEFI: &manifest.UEFIFile{SHA256: "rec_sha"}, BIOS: &manifest.BIOSFiles{Files: manifest.BIOSFilesMap{Vmlinuz: "k", InitrdImg: "i", SlotCfg: "c"}}},
+		},
+	}
+
+	// 1. Test EFI variables reporting (LoaderEntryDefault, LoaderConfigTimeout, LoaderEntryOneShot)
+	if err := efivar.SetString(efivarsDir, "LoaderEntryDefault", efivar.LoaderInfo, 0x7, "debian-6.12.efi"); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.SetString(efivarsDir, "LoaderConfigTimeout", efivar.LoaderInfo, 0x7, "5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.SetString(efivarsDir, "LoaderEntryOneShot", efivar.LoaderInfo, 0x7, "vintner-recovery-*"); err != nil {
+		t.Fatal(err)
+	}
+
+	r := CheckHealth(m, nil, efivarsDir, sbDir, true)
+	wantEFIVars := []string{
+		"LoaderEntryDefault is set: debian-6.12.efi",
+		"LoaderConfigTimeout is set: 5",
+		"LoaderEntryOneShot is set: vintner-recovery-*",
+	}
+	if !reflect.DeepEqual(r, wantEFIVars) {
+		t.Errorf("EFI vars reports = %q, want %q", r, wantEFIVars)
+	}
+
+	// Under non-UEFI (isUEFI = false), efivars are not checked
+	if rBIOS := CheckHealth(m, nil, efivarsDir, sbDir, false); len(rBIOS) != 0 {
+		t.Errorf("non-UEFI: expected 0 reports, got %q", rBIOS)
+	}
+
+	// 2. Test foreign entries and unlisted files on boot storage
+	emptyEFIVars := t.TempDir()
+	v := &View{
+		UEFIFiles: map[string]string{
+			"vintner-os-1+3-0.efi":   "h1",      // tracked ordinary image
+			"vintner-recovery-a.efi": "rec_sha", // tracked recovery image
+			"debian-6.12.efi":        "h2",      // foreign entry in /EFI/Linux
+			"vintner-recovery-b.efi": "h3",      // unlisted recovery slot
+			"vintner-unknown.efi":    "h4",      // unlisted vintner file
+		},
+		LoaderEntries: []string{"aaa.conf", "other.conf"},
+		SideLoaded: []string{
+			"EFI/Linux/vintner-os-1.efi.extra.d/sysext.raw",
+			"loader/addons/my.addon.efi",
+			"loader/credentials/my.cred",
+		},
+		BIOSDirs: map[string]map[string]string{
+			"os-1":       {"vmlinuz": "k", "initrd.img": "i", "slot.cfg": "c"}, // tracked ordinary image
+			"recovery-a": {"vmlinuz": "k", "initrd.img": "i", "slot.cfg": "c"}, // tracked recovery slot
+			"recovery-b": {"vmlinuz": "k", "initrd.img": "i", "slot.cfg": "c"}, // unlisted recovery slot
+			"foreign-os": {"vmlinuz": "k"},                                     // foreign entry in /vintner/bios
+		},
+	}
+
+	r = CheckHealth(m, v, emptyEFIVars, sbDir, true)
+	wantReports := []string{
+		"side-loaded file: EFI/Linux/vintner-os-1.efi.extra.d/sysext.raw",
+		"side-loaded file: loader/addons/my.addon.efi",
+		"side-loaded file: loader/credentials/my.cred",
+		"foreign entry in /loader/entries: aaa.conf",
+		"foreign entry in /loader/entries: other.conf",
+		"foreign entry in /EFI/Linux: debian-6.12.efi",
+		"unlisted vintner file: vintner-recovery-b.efi",
+		"unlisted vintner file: vintner-unknown.efi",
+		"foreign entry in /vintner/bios: foreign-os",
+		"unlisted bios directory: recovery-b",
+	}
+	if !reflect.DeepEqual(r, wantReports) {
+		t.Errorf("health reports = %q, want %q", r, wantReports)
+	}
+}
+
+func TestScan_SelectionPolicyAndSideLoaded(t *testing.T) {
+	dir := t.TempDir()
+
+	// Setup directories
+	efiDir := filepath.Join(dir, "EFI", "Linux")
+	os.MkdirAll(filepath.Join(efiDir, "vintner-os-1.efi.extra.d"), 0755)
+	os.MkdirAll(filepath.Join(dir, "loader", "entries", "test.conf.extra.d"), 0755)
+	os.MkdirAll(filepath.Join(dir, "loader", "addons"), 0755)
+	os.MkdirAll(filepath.Join(dir, "loader", "credentials"), 0755)
+	os.MkdirAll(filepath.Join(dir, "vintner", "bios", "recovery-a"), 0755)
+
+	// Create files
+	os.WriteFile(filepath.Join(efiDir, "vintner-os-1.efi"), []byte("uki1"), 0644)
+	os.WriteFile(filepath.Join(efiDir, "debian-6.12.efi"), []byte("uki2"), 0644)
+	os.WriteFile(filepath.Join(efiDir, "vintner-os-1.efi.extra.d", "ext1.raw"), []byte("ext"), 0644)
+	os.WriteFile(filepath.Join(dir, "loader", "entries", "test.conf"), []byte("conf"), 0644)
+	os.WriteFile(filepath.Join(dir, "loader", "entries", "test.conf.extra.d", "ext2.raw"), []byte("ext2"), 0644)
+	os.WriteFile(filepath.Join(dir, "loader", "addons", "foo.addon.efi"), []byte("addon"), 0644)
+	os.WriteFile(filepath.Join(dir, "loader", "credentials", "foo.cred"), []byte("cred"), 0644)
+	os.WriteFile(filepath.Join(dir, "vintner", "bios", "recovery-a", "vmlinuz"), []byte("k"), 0644)
+
+	v, err := Scan(dir)
+	if err != nil {
+		t.Fatalf("Scan failed: %v", err)
+	}
+
+	if len(v.LoaderEntries) != 1 || v.LoaderEntries[0] != "test.conf" {
+		t.Errorf("v.LoaderEntries = %v, want [test.conf]", v.LoaderEntries)
+	}
+
+	wantSideLoaded := []string{
+		"EFI/Linux/vintner-os-1.efi.extra.d/ext1.raw",
+		"loader/addons/foo.addon.efi",
+		"loader/credentials/foo.cred",
+		"loader/entries/test.conf.extra.d/ext2.raw",
+	}
+	if !reflect.DeepEqual(v.SideLoaded, wantSideLoaded) {
+		t.Errorf("v.SideLoaded = %v, want %v", v.SideLoaded, wantSideLoaded)
+	}
+
+	if _, ok := v.UEFIFiles["debian-6.12.efi"]; !ok {
+		t.Errorf("v.UEFIFiles missing debian-6.12.efi")
+	}
+	if _, ok := v.UEFIFiles["vintner-os-1.efi"]; !ok {
+		t.Errorf("v.UEFIFiles missing vintner-os-1.efi")
+	}
+}

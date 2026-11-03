@@ -997,3 +997,83 @@ func TestBlessHealthReporting(t *testing.T) {
 		t.Errorf("expected certificate mismatch report, got: %q", out)
 	}
 }
+
+func TestBlessHealthReporting_SelectionPolicy(t *testing.T) {
+	mPath := "../../../schema/examples/manifest-uefi.json"
+	data, err := os.ReadFile(mPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m manifest.Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+
+	bootStorage, efivarsDir := setupTestEnv(t, true, &m)
+	stateDir := filepath.Join(bootStorage, "vintner", "state")
+
+	// Create valid booted EFI file for generation 3 so bless succeeds
+	efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+	ordinaryContent := []byte("uki-data-os-3")
+	h := sha256.Sum256(ordinaryContent)
+	m.Images[0].UEFI.SHA256 = hex.EncodeToString(h[:])
+	m.Images[0].UEFI.Size = len(ordinaryContent)
+
+	if err := manifest.Save(stateDir, &m); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(efiDir, "vintner-os-3+0-1.efi"), ordinaryContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+	efivar.SetString(efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo, 0, "\\EFI\\Linux\\vintner-os-3+0-1.efi")
+
+	// Set LoaderEntryDefault and LoaderConfigTimeout in efivars
+	if err := efivar.SetString(efivarsDir, "LoaderEntryDefault", efivar.LoaderInfo, 0x7, "debian-6.12.efi"); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.SetString(efivarsDir, "LoaderConfigTimeout", efivar.LoaderInfo, 0x7, "5"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add foreign entry in /EFI/Linux/
+	if err := os.WriteFile(filepath.Join(efiDir, "debian-6.12.efi"), []byte("foreign"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add foreign entry in /loader/entries/
+	loaderEntriesDir := filepath.Join(bootStorage, "loader", "entries")
+	os.MkdirAll(loaderEntriesDir, 0755)
+	if err := os.WriteFile(filepath.Join(loaderEntriesDir, "aaa.conf"), []byte("title Foreign\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add side-loaded file in /loader/addons/
+	loaderAddonsDir := filepath.Join(bootStorage, "loader", "addons")
+	os.MkdirAll(loaderAddonsDir, 0755)
+	if err := os.WriteFile(filepath.Join(loaderAddonsDir, "side.addon.efi"), []byte("addon"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run bless and check stdout reports
+	out := blessOutput(t, []string{
+		"--boot-storage", bootStorage,
+		"--efivars", efivarsDir,
+	})
+
+	if !hasLine(out, "LoaderEntryDefault is set: debian-6.12.efi") {
+		t.Errorf("expected LoaderEntryDefault report in output, got: %q", out)
+	}
+	if !hasLine(out, "LoaderConfigTimeout is set: 5") {
+		t.Errorf("expected LoaderConfigTimeout report in output, got: %q", out)
+	}
+	if !hasLine(out, "foreign entry in /EFI/Linux: debian-6.12.efi") {
+		t.Errorf("expected foreign entry in /EFI/Linux report in output, got: %q", out)
+	}
+	if !hasLine(out, "foreign entry in /loader/entries: aaa.conf") {
+		t.Errorf("expected foreign entry in /loader/entries report in output, got: %q", out)
+	}
+	if !hasLine(out, "side-loaded file: loader/addons/side.addon.efi") {
+		t.Errorf("expected side-loaded file report in output, got: %q", out)
+	}
+}
