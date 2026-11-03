@@ -75,7 +75,7 @@ fi
 # --- 2. Key Generation (§3) -------------------------------------------------
 echo "=== Step 2: Generating Secure Boot keys and certificates ==="
 KEYS_DIR="$OUT/keys"
-mkdir -p "$KEYS_DIR"
+rm -rf "$KEYS_DIR" && mkdir -p "$KEYS_DIR"
 
 # Test Platform Key (PK / KEK)
 openssl req -new -x509 -newkey rsa:2048 -nodes \
@@ -137,11 +137,13 @@ UNSIGNED_LOADER="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
 sb_sign "$UNSIGNED_LOADER" "$SIGNED_LOADER"
 echo "Signed loader: $(sha256sum "$SIGNED_LOADER" | awk '{print $1}')"
 
-# 3b. Sign Recovery UKIs
-SIGNED_REC_A="$OUT/signed-vintner-recovery-a.efi"
-SIGNED_REC_B="$OUT/signed-vintner-recovery-b.efi"
-sb_sign recovery/out/vintner-recovery-a.efi "$SIGNED_REC_A"
-sb_sign recovery/out/vintner-recovery-b.efi "$SIGNED_REC_B"
+# 3b. Sign Recovery UKIs natively via recovery/build.sh
+bash recovery/build.sh --uki-only --key "$KEYS_DIR/machine.key" --cert "$KEYS_DIR/machine.crt"
+SIGNED_REC_A="recovery/out/vintner-recovery-a.efi"
+SIGNED_REC_B="recovery/out/vintner-recovery-b.efi"
+sb_verify "$SIGNED_REC_A"
+sb_verify "$SIGNED_REC_B"
+echo "Signed recovery UKIs (native): $(sha256sum "$SIGNED_REC_A" | awk '{print $1}'), $(sha256sum "$SIGNED_REC_B" | awk '{print $1}')"
 
 # 3c. Sign os-1 UKI
 SIGNED_OS1="$OUT/signed-vintner-os-1+3-0.efi"
