@@ -84,19 +84,19 @@ CI runs it as `secure-boot-uefi` in `.github/workflows/qemu-tests.yml`.
 
 ## Results
 
-Verbatim `results.tsv` from Secure Boot integration test run on commit `wo-0009b`. All 40 check rows present and valid (PASS or OBSERVED); final gate PASSED.
+Verbatim `results.tsv` from Secure Boot integration test run on commit `26df0da` (CI Run `41664189578`, job `secure-boot-uefi`). All 40 check rows present and valid (PASS or OBSERVED); final gate PASSED. Note that per-run ephemeral cryptographic keys, hashes, and timestamps differ on every run.
 
 | ID | Case | Status | Evidence |
 |---|---|---|---|
-| B1 | S0 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S1 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S2 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S3 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S4 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S5 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S6 | PASS | PK enrolled, db machine cert enrolled (73650a7e...), dbx has machine hash (73650a7e...) |
-| B1 | S7 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
-| B1 | S8 | PASS | PK enrolled, db=[73650a7e], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S0 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S1 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S2 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S3 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S4 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S5 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S6 | PASS | PK enrolled, db machine cert enrolled (05992397...), dbx has machine hash (05992397...) |
+| B1 | S7 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
+| B1 | S8 | PASS | PK enrolled, db=[05992397], machine cert not in dbx, SecureBootEnabled=True |
 | B1 | S9 | PASS | no PK enrolled, SecureBootEnabled=False |
 | B2 | S0 | PASS | valid signed files verified=True, negative controls rejected=True; details: loader=True, os-1=True, rec-a=True, rec-b=True, neg_unsigned_loader=True |
 | B2 | S1 | PASS | valid signed files verified=True, negative controls rejected=True; details: unsigned os-2 UKI rejected by sbverify: No signature table present |
@@ -121,10 +121,10 @@ Verbatim `results.tsv` from Secure Boot integration test run on commit `wo-0009b
 | B4 | S0 | PASS | sb_line_found=True, bless_active=True, manifest_good=True |
 | B5 | S1 | PASS | boot 1=os-1, gen 2 state=FAILED, refused UKI files=['vintner-os-2+0-1.efi'], sbverify refusal: No signature table present |
 | B5 | S2 | PASS | boot 1=os-1, gen 2 state=FAILED, refused UKI files=['vintner-os-2+0-1.efi'], sbverify refusal: Signature verification failed |
-| B5 | S3 | PASS | boot 1=os-1, gen 2 state=FAILED, refused UKI files=['vintner-os-2+0-1.efi'], flipped offset=11814500 (inside .initrd=True), sha_before=1670312fd25b..., sha_after=c4e6a8f5a637..., sbverify refusal: flipped byte at 11814500 rejected by sbverify: Hash doesn't match image  got:       827819488c221990169975e0220686ac1c3252b5b301ad09618c125f40f276c2  expecting: df2e53076b19906ff0d1622f24ef01559709bb23d582e22743f9072119af2e41 Image fails hash check |
+| B5 | S3 | PASS | boot 1=os-1, gen 2 state=FAILED, refused UKI files=['vintner-os-2+0-1.efi'], flipped offset=11814500 (inside .initrd=True), sha_before=b305903c3257..., sha_after=88f11c7bafd8..., sbverify refusal: flipped byte at 11814500 rejected by sbverify: Hash doesn't match image  got:       aa9cd8853c8fa64b4cfed6a4e8e7c1f1a35db8e9c03fc9f9e350eaffc011ff3a  expecting: eb2d55b47878c69645056a92b6fd56dbbee818e6d383d262d934c33d415f2e19 Image fails hash check |
 | B6 | S4 | PASS | boot 1=os-1 (recovery not run), boot 2 (recovery entry selected)=none (recovery refused, not run) |
-| B7 | S5 | OBSERVED | how_ended: killed after 120s timeout in 120.06s; serial ending: BdsDxe: failed to start Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0): Access Denied \| ../src/boot/boot.c:2576@image_start: Error loading \EFI\Linux\vintner-os-1+1-2.efi: Access denied \| BdsDxe: No bootable option or device was found. \| BdsDxe: Press any key to enter the Boot Manager Menu. |
-| B7 | S6 | OBSERVED | how_ended: killed after 120s timeout in 120.12s; serial ending: BdsDxe: loading Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0) \| BdsDxe: failed to load Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0): Access Denied \| BdsDxe: No bootable option or device was found. \| BdsDxe: Press any key to enter the Boot Manager Menu. |
-| B7 | S7 | OBSERVED | how_ended: killed after 120s timeout in 120.11s; serial ending: BdsDxe: loading Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0) \| BdsDxe: failed to load Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x2,0x0): Access Denied \| BdsDxe: No bootable option or device was found. \| BdsDxe: Press any key to enter the Boot Manager Menu. |
-| B7 | S9 | OBSERVED | how_ended: poweroff in 24.88s; secureboot_enabled_line_present=False; serial ending: [   19.188003] systemd-shutdown[1]: Syncing filesystems and block devices. \| [   19.209982] systemd-shutdown[1]: Powering off. \| [   19.225968] ACPI: PM: Preparing to enter system sleep state S5 \| [   19.245364] reboot: Power down |
+| B7 | S5 | OBSERVED | how_ended: killed after 120s timeout in 120.03s; serial ending: BdsDxe: failed to start Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x1,0x0): Access Denied \| Error loading \EFI\Linux\vintner-os-1+1-2.efi: Access denied \| BdsDxe: No bootable option or device was found. \| BdsDxe: Press any key to enter the Boot Manager Menu. |
+| B7 | S6 | OBSERVED | how_ended: killed after 120s timeout in 120.03s; serial ending: BdsDxe: loading Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x1,0x0) \| BdsDxe: failed to load Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x1,0x0): Access Denied \| BdsDxe: No bootable option or device was found. \| BdsDxe: Press any key to enter the Boot Manager Menu. |
+| B7 | S7 | OBSERVED | how_ended: killed after 120s timeout in 120.03s; serial ending: BdsDxe: loading Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x1,0x0) \| BdsDxe: failed to load Boot0001 "UEFI Misc Device" from PciRoot(0x0)/Pci(0x1,0x0): Access Denied \| BdsDxe: No bootable option or device was found. \| BdsDxe: Press any key to enter the Boot Manager Menu. |
+| B7 | S9 | OBSERVED | how_ended: poweroff in 14.35s; secureboot_enabled_line_present=False; serial ending: [    5.069065] systemd-shutdown[1]: Powering off. \| [    5.070541] ACPI: PM: Preparing to enter system sleep state S5 \| [    5.071568] kvm: exiting hardware virtualization \| [    5.072375] reboot: Power down |
 | B8 | S8 | PASS | mismatched publish rejected=True, boot storage images=1 (only os-1), boot 1=os-1 |
