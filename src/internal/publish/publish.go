@@ -270,6 +270,27 @@ func generateOSRelease(origPath, outPath string, gen int, abi string) error {
 	return os.WriteFile(outPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
+// grubQuote returns s as a GRUB script double-quoted word. Inside double
+// quotes GRUB expands "$" and treats a backslash as an escape only before
+// "$", `"`, `\` or a newline; every other byte is literal. Go's %q is not this
+// syntax: it leaves "$" to be expanded and writes escapes such as é that
+// GRUB passes through unchanged.
+func grubQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case '$', '"', '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 func Publish(ctx context.Context, opts Options) (*Result, error) {
 	abi := opts.KernelABI
 	if abi == "" {
@@ -499,7 +520,14 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
-	if newestSameABI != nil && newestSameABI.State != "FAILED" {
+	// The record alone is not enough: its files must be on boot storage and
+	// verify, or an image with missing or damaged files (or a STAGED record that
+	// reconciliation could not finish) would be called unchanged forever. The
+	// view predates the reconcile actions, which touch only staging and grubenv.
+	isBIOS := (m.Firmware == "bios" || m.Firmware == "both")
+	isUEFI := (m.Firmware == "uefi" || m.Firmware == "both")
+	if newestSameABI != nil && (newestSameABI.State == "TRYING" || newestSameABI.State == "GOOD") &&
+		v.FilesVerify(*newestSameABI, isUEFI, isBIOS) {
 		currentKernelSHA, err := fileSHA256(vmlinuzPath)
 		var expectedKernelSHA string
 		if newestSameABI.ModuleTree != nil {
@@ -542,8 +570,6 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	// 7. Check that grubenv has room.
 	g := m.NextGeneration
-	isBIOS := (m.Firmware == "bios" || m.Firmware == "both")
-	isUEFI := (m.Firmware == "uefi" || m.Firmware == "both")
 	grubenvPath := filepath.Join(bootStorageDir, "grub", "grubenv")
 
 	if isBIOS {
@@ -661,7 +687,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	if isBIOS {
 		slotCfgBuiltPath = filepath.Join(buildDir, "slot.cfg")
-		slotCfgContent := fmt.Sprintf("set vintner_cmdline=%q\n", baseCmdline)
+		slotCfgContent := "set vintner_cmdline=" + grubQuote(baseCmdline) + "\n"
 		if err := os.WriteFile(slotCfgBuiltPath, []byte(slotCfgContent), 0644); err != nil {
 			return nil, fmt.Errorf("write slot.cfg: %w", err)
 		}
