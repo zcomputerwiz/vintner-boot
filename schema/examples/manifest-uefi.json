@@ -30,7 +30,7 @@
         "modules_dep_sha256": "153812ae5fea0b73a011bf28bd7cea93644437c3fe3260b7b2d7e1e2f9f46bde",
         "dkms_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
-      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet",
+      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet vintner.bootstorage=PARTUUID=9d8c7b6a-5f4e-4d3c-2b1a-0e9f8d7c6b5a",
       "uefi": {
         "entry": "vintner-os-3",
         "sha256": "011e39efe22590f4a339ad19cd180f4d855e32feba602d1ec8e154780838c99c",
@@ -54,7 +54,7 @@
         "modules_dep_sha256": "29c1b289e7522195b362e44f54e05470b69ad20540ab60a18a05e5bf6951f13d",
         "dkms_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
-      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet",
+      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet vintner.bootstorage=PARTUUID=9d8c7b6a-5f4e-4d3c-2b1a-0e9f8d7c6b5a",
       "uefi": {
         "entry": "vintner-os-2",
         "sha256": "6ca202c88e549dff68c09bfafbfc60b2fac074debc1e6777e9ba4b6c703ed114",
@@ -78,7 +78,7 @@
         "modules_dep_sha256": "ca0df2c95aa144c1d0ff2ff3c8f967fdc1de9ef0c4120b3726416701b519d619",
         "dkms_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
       },
-      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet",
+      "cmdline": "root=PARTUUID=6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b ro quiet vintner.bootstorage=PARTUUID=9d8c7b6a-5f4e-4d3c-2b1a-0e9f8d7c6b5a",
       "uefi": {
         "entry": "vintner-os-1",
         "sha256": "bb82030dbc2bcaba32a90bf2e207a84a856fc5f033b77c480836ab6f77f40f19",
