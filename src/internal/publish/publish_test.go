@@ -8,12 +8,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
@@ -632,6 +634,85 @@ func TestPublishUnchanged(t *testing.T) {
 	}
 	if !strings.Contains(out2.String(), "unchanged") {
 		t.Errorf("expected output to contain \"unchanged\", got: %s", out2.String())
+	}
+}
+
+// The unchanged check must look at boot storage, not only the record: an image
+// whose files are missing or damaged is published again.
+func TestPublishUnchangedNeedsFilesInPlace(t *testing.T) {
+	cases := []struct {
+		fw     string
+		damage func(t *testing.T, bootStorageDir string)
+	}{
+		{"bios", corruptBIOSInitrd},
+		{"both", corruptBIOSInitrd},
+		{"uefi", removeUKI},
+		{"both", removeUKI},
+	}
+	for _, tc := range cases {
+		t.Run(tc.fw, func(t *testing.T) {
+			rootDir, bootStorageDir, m := setupTestEnv(t, tc.fw)
+			abi := "6.12-base"
+			setupKernelFiles(t, rootDir, abi)
+			opts := Options{
+				KernelABI:        abi,
+				BootStorageDir:   bootStorageDir,
+				RootDir:          rootDir,
+				LockFile:         filepath.Join(bootStorageDir, "publish.lock"),
+				CmdlineContent:   m.Images[0].Cmdline,
+				PackageQuery:     mockPackageQuery{pkg: "linux-image-" + abi, ver: "6.12-1"},
+				UKIBuilder:       mockUKIBuilder{},
+				DiskSpaceChecker: mockDiskChecker{free: 100 * 1024 * 1024},
+				Stdout:           io.Discard,
+				Stderr:           io.Discard,
+			}
+			if res, err := Publish(context.Background(), opts); err != nil || res.Unchanged || res.Generation != 2 {
+				t.Fatalf("first publish: res=%+v err=%v", res, err)
+			}
+
+			tc.damage(t, bootStorageDir)
+
+			res, err := Publish(context.Background(), opts)
+			if err != nil {
+				t.Fatalf("second publish: %v", err)
+			}
+			if res.Unchanged || res.Generation != 3 {
+				t.Fatalf("second publish = %+v, want generation 3 published", res)
+			}
+		})
+	}
+}
+
+func corruptBIOSInitrd(t *testing.T, bootStorageDir string) {
+	p := filepath.Join(bootStorageDir, "vintner", "bios", "os-2", "initrd.img")
+	if err := os.WriteFile(p, []byte("damaged"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removeUKI(t *testing.T, bootStorageDir string) {
+	efiDir := filepath.Join(bootStorageDir, "EFI", "Linux")
+	name, err := bls.Find(efiDir, "vintner-os-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(efiDir, name)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGrubQuote(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"root=UUID=1 ro quiet", `"root=UUID=1 ro quiet"`},
+		{`systemd.setenv=X=$HOME`, `"systemd.setenv=X=\$HOME"`},
+		{`foo="a b"`, `"foo=\"a b\""`},
+		{`a\b`, `"a\\b"`},
+		{"café", `"café"`},
+	}
+	for _, tt := range tests {
+		if got := grubQuote(tt.in); got != tt.want {
+			t.Errorf("grubQuote(%q) = %s, want %s", tt.in, got, tt.want)
+		}
 	}
 }
 

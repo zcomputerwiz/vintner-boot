@@ -97,6 +97,9 @@ func TestIsVintnerOrdinary(t *testing.T) {
 		{"vintner-os-abc", 0, false},
 		{"other-os-1", 0, false},
 		{"vintner-os-1+3-0", 0, false}, // IsVintnerOrdinary is called on stem, not full name
+		{"vintner-os-01", 0, false},    // not the canonical spelling of generation 1
+		{"vintner-os-00", 0, false},
+		{"vintner-os-+1", 0, false},
 	}
 
 	for _, tt := range tests {

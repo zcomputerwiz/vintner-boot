@@ -49,14 +49,21 @@ activate() {
 }
 find_root() { case $spec in /dev/*) [ -b "$spec" ] && echo "$spec" ;; *) findfs "$spec" 2>/dev/null ;; esac; }
 
-# manifest_root: root.uuid from the valid manifest copy with the highest seq on
-# boot storage (schema/manifest.md). A copy is used only if line 2 is the
-# SHA-256 of line 1; the JSON itself is not validated here.
+# manifest_root: "<root.uuid> <device>" from the valid manifest copy with the
+# highest seq on boot storage (schema/manifest.md). A copy is used only if
+# line 2 is the SHA-256 of line 1; the JSON itself is not validated here.
+# With vintner.bootstorage=PARTUUID= on the command line, only the manifest
+# that names that partition as its boot storage counts. Without it, vintner
+# installations on several disks that name different roots are not guessed
+# between: the first one found could belong to another machine's disk.
 manifest_root() {
+	want=$(arg bootstorage | sed -n 's/^PARTUUID=//p' | tr 'A-F' 'a-f')
+	found=''
 	mkdir -p /mnt/bs
 	for p in /sys/class/block/*/partition; do
-		mount -t vfat -o ro "/dev/$(basename "$(dirname "$p")")" /mnt/bs 2>/dev/null || continue
-		best='' bestseq=-1
+		d=/dev/$(basename "$(dirname "$p")")
+		mount -t vfat -o ro "$d" /mnt/bs 2>/dev/null || continue
+		best='' bestseq=-1 bestbs=''
 		for c in /mnt/bs/vintner/state/manifest-a /mnt/bs/vintner/state/manifest-b; do
 			[ -f "$c" ] || continue
 			j=$(sed -n 1p "$c")
@@ -64,22 +71,44 @@ manifest_root() {
 			s=$(printf '%s' "$j" | sed -n 's/.*"seq":\([0-9][0-9]*\).*/\1/p')
 			# "uuid" right after a quote, so not the end of "partuuid".
 			u=$(printf '%s' "$j" | sed -n 's/.*"root":{[^}]*"uuid":"\([0-9A-Fa-f-][0-9A-Fa-f-]*\)".*/\1/p')
-			if [ -n "$s" ] && [ -n "$u" ] && [ "$s" -gt "$bestseq" ]; then best=$u bestseq=$s; fi
+			b=$(printf '%s' "$j" | sed -n 's/.*"boot_storage":{"partuuid":"\([0-9A-Fa-f-]*\)".*/\1/p' | tr 'A-F' 'a-f')
+			if [ -n "$s" ] && [ -n "$u" ] && [ "$s" -gt "$bestseq" ]; then best=$u bestseq=$s bestbs=$b; fi
 		done
 		umount /mnt/bs
-		[ -n "$best" ] && { echo "$best"; return; }
+		[ -n "$best" ] || continue
+		if [ -n "$want" ]; then
+			[ "$bestbs" = "$want" ] && { echo "$best $d"; return; }
+		else
+			found="$found$best $d
+"
+		fi
 	done
+	if [ -n "$want" ]; then
+		echo "no manifest names boot storage PARTUUID=$want" >&2
+		return
+	fi
+	n=$(printf '%s' "$found" | cut -d' ' -f1 | sort -u | grep -c .)
+	if [ "$n" -eq 1 ]; then
+		printf '%s' "$found" | head -n 1
+	elif [ "$n" -gt 1 ]; then
+		echo "vintner installations with different roots found; boot with vintner.root= or mount the root by hand:" >&2
+		printf '%s' "$found" | sed 's/^\([^ ]*\) \(.*\)$/  root UUID=\1 (manifest on \2)/' >&2
+	fi
 }
 
 # Root: vintner.root=UUID=<fs uuid> or a /dev path on the command line, else
 # the manifest's root.uuid (the UEFI recovery UKIs are shared and carry none),
 # on a plain partition, md, LVM or LUKS. A LUKS passphrase is asked for only
 # when the root is not found without it; an empty answer skips the device.
-root=absent ro=no
+root=absent ro=no bsdev=
 spec=$(arg root)
 if [ -z "$spec" ]; then
-	u=$(manifest_root)
-	[ -n "$u" ] && spec=UUID=$u && echo "root from the manifest on boot storage: $spec"
+	r=$(manifest_root)
+	if [ -n "$r" ]; then
+		spec=UUID=${r%% *} bsdev=${r#* }
+		# ci/recovery-fallback (D4) matches this line exactly.
+		echo "root from the manifest on boot storage: $spec"
+	fi
 fi
 if [ -n "$spec" ]; then
 	root=failed
@@ -105,7 +134,8 @@ if [ -n "$spec" ]; then
 	fi
 fi
 
-# Logs to /run, and to boot storage when found: the vfat partition holding /vintner.
+# Logs to /run, and to boot storage when found: the partition whose manifest
+# named the root, else every vfat partition holding /vintner.
 L=/run/vintner/logs/$(date +%Y%m%dT%H%M%S)
 mkdir -p "$L"
 dmesg > "$L/dmesg.txt"
@@ -116,6 +146,7 @@ logs=$L
 mkdir -p /mnt/bs
 for p in /sys/class/block/*/partition; do
 	dev=/dev/$(basename "$(dirname "$p")")
+	[ -n "$bsdev" ] && [ "$dev" != "$bsdev" ] && continue
 	mount -t vfat -o ro "$dev" /mnt/bs 2>/dev/null || continue
 	if [ -d /mnt/bs/vintner ] && mount -o remount,rw /mnt/bs; then
 		d=/mnt/bs/vintner/recovery-logs/${L##*/}

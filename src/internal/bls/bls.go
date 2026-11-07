@@ -80,8 +80,11 @@ func IsVintnerOrdinary(stem string) (gen int, ok bool) {
 	if !strings.HasPrefix(stem, prefix) {
 		return 0, false
 	}
-	val, err := strconv.ParseUint(stem[len(prefix):], 10, 31)
-	if err != nil {
+	digits := stem[len(prefix):]
+	val, err := strconv.ParseUint(digits, 10, 31)
+	// Only the canonical spelling names a generation: "vintner-os-01" is not
+	// generation 1, or a foreign file could pass as a recorded image.
+	if err != nil || strconv.FormatUint(val, 10) != digits {
 		return 0, false
 	}
 	return int(val), true

@@ -12,10 +12,17 @@ It is built only from Debian trixie packages, never from the installed system (R
 ## Build
 
 ```sh
+# Unsigned build:
 bash recovery/build.sh
+
+# Signed build (Secure Boot):
+bash recovery/build.sh --key /path/to/key.pem --cert /path/to/cert.pem
+
+# Fast re-build of UKIs only (skips package download and initrd assembly):
+bash recovery/build.sh --uki-only [--key <key.pem>] [--cert <cert.pem>]
 ```
 
-**Needs:** `curl xz-utils dpkg cpio kmod binutils python3 python3-pefile`. No root.
+**Needs:** `curl xz-utils dpkg cpio kmod binutils python3 python3-pefile`. For Secure Boot signing: `sbsigntool`. No root.
 
 **What it does:**
 
@@ -25,7 +32,7 @@ bash recovery/build.sh
 4. Writes `recovery/out/` (ignored by git), with the initramfs compressed with xz:
    - `vmlinuz`
    - `initrd.img`
-   - `vintner-recovery-a.efi` and `vintner-recovery-b.efi`, with `.osrel` per ADR-0003.
+   - `vintner-recovery-a.efi` and `vintner-recovery-b.efi`, with `.osrel` per ADR-0003 (signed with `sbsign` via `ukify` when `--key` and `--cert` are passed, or `SECUREBOOT_KEY`/`SECUREBOOT_CERT` environment variables are set).
 
 ## Kernel command line
 
@@ -95,4 +102,3 @@ Architecture §5 budgets 300 MiB per recovery image. `libcrypto` (6.3 MiB) is th
 
 - Btrfs, XFS and FAT repair tools; only ext4 has `e2fsck`.
 - The rollback and diagnostics commands.
-- Secure Boot signing of the UKIs.
