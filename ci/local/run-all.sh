@@ -153,7 +153,7 @@ printf 'job\tstatus\tseconds\tlog\n' > "$SUMMARY"
 # image cache.
 REPO=$PWD
 COMMIT_FULL=$(git rev-parse HEAD)
-ROOTS=("$REPO")
+ROOTS=("" "$REPO") # index 1 is slot 1
 setup_slot() {
 	local k=$1 ws=$REPO/ci/out/local/ws$1
 	if [ -d "$ws/.git" ] || [ -f "$ws/.git" ]; then
