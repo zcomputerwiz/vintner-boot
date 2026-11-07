@@ -171,6 +171,14 @@ bless
 expect grubenv "$(vars)" "$O;VINTNER_T_1=xxx;VINTNER_T_2=xxx;VINTNER_T_RA=xxx"
 end "os-2"
 
+# WO-0010 1.4: no serial port. GRUB must leave nothing but its own "trying" line
+# on the screen. The result is a screen check (noserial.py), not a boot id.
+begin S1-no-serial-port
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+BOOTED=-
+if ! python3 ci/bios-trial/noserial.py "$IMG" >&2; then OK=0; fi
+end "-"
+
 begin B2-failing-candidate
 set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
 slot_cfg "$BS" os-2 os-2 reboot

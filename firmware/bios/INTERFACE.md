@@ -12,6 +12,8 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 
   The list lives in [`core-modules.txt`](core-modules.txt), which every image builder reads; `ci/lint/grub-modules.sh` fails if `grub.cfg` uses a module outside it.
 
+- `grub.cfg` sets up the serial terminal only if the `serial` command succeeds, and clears the screen if it does not, so a machine without a serial port shows no error (WO-0010 1.4; checked by `ci/bios-trial/noserial.py`).
+
 - The early configuration embedded in `core.img` is the only per-machine part:
 
   ```
