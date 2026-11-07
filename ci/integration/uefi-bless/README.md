@@ -56,7 +56,7 @@ ci/integration/uefi-bless/run.sh
 | A2 | File name on boot storage after first boot | `vintner-os-1+3-0.efi` | PASS | `Files in ::/EFI/Linux: vintner-os-1+3-0.efi` |
 | A3 | Manifest after first boot | generation 1 GOOD, first_good/last_good set, seq+1 | PASS | `manifest-a seq=3 (state=GOOD, first_good set), manifest-b seq=2 (TRYING)` |
 | A4 | Boot storage mounts visible on running system | Only ESP mounted; boot storage not in host namespace | PASS | `findmnt showed only /boot/efi; /run/vintner not in mountinfo` |
-| A5 | What `systemd-gpt-auto-generator` did | OBSERVED (skips XBOOTLDR because /boot populated) | OBSERVED | `-.mount; boot-efi.mount; (skipped boot storage XBOOTLDR since /boot populated)` |
+| A5 | What `systemd-gpt-auto-generator` did | no generated mount unit names the boot storage partition | PASS | (evidence from the last run; WO-0010 1.6 turned this from an observation into a check) |
 | A6 | `sudo vintner reconcile --dry-run` | Exit 0, no report lines, unmounted afterwards | PASS | `vintner reconcile --dry-run exited 0 with no action or report lines` |
 | A7 | Second boot with `vintner-bless.service` masked | `vintner-os-1+2-1.efi` (boot counted, not rearmed) | PASS | `Files in ::/EFI/Linux: vintner-os-1+2-1.efi (decremented by systemd-boot to +2-1, not rearmed)` |
 | A8 | Third boot with unmasked bless but missing `vintner.bootstorage=` | Bless fails naming parameter; file +1-2; manifest unchanged | PASS | `Bless failed naming missing parameter; file decremented to +1-2; manifest unchanged` |
