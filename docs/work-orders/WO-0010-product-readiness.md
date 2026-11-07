@@ -2,7 +2,7 @@
 
 - **For:** the agents that fix the review findings below and make vintner-boot usable by a first product OS (WineExplorer, a Debian 13 desktop). Read `docs/architecture.md` §3 (requirements), §4–§6, `docs/adr/0003-uefi-entry-naming-and-boot-counting.md` and `docs/security-threat-model.md` first.
 - **Issued:** 2026-11-07
-- **Status:** open.
+- **Status:** open. Decisions recorded 2026-11-07 (see "Decisions").
 - **Branch:** one branch and PR per phase, `wo-0010-p<N>` from `origin/main`. A phase starts after the previous one is merged, except where the dependency table says otherwise. Large phases may be split into several PRs; keep the item IDs in the PR titles.
 - **Basis:** a review on 2026-11-07 of `main` at `2dae442`, the unmerged branches `review-fixes` (`5d5f735`) and `recovery-signing` (`a2f5df9`), and the needs of WineExplorer (its `docs/VINTNER_BOOT.md`). Every finding below was checked against the code; file:line references are to `main` at `2dae442`.
 
@@ -34,17 +34,34 @@ Close the gaps between what the documents promise and what the code does, then a
 - Documents and code change together: when an item changes a documented behaviour, update `docs/architecture.md`, the ADR or the interface file in the same PR. If an item conflicts with an accepted ADR, stop and report instead.
 - PR body as a file; commits and the PR end with the usual attribution lines.
 
-## Decisions needed before the phase that uses them
+## Decisions
 
-The owner decides these; an item that depends on an undecided one stops and reports.
+Recorded 2026-11-07. The owner decided D-A and D-D. For the others the owner set the goal: the boot and recovery experience should feel familiar to people who know Windows. The reviewer chose the options below to serve that goal. The owner may override any of them; an item that depends on an overridden decision stops and reports.
 
-- **D-A (phase 3): who partitions.** Recommended: the product's installer partitions to a documented layout (3.1), and `vintner install` validates and deploys. A partitioning helper can come later.
-- **D-B (phase 4): source of truth for the kernel command line.** Recommended: `/etc/kernel/cmdline` holds the product and administrator options; the publisher adds `root=` and `vintner.bootstorage=` itself (4.2).
-- **D-C (phase 4): extra boot entries.** Recommended: multi-profile UKIs if the 4.3 spike passes, else one UKI per variant.
-- **D-D (phase 4): does a variant boot bless?** Recommended: a completed variant boot re-arms the counter (so Safe Mode boots do not demote a working image) but never promotes a `TRYING` image to `GOOD`.
-- **D-E (phase 2): `/etc/plymouth/plymouthd.conf`.** Do not overwrite another package's conffile; choose a diversion or a postinst edit after 2.3 establishes ownership.
-- **D-F (phase 4): interface for unprivileged products.** Every `vintner` command needs root to mount boot storage. Recommended: `vintner status --json` first (4.5); a small D-Bus service with polkit actions only if a product needs it.
-- **D-G (phase 5): out-of-tree modules under Secure Boot** (5.3).
+- **D-A (decided): the product's installer partitions.** It creates the layout documented in 3.1. `vintner install` validates the layout and deploys onto it; it never partitions.
+- **D-B (chosen): the kernel command line lives in `/etc/kernel/cmdline`.** It holds the product's and the administrator's options; the publisher adds `root=` and `vintner.bootstorage=` itself, and `vintner cmdline` edits the file (4.2). The Windows equivalent is `boot.ini`, which XP users edit from Startup and Recovery or msconfig. A change becomes a new `TRYING` generation, so a bad option falls back by itself.
+- **D-C (chosen): each variant is its own UKI without a boot counter.** D-D rules out multi-profile UKIs: systemd-boot keeps the counter in the file name, so every profile of one file shares one counter, and a Safe Mode boot would spend a try of the normal entry. On BIOS a variant is a second command line in the same slot and costs no space.
+- **D-D (decided): a variant boot changes no boot state.** A `GOOD` image stays `GOOD`, a bad image stays bad, and a `TRYING` image keeps exactly the tries it had. Booting a variant never re-arms, promotes or demotes any image, including one whose ordinary boot failed just before.
+- **D-E (chosen): vintner does not own `/etc/plymouth/plymouthd.conf`.** `vintner-core` ships its theme only. `vintner install --plymouth-theme <name>` (default `vintner-bgrt`) selects the boot screen once, so a product installs its own boot screen the same way. On Windows the boot screen belongs to the system: XP's logo and progress bar, or since Windows 8 the PC maker's logo, which `vintner-bgrt` already reproduces.
+- **D-F (chosen): the interface is `vintner status --json` and `--json` output on the other commands, not a D-Bus service.** ADR-0002 allows only the Go standard library, which has no D-Bus. A product that runs its settings UI unprivileged wraps these commands in its own privileged service. That is enough for Windows-style dialogs: Startup and Recovery, msconfig's boot options, "restart in Safe Mode".
+- **D-G (chosen): tier B on machines that need out-of-tree modules.** Windows users expect an installed driver to work with Secure Boot on. With tier B the machine key is enrolled once as a MOK (one confirmation in MokManager on the first boot) and DKMS signs modules with the same key, so vendor drivers load. Tier A stays for managed machines; there the installer and `vintner status` say plainly that out-of-tree modules cannot load with Secure Boot on (5.3).
+
+### The Windows-familiar boot experience
+
+What vintner provides so that a product can offer the start-up experience Windows users know. The product's own screens are the product's work, not this work order's.
+
+| Windows XP | Here | Who |
+|---|---|---|
+| No menu when one system is installed; F8 during start shows the options | Hidden menu (`timeout 0`); a key held at start opens it; F8 is the documented key (4.8) | vintner |
+| "Windows Advanced Options Menu": Safe Mode, Safe Mode with Networking, Safe Mode with Command Prompt, Enable Boot Logging, Enable VGA Mode, Last Known Good Configuration, Debugging Mode, Disable automatic restart, Start normally, Reboot, Return to OS Choices Menu | One variant entry per generation, titled by the product (for example "Advanced Options"), that boots into the product's own text menu, which applies the choice | variant: vintner (4.3); menu: product |
+| Enable VGA Mode | A second variant with `nomodeset`, or the product's menu blocking GPU drivers for that boot | product's choice |
+| Last Known Good Configuration | The newest `GOOD` generation older than the newest one: `vintner next-boot previous-good` (4.4); older generations also stay in the menu | vintner |
+| Return to OS Choices Menu | `vintner next-boot menu` (4.4) | vintner |
+| "Windows did not start successfully" screen after a failed start, with a 30-second countdown | `vintner status --json` reports the booted image's failed attempts since its last good boot (4.5); the product shows the screen early in boot | data: vintner; screen: product |
+| Recovery Console | Recovery A and B, titled by the product (4.1) | vintner |
+| Startup and Recovery: "Time to display list of operating systems", Edit `boot.ini` | `vintner menu-timeout` (4.7) and `vintner cmdline` (4.2) | commands: vintner; dialog: product |
+| msconfig BOOT.INI tab (`/SAFEBOOT`, `/BASEVIDEO`, `/SOS`, `/BOOTLOG`, `/NOGUIBOOT`) | `vintner next-boot variant <id>` for one boot; `vintner cmdline` for lasting options | both |
+| The last known good configuration is updated after a successful logon | The product's health check passes once the logon screen is up (4.6) | product |
 
 ## Phase 0: land pending work and correct the record
 
@@ -93,7 +110,11 @@ Today `debian/vintner-core.install` ships only the Plymouth theme and `plymouthd
 
 **2.2 (P0) Package relations.** Add the `Conflicts` from architecture §5 (`docs/architecture.md:146-155`) and `vintner-core Depends: systemd-ukify`. `ci/lifecycle/packages/README.md` (findings 1 and 4) shows that each of `systemd-boot`, `grub-efi-amd64`, `grub-cloud-amd64` and `grub-pc` replaces a vintner loader file when installed.
 
-**2.3 (P0) `/etc/plymouth/plymouthd.conf`.** `vintner-core` ships this path; Debian's `plymouth` may ship it too. CI hides the question by installing with `--force-confold` and copying the file over (`ci/graphics/run.sh:280-281`). Establish ownership with `dpkg -S` on trixie, then apply decision D-E. Acceptance: install `vintner-core` before and after `plymouth`, and upgrade `plymouth`; there are no dpkg prompts or errors, and the theme is `vintner-bgrt` in every order.
+**2.3 (P0) `/etc/plymouth/plymouthd.conf` (D-E).** `vintner-core` ships this path, and Debian's `plymouth` may ship it too. CI hides the question by installing with `--force-confold` and copying the file over (`ci/graphics/run.sh:280-281`).
+- Remove `plymouthd.conf` from `debian/vintner-core.install`.
+- Theme selection moves to `vintner install --plymouth-theme` (3.2). It sets `Theme`, `ShowDelay=0` and `DeviceTimeout=8` in `/etc/plymouth/plymouthd.conf` as an administrator edit, keeping every other line.
+- Establish with `dpkg -S` on trixie whether `plymouth` ships the file as a conffile, and report what an upgrade of `plymouth` does to the edited file under `unattended-upgrades`.
+- Acceptance: `vintner-core` installs before and after `plymouth` with no dpkg prompt or error. After `vintner install`, the chosen theme is active and survives a `plymouth` reinstall.
 
 **2.4 (P1) `vintner-platform` payloads.** Ship the inert payloads described in `debian/control` under `/usr/lib/vintner/payloads/`: the systemd-boot binary, the GRUB `boot.img` and the module set for `core.img`, and the recovery UKIs or their parts. Installing or upgrading the package never touches the ESP, boot storage or NVRAM. Phase 3 deploys from here.
 
@@ -107,7 +128,7 @@ Today `debian/vintner-core.install` ships only the Plymouth theme and `plymouthd
 - State what a root on md RAID, LVM or LUKS means for boot storage (always a plain partition on one disk).
 
 **3.2 (P0) `vintner install`.** One command that turns a prepared target into a vintner system. It must run from inside a chroot of the target, where `/proc/cmdline` belongs to the installer's kernel. Today both `publish` (`publish.go:314-337`) and `cmd/vintner/bootstorage.go:20` read `/proc/cmdline`.
-- Inputs, illustrative names: `--target`, `--esp`, `--boot-storage`, `--bios-disk`, `--firmware uefi|bios|both`, `--tier none|A`, and the product's command-line options (or `/etc/kernel/cmdline` per D-B).
+- Inputs, illustrative names: `--target`, `--esp`, `--boot-storage`, `--bios-disk`, `--firmware uefi|bios|both`, `--tier none|A|B`, `--plymouth-theme` (2.3), `--recovery-title` (4.1), and the product's command-line options in the target's `/etc/kernel/cmdline` (D-B). Partitioning is the product's (D-A): `vintner install` checks the layout against 3.1 and refuses a layout that does not match.
 - Order, from architecture §5 (`docs/architecture.md:130-133`):
   1. Deploy and verify the loader, `loader.conf`, `boot.img`/`core.img`, grubenv and the recovery images from the 2.4 payloads.
   2. Write the manifest with the target's `machine_id` and a new `installation_id`. In tier A, run `vintner secureboot init` and sign the loader and recovery.
@@ -132,9 +153,11 @@ Today `debian/vintner-core.install` ships only the Plymouth theme and `plymouthd
 - Recovery UKIs: `vintner recovery A|B (<version>)` (`recovery/build.sh:73`).
 
 Change:
-- The publisher writes `vintner_title` (`PRETTY_NAME`, ABI) into `slot.cfg`, and `grub.cfg` uses it.
-- Recovery titles become product-neutral by default ("Recovery (A)"). A product title is applied at install time by `vintner install`, which rebuilds the recovery `.osrel` from the payload parts and signs in tier A; recovery stays independent of the installed kernel (R06).
 - No visible menu text contains "vintner" unless the product chooses it.
+- Ordinary entries show `PRETTY_NAME` and the publish date, for example "WineExplorer (2026-11-07)", so a person picks a generation by date, as Windows users pick a restore point. The ABI moves out of the title into a field shown on request (systemd-boot's `p` key). Amend the ADR-0003 table.
+- BIOS: the publisher writes `vintner_title` (and one title per variant, 4.3) into `slot.cfg`, and `grub.cfg` uses them.
+- Recovery entries default to "Recovery Console" (A) and "Recovery Console (backup)" (B). `vintner install --recovery-title` sets a product title. It rebuilds the recovery `.osrel` from the payload parts and signs in tier A or B; recovery stays independent of the installed kernel (R06).
+- Acceptance: CI asserts the menu titles on both firmwares.
 
 **4.2 (P1) Kernel command-line management.** Each publish copies the command line of the newest `GOOD` image (`publish.go:436-456`). Nothing reads `/etc/kernel/cmdline`, and no command changes the line after installation. Desktop users need `nomodeset`, vendor driver options or a serial console.
 - Change, per D-B: the publisher composes `root=… ro vintner.bootstorage=…` plus the contents of `/etc/kernel/cmdline`, refusing `root=` and `vintner.*` tokens there.
@@ -146,30 +169,62 @@ Change:
 - `firmware/bios/grub.cfg` is static.
 - Any other entry is reported as foreign.
 
-Change:
-- A product declares variants in `/etc/vintner/variants.d/<id>.conf`: a title and extra tokens, validated like 4.2.
-- **Spike first (D-C).** Debian 13's systemd 257 supports multi-profile UKIs (`ukify --profile`/`--join-profile`), which systemd-boot lists as one menu entry per profile. Prove on `systemd-boot-efi` 257.13, signed and unsigned, that:
-  - the menu shows the profiles;
-  - `default vintner-*` boots profile 0 only, never a variant;
-  - the boot counter belongs to the file whichever profile booted;
-  - `bless` can tell which profile booted (`LoaderEntrySelected`);
-  - the all-bad → recovery rule (`ci/selection-policy`) still holds.
-
-  If any of these fails, publish one UKI per variant and update the §5 image budget.
-- BIOS: `slot.cfg` lists the variants, and the Shift menu shows them under each generation.
-- Health treats variant entries as vintner-owned.
-- Blessing follows D-D.
+Change (D-C, D-D):
+- A product declares variants in `/etc/vintner/variants.d/<id>.conf`: a title and extra tokens, validated like 4.2. vintner adds `vintner.variant=<id>` to each variant's command line.
+- UEFI: for each retained generation and each variant, the publisher builds one more UKI: the generation's command line plus the variant's tokens, signed in tier A or B.
+  - It has **no boot counter** in its name, like recovery B.
+  - Its file name must not match the `loader.conf` `default` pattern, so systemd-boot never selects a variant on its own. Otherwise, with every ordinary image bad, an uncounted variant of a broken kernel would boot for ever instead of recovery.
+  - Its sort key places it directly after its generation's ordinary entry.
+  - Amend ADR-0003: names, order and the foreign-entry rules.
+- BIOS: `slot.cfg` holds one command line per variant, and the Shift menu lists the variants under their generation. A variant menu entry neither decrements a counter nor sets `VINTNER_BOOTED`.
+- Bless: a boot whose command line has `vintner.variant=` changes nothing: no rename, no grubenv write, no manifest state change. This includes a `VINTNER_BOOTED` left by a failed ordinary boot just before (BIOS); it must stay so that the next ordinary boot counts the failure.
+- Manifest and storage:
+  - Each image records its variant files and their hashes.
+  - Health treats variant files as vintner's.
+  - Garbage collection removes them with their generation.
+  - The §5 image budget counts them. If the variants do not fit, the publisher reports it and publishes the ordinary image without them. It never drops a `GOOD` ordinary image or recovery to make room.
+- Acceptance, on both firmwares:
+  - Booting a variant of a `GOOD`, a `TRYING` and a bad image leaves every file name, grubenv variable and manifest state byte-identical.
+  - A variant boot right after a failed ordinary boot leaves that failure counted.
+  - With every ordinary image bad and variants present, recovery A boots without input (`ci/selection-policy`).
+  - The menu shows each variant directly after its generation.
 
 **4.4 (P1) Restart into recovery or a chosen entry.** Architecture §3 P1 asks for one-shot recovery from the running system, and §11 names `set_recovery_next_boot` (`docs/architecture.md:54`, `:308`). No command sets `LoaderEntryOneShot`, and `state.go:459-460` reports it as foreign whenever it is set.
-- Add `vintner next-boot recovery|generation <g>|variant <id>`: `LoaderEntryOneShot` on UEFI, and a one-shot grubenv variable handled by `grub.cfg` on BIOS.
-- The health check must not report a one-shot entry that vintner set.
+- Add `vintner next-boot` with these targets:
+  - `recovery`: the Recovery Console.
+  - `previous-good`: the newest `GOOD` generation older than the newest generation (Windows' Last Known Good Configuration).
+  - `generation <g>`.
+  - `variant <id>`: that variant of the generation that would boot next ("restart in Safe Mode").
+  - `menu [--timeout <s>]`: show the menu once (Windows' "Return to OS Choices Menu").
+- UEFI uses `LoaderEntryOneShot` and `LoaderConfigTimeoutOneShot`. BIOS uses one-shot grubenv variables that `grub.cfg` consumes and clears in the same `save_env` as its counter write.
+- A one-shot boot of an ordinary generation counts like any boot; a one-shot variant follows D-D.
+- The health check must not report a one-shot setting that vintner made.
 
-**4.5 (P1) Machine-readable status.** Add `vintner status --json`: generations, states, the booted entry and variant, health reports, tier and firmware (architecture §3 P1, "common status/reporting commands"). Products build their UI on it. A D-Bus service follows only under D-F.
+**4.5 (P1) Machine-readable status (D-F).**
+- `vintner status --json` reports:
+  - each generation with its state, publish date, ABI and variants;
+  - the booted generation and variant;
+  - the booted image's failed attempts since it last booted good, not counting this boot. On UEFI this comes from the `+<left>-<done>` name in `LoaderBootCountPath`; on BIOS, from the counter.
+  - health reports, tier and firmware;
+  - whether out-of-tree modules can load with Secure Boot on.
+- The failed-attempts field must be readable early in boot, before the display manager starts, so a product can show a "did not start successfully" screen.
+- Every command a product calls (`status`, `next-boot`, `cmdline`, `menu-timeout`) gets `--json` output and documented exit codes. This covers architecture §3 P1, "common status/reporting commands". Products build their UI on it.
 
 **4.6 (P2) Health-check contract for products.** Document how a product adds its own checks: units `Before=boot-complete.target`, pulled in by `RequiredBy=boot-complete.target` (`docs/architecture.md:91`). Cover:
 - checks that must pass during first-boot setup phases, when the product deliberately holds back its desktop;
 - variant boots;
 - short `Description=` lines, because systemd cuts status lines at 80 columns on serial (`ci/recovery-fallback/README.md:130`).
+
+Recommend to products the Windows rule: XP updates its last known good configuration after a successful logon, so a desktop product's check passes once its logon screen (or its first-boot setup screen) is shown.
+
+**4.7 (P2) Menu timeout.** XP's Startup and Recovery dialog sets "Time to display list of operating systems".
+- `vintner menu-timeout <seconds>` sets it on both firmwares: `timeout` in `loader.conf` (vintner's file, written atomically) and a grubenv variable that `grub.cfg` honours. 0 keeps the hidden menu.
+- Health keeps reporting a `LoaderConfigTimeout` set from the menu keys (`+`/`-`), but not vintner's own setting.
+
+**4.8 (P2) The menu key.** Windows users press F8.
+- UEFI: systemd-boot opens its menu when a key is held at start (`firmware/uefi/loader.conf:7`). Confirm on reference hardware (6.1) that F8 works, and document F8.
+- BIOS: GRUB's `keystatus` tests only Shift, Ctrl and Alt, and `grub.cfg` uses `keystatus --shift`. Spike a zero-delay way to detect F8. If there is none, keep Shift on BIOS and document both keys.
+- Do not add a boot delay to catch a key (R10).
 
 ## Phase 5: Secure Boot completion
 
@@ -179,10 +234,12 @@ Change:
 
 **5.2 (P1) Tiers B and C.** `publish.go:407-409` refuses everything except `none` and `A`. Tier A needs the firmware in setup mode, which ordinary PCs are not, so a product cannot support Secure Boot on ordinary hardware without tier B (MOK, one MokManager confirmation) or C (Debian-signed chain). Design and implement B first. Include the Microsoft 2011/2023 CA rows and SBAT/DBX levels from architecture §10.
 
-**5.3 (P1) Out-of-tree modules (D-G).**
-- Desktop products need DKMS modules, for example vendor GPU drivers. In tier A there is no shim, so no MOK list. Verify on Debian 13's kernel the expectation that Linux does not accept `db` keys (the platform keyring) for module signatures. If so, DKMS modules cannot load under Secure Boot in tier A.
-- Decide between tier B with the machine key enrolled as a MOK and used by DKMS for signing, and documenting that DKMS needs tier B or Secure Boot off.
-- Also define what happens after a DKMS rebuild: `schema/manifest.md:62` marks the image `stale`. The expected result is a republished generation, not a stale image that is no longer selected.
+**5.3 (P1) Out-of-tree modules (D-G).** Desktop products need DKMS modules, for example vendor GPU drivers.
+- In tier A there is no shim, so no MOK list. Verify on Debian 13's kernel that Linux does not accept `db` keys (the platform keyring) for module signatures. If it does not, DKMS modules cannot load under Secure Boot in tier A.
+- Tier B (with 5.2): enroll the machine key as a MOK during installation, so there is one MokManager confirmation on the first boot. Configure DKMS to sign with that key (a drop-in under `/etc/dkms/`), keeping the key off the ESP and boot storage (R11).
+- Tier A: `vintner install` and `vintner status` state that out-of-tree modules cannot load with Secure Boot on.
+- A DKMS rebuild changes the module tree, and `schema/manifest.md:62` then marks the image `stale`. Instead, the rebuild must lead to a newly published generation, and the stale image must not be left as the only choice.
+- Acceptance: on tier B in QEMU, a DKMS test module builds, is signed and loads with Secure Boot on. On tier A, `vintner status` reports that it cannot.
 
 ## Phase 6: verification gaps
 
