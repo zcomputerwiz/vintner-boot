@@ -106,7 +106,7 @@ Use `wsl -e`, as above. `wsl -- <command>` passes the command through your login
 
 ### The local gate: everything CI runs
 
-[`ci/local/run-all.sh`](../ci/local/run-all.sh) runs every CI job in the WSL clone, one at a time: the `lint.yml` jobs, the `qemu-baseline.yml` boots and every `qemu-tests.yml` suite. It ends with a pass/fail table and exits 1 if any job failed. Run it before pushing:
+[`ci/local/run-all.sh`](../ci/local/run-all.sh) runs every CI job in the WSL clone, two at a time (`--jobs N`): the `lint.yml` jobs, the `qemu-baseline.yml` boots and every `qemu-tests.yml` suite. It ends with a pass/fail table and exits 1 if any job failed. Run it before pushing:
 
 ```bash
 cd ~/vintner-boot && ci/local/run-all.sh --ref <branch>
@@ -118,6 +118,7 @@ How it works:
 - To run part of the gate, name jobs or groups (`lint`, `baseline`, `qemu`): for example `ci/local/run-all.sh lint publish-uefi interrupt-bios`.
 - As in CI, each job starts without its earlier output and is judged by its exit status.
 - Each job runs with no terminal, so a prompt that CI never sees can't stall the run. For the same reason the gate needs sudo without a password.
+- `--jobs N` runs N jobs at once (default 2). Slot 1 is the clone itself; each further slot is a git worktree of the same commit under `ci/out/local/ws<N>` with its own copy of the image cache, because the suites share `recovery/out`, `ci/out/Packages` and loop devices. Each running suite needs about 2 GiB of RAM and two CPUs; `--jobs 1` gives the old one-at-a-time behaviour.
 - Each job has a time limit (`--timeout`, default 120 minutes). A job that runs over is stopped and marked TIMEOUT, and any loop devices and mounts it left under `ci/out/` or `recovery/out/` are released. Ctrl-C does the same for the running job.
 - Logs and `summary.tsv` go to `ci/out/local/run-all/<time>/`.
 
