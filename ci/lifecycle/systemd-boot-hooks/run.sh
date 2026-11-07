@@ -253,7 +253,7 @@ PY_SCRIPT
     echo "Extracting results for ${config}..."
     mkdir -p "$OLDPWD/ci/lifecycle/systemd-boot-hooks/results_$config"
     mcopy -snvi "results_${config}.img" ::/ "$OLDPWD/ci/lifecycle/systemd-boot-hooks/results_$config/" || true
-    mcopy -i "results_${config}.img" ::/guest.log "$OLDPWD/ci/lifecycle/systemd-boot-hooks/results_$config/guest.log" || true
+    mcopy -n -i "results_${config}.img" ::/guest.log "$OLDPWD/ci/lifecycle/systemd-boot-hooks/results_$config/guest.log" || true
 }
 
 target="${1:-all}"
