@@ -164,6 +164,31 @@ def cmd_run_boot(args):
                                 kill()
                                 how_ended = B4_KILLED
                     time.sleep(0.05)
+        elif args.stop_on:
+            # A hung guest only waits for the timeout once it has printed this line:
+            # give it 3 more seconds to finish the report, then stop it.
+            pattern = re.compile(args.stop_on.encode())
+            how_ended = None
+            while how_ended is None:
+                rc = proc.poll()
+                if rc is not None:
+                    how_ended = exited(rc)
+                elif time.time() - start_time > args.timeout:
+                    kill()
+                    how_ended = f"killed after {args.timeout}s timeout"
+                else:
+                    with open(log_path, "rb") as f:
+                        seen = pattern.search(f.read())
+                    if seen:
+                        time.sleep(3.0)
+                        rc = proc.poll()
+                        if rc is not None:
+                            how_ended = exited(rc)
+                        else:
+                            kill()
+                            how_ended = f"hung, stopped early after: {seen.group(0).decode(errors='replace')}"
+                    else:
+                        time.sleep(0.5)
         else:
             try:
                 how_ended = exited(proc.wait(timeout=args.timeout))
@@ -573,6 +598,7 @@ def main():
     p_run.add_argument("--code-fd", default="")
     p_run.add_argument("--timeout", type=int, default=120)
     p_run.add_argument("--kill-on-cmdline", action="store_true")
+    p_run.add_argument("--stop-on", default="", help="regex of a log line only a hung guest prints: stop the boot shortly after it")
     p_run.add_argument("--meta-out", required=True)
     p_run.set_defaults(func=cmd_run_boot)
 
