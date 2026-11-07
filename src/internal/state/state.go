@@ -263,6 +263,14 @@ func (v *View) uefiVerifies(img manifest.Image, uefi bool) bool {
 	return ok && img.UEFI != nil && v.UEFIFiles[f] == img.UEFI.SHA256
 }
 
+// FilesVerify reports whether all of img's final files are on boot storage and
+// match its record: the UKI on UEFI, the slot directory's files on BIOS. It
+// does not look at BIOS arming (VINTNER_ORDER and the counter).
+func (v *View) FilesVerify(img manifest.Image, uefi, bios bool) bool {
+	_, allPresent, _, biosFiles := v.inPlace(img, uefi, bios)
+	return allPresent && v.uefiVerifies(img, uefi) && (!bios || biosFiles)
+}
+
 func (v *View) counter(g int) string {
 	if v.GrubEnv == nil {
 		return ""
