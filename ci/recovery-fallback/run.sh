@@ -79,7 +79,7 @@ if [ "$FIRMWARE" = "uefi" ]; then
 		--initrd="recovery/out/initrd.img" \
 		--stub="$STUB" \
 		--os-release="@$OSREL_A" \
-		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=1 vintner.recovery_test=1" \
+		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=a vintner.recovery_test=1" \
 		--output="$TEST_RECA_UKI"
 
 	python3 "$UKIFY" build \
@@ -87,7 +87,7 @@ if [ "$FIRMWARE" = "uefi" ]; then
 		--initrd="recovery/out/initrd.img" \
 		--stub="$STUB" \
 		--os-release="@$OSREL_B" \
-		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=1 vintner.recovery_test=1 vintner.test_slot=b" \
+		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=b vintner.recovery_test=1 vintner.test_slot=b" \
 		--output="$TEST_RECB_UKI"
 fi
 
@@ -133,7 +133,7 @@ get_booted_image() {
 	# Recovery: vintner.recovery=1 on UEFI. The BIOS slot.cfg carries
 	# vintner.recovery_test=1 and no vintner.recovery=1, so BIOS recovery A is
 	# vintner.recovery_test=1 after GRUB's "vintner: trying recovery-a".
-	local rec=" vintner.recovery=1 "
+	local rec=" vintner.recovery=a "
 	[ "$fw" = "bios" ] && rec=" vintner.recovery_test=1 "
 	if [[ "$words" == *"$rec"* ]] && [[ "$words" != *" vintner.test_slot=b "* ]]; then
 		if [ "$fw" = "bios" ] && ! clean_ansi < "$log" | grep -qE 'vintner: trying recovery-a($|[^-[:alnum:]])'; then
@@ -201,7 +201,7 @@ get_counter_info() {
 	fi
 }
 
-rm -f "$OUT"/d[1-6].tsv
+rm -f "$OUT"/d[1-7].tsv
 touch "$OUT/d1.tsv" "$OUT/d2.tsv" "$OUT/d3.tsv" "$OUT/d4.tsv" "$OUT/d5.tsv" "$OUT/d6.tsv"
 
 # --- 5. Cases Execution -----------------------------------------------------
@@ -555,10 +555,86 @@ SVCEOF
 	fi
 done
 
+
+# --- 5b. D7: recovery A is re-armed (WO-0010 1.1) ---------------------------
+# With the root broken, every boot after os-1's tries goes to recovery A.
+# Recovery A has the same number of counted boots as any entry; if nothing
+# re-armed it, boot tries+1 would fall through to recovery B. The test
+# recovery powers itself off after its checks, so each boot is one recovery run.
+echo "=================================================================="
+echo "=== Running Case D7: recovery A re-armed ($FIRMWARE) ==="
+echo "=================================================================="
+CASE_DISK="$OUT/R1.raw"
+rm -f "$CASE_DISK"
+cp --sparse=always "$BASE_RAW" "$CASE_DISK"
+CASE_VARS=""
+if [ "$FIRMWARE" = "uefi" ]; then
+	CASE_VARS="$OUT/R1-vars.fd"
+	cp "$BASE_VARS" "$CASE_VARS"
+	mcopy -o -i "$CASE_DISK@@$BS_OFFSET" "$TEST_RECA_UKI" ::/EFI/Linux/vintner-recovery-a+3-0.efi
+	mcopy -o -i "$CASE_DISK@@$BS_OFFSET" "$TEST_RECB_UKI" ::/EFI/Linux/vintner-recovery-b.efi
+fi
+python3 - "$CASE_DISK" "$ROOT_START" <<'PYEOF'
+import sys
+disk_path, root_start = sys.argv[1], int(sys.argv[2])
+with open(disk_path, "r+b") as f:
+	f.seek(root_start * 512 + 1024)
+	f.write(b"\x00" * 1024)
+PYEOF
+
+D7_TRIES=3
+D7_WANT_A=$((D7_TRIES + 1))
+D7_IMGS=()
+D7_PARTS=()
+D7_OK=true
+D7_A=0
+for boot in $(seq 1 $((D7_TRIES + D7_WANT_A + 2))); do
+	BOOT_LOG="$OUT/R1-boot${boot}.log"
+	# os-1 hangs at the initramfs shell; recovery powers itself off.
+	RUN_QEMU_STOP_ON='Dropping to a shell'
+	run_qemu "$CASE_DISK" "$SEED_IMG" "$BOOT_LOG" 120 "$CASE_VARS"
+	RUN_QEMU_STOP_ON=''
+	IMG=$(get_booted_image "$BOOT_LOG" "$FIRMWARE")
+	D7_IMGS+=("$IMG")
+	echo "R1 boot $boot: $IMG, counters: $(get_counter_info "$CASE_DISK" "$FIRMWARE")"
+	if [ "$IMG" = "recovery-a" ]; then
+		D7_A=$((D7_A + 1))
+		if ! clean_ansi < "$BOOT_LOG" | grep -q '^VINTNER-RECOVERY-TEST root='; then
+			D7_OK=false
+			D7_PARTS+=("boot $boot: recovery A did not reach its checks")
+		fi
+		if ! clean_ansi < "$BOOT_LOG" | grep -q '^VINTNER-RECOVERY-REARM slot=a ok:'; then
+			D7_OK=false
+			D7_PARTS+=("boot $boot: no re-arm line: $(clean_ansi < "$BOOT_LOG" | grep -m1 '^VINTNER-RECOVERY-REARM' || echo none)")
+		fi
+	fi
+	[ "$D7_A" -ge "$D7_WANT_A" ] && break
+	[ "$IMG" = "os-1" ] || [ "$IMG" = "recovery-a" ] || break
+done
+D7_SEQ="${D7_IMGS[*]}"
+D7_EXPECT="os-1 os-1 os-1 recovery-a recovery-a recovery-a recovery-a"
+if [ "$D7_SEQ" != "$D7_EXPECT" ]; then
+	D7_OK=false
+	D7_PARTS+=("boots: $D7_SEQ, expected $D7_EXPECT")
+fi
+eval "$(get_counter_info "$CASE_DISK" "$FIRMWARE")"
+if [ "$FIRMWARE" = "uefi" ]; then
+	[ "$reca_tag" = "+3-0" ] || { D7_OK=false; D7_PARTS+=("recovery A counter $reca_tag, expected +3-0"); }
+else
+	if [ "$tra" != "xxx" ] || [ -n "$booted" ]; then
+		D7_OK=false
+		D7_PARTS+=("grubenv after the last recovery boot: $vars")
+	fi
+fi
+if [ "$D7_OK" = true ]; then
+	printf "D7\tR1\tPASS\t%s; recovery A re-armed on every boot (%s)\n" "$D7_SEQ" "$([ "$FIRMWARE" = uefi ] && echo "$reca_tag" || echo "VINTNER_T_RA=$tra")" > "$OUT/d7.tsv"
+else
+	printf "D7\tR1\tFAIL\t%s\n" "$(IFS="; "; echo "${D7_PARTS[*]}")" > "$OUT/d7.tsv"
+fi
 # --- 6. Summary and Verification --------------------------------------------
 printf "ID\tCase\tStatus\tEvidence\n" > "$RESULTS"
-cat "$OUT/d1.tsv" "$OUT/d2.tsv" "$OUT/d3.tsv" "$OUT/d4.tsv" "$OUT/d5.tsv" "$OUT/d6.tsv" >> "$RESULTS"
-rm -f "$OUT"/d[1-6].tsv
+cat "$OUT/d1.tsv" "$OUT/d2.tsv" "$OUT/d3.tsv" "$OUT/d4.tsv" "$OUT/d5.tsv" "$OUT/d6.tsv" "$OUT/d7.tsv" >> "$RESULTS"
+rm -f "$OUT"/d[1-7].tsv
 
 echo "=================================================================="
 echo "=== Test Summary Table ($FIRMWARE) ==="

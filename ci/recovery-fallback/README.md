@@ -43,6 +43,7 @@ CI runs it as `fallback-uefi` and `fallback-bios` in `.github/workflows/qemu-tes
 | D4 | F1–F4, boot 4's report | F2–F4: `root=mounted ro=yes`, compared whole. On UEFI also the line `root from the manifest on boot storage: UUID=<the base root's UUID>`, compared to the end of the UUID. F1 is OBSERVED. | other fields, no report, or (UEFI) no such manifest line, F1 included |
 | D5 | F1–F4 | root partition sha256 equal before and after boot 4 | any difference |
 | D6 | F1–F4, boots 1–3 | OBSERVED: powered off, hung and stopped early (the log shows the shell prompt, panic or emergency mode), or killed at the timeout | — |
+| D7 | R1 | root broken: os-1 three times, then recovery A four times in a row (tries + 1), each reaching its checks and printing `VINTNER-RECOVERY-REARM slot=a ok:`; recovery A back at `+3-0` (UEFI) or `VINTNER_T_RA=xxx` with no `VINTNER_BOOTED` (BIOS) | recovery B or anything else in place of the fourth recovery A boot, no re-arm line, wrong counter |
 
 Failure lines for D2:
 

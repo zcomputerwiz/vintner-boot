@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -1088,5 +1089,88 @@ func TestBlessHealthReporting_SelectionPolicy(t *testing.T) {
 	}
 	if !hasLine(out, "side-loaded file: loader/addons/side.addon.efi") {
 		t.Errorf("expected side-loaded file report in output, got: %q", out)
+	}
+}
+
+func loadExampleManifest(t *testing.T) manifest.Manifest {
+	t.Helper()
+	data, err := os.ReadFile("../../../schema/examples/manifest-uefi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m manifest.Manifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// WO-0010 1.1: recovery A gets its tries back when it boots.
+func TestBlessRecoveryRearmsAUEFI(t *testing.T) {
+	m := loadExampleManifest(t)
+	for _, tc := range []struct{ from, want string }{
+		{"vintner-recovery-a+0-3.efi", "vintner-recovery-a+3-0.efi"}, // exhausted
+		{"vintner-recovery-a+2-1.efi", "vintner-recovery-a+3-0.efi"}, // counted by the firmware
+		{"vintner-recovery-a+3-0.efi", "vintner-recovery-a+3-0.efi"}, // already armed
+	} {
+		bootStorage, efivarsDir := setupTestEnv(t, true, &m)
+		efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+		os.WriteFile(filepath.Join(efiDir, tc.from), []byte("uki"), 0644)
+		os.WriteFile(filepath.Join(efiDir, "vintner-recovery-b.efi"), []byte("uki"), 0644)
+		out := blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir, "--recovery", "a"})
+		if !hasLine(out, "recovery A re-armed: 3 tries") {
+			t.Errorf("%s: output %q", tc.from, out)
+		}
+		var names []string
+		entries, _ := os.ReadDir(efiDir)
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		if !reflect.DeepEqual(names, []string{tc.want, "vintner-recovery-b.efi"}) {
+			t.Errorf("%s: files %v, want %s", tc.from, names, tc.want)
+		}
+	}
+}
+
+func TestBlessRecoveryRearmsABIOS(t *testing.T) {
+	m := loadExampleManifest(t)
+	for _, tc := range []struct{ booted, wantBooted string }{
+		{"RA", ""}, // this boot's own mark is cleared
+		{"2", "2"}, // a generation's failed boot just before must stay counted
+		{"", ""},
+	} {
+		bootStorage, efivarsDir := setupTestEnv(t, false, &m)
+		envPath := filepath.Join(bootStorage, "grub", "grubenv")
+		env, _ := grubenv.Read(envPath)
+		env.Set("VINTNER_T_RA", "0")
+		env.Set("VINTNER_T_2", "xx")
+		if tc.booted != "" {
+			env.Set("VINTNER_BOOTED", tc.booted)
+		}
+		grubenv.Write(envPath, env)
+		blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir, "--recovery", "a"})
+		env, _ = grubenv.Read(envPath)
+		if v, _ := env.Get("VINTNER_T_RA"); v != "xxx" {
+			t.Errorf("booted=%q: VINTNER_T_RA = %q, want xxx", tc.booted, v)
+		}
+		if v, _ := env.Get("VINTNER_BOOTED"); v != tc.wantBooted {
+			t.Errorf("booted=%q: VINTNER_BOOTED = %q, want %q", tc.booted, v, tc.wantBooted)
+		}
+		if v, _ := env.Get("VINTNER_T_2"); v != "xx" {
+			t.Errorf("booted=%q: VINTNER_T_2 changed to %q", tc.booted, v)
+		}
+	}
+}
+
+func TestBlessRecoveryBWritesNothing(t *testing.T) {
+	m := loadExampleManifest(t)
+	bootStorage, efivarsDir := setupTestEnv(t, true, &m)
+	efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+	os.WriteFile(filepath.Join(efiDir, "vintner-recovery-a+0-3.efi"), []byte("uki"), 0644)
+	os.WriteFile(filepath.Join(efiDir, "vintner-recovery-b.efi"), []byte("uki"), 0644)
+	blessOutput(t, []string{"--boot-storage", bootStorage, "--efivars", efivarsDir, "--recovery", "b"})
+	entries, _ := os.ReadDir(efiDir)
+	if len(entries) != 2 || entries[0].Name() != "vintner-recovery-a+0-3.efi" {
+		t.Errorf("recovery B changed boot storage: %v", entries)
 	}
 }

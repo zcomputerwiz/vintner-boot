@@ -29,6 +29,7 @@ func cmdBless(args []string) {
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
 	secureBootDir := fs.String("secureboot-dir", "/etc/vintner/secureboot", "directory holding machine keys and certificates")
 	espDir := fs.String("esp", "", "ESP directory to scan for side-loaded files (default: mount the manifest's esp.partuuid read-only on demand)")
+	recoverySlot := fs.String("recovery", "", "run from the recovery image of slot a or b: re-arm recovery A (WO-0010 1.1), touch nothing else")
 
 	fs.Parse(args)
 
@@ -65,6 +66,14 @@ func cmdBless(args []string) {
 
 	info, err := os.Stat(*efivarsDir)
 	isUEFI := err == nil && info.IsDir()
+
+	if *recoverySlot != "" {
+		if err := blessRecovery(*recoverySlot, m, *bootStorage, isUEFI); err != nil {
+			fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
+			osExit(1)
+		}
+		return
+	}
 
 	if isUEFI {
 		_, val, err := efivar.GetString(*efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo)
@@ -282,3 +291,45 @@ func cmdBless(args []string) {
 }
 
 var osExit = os.Exit
+
+// blessRecovery is what the recovery image runs once its early checks pass
+// (boot storage found by its manifest and mounted read-write). Recovery A has
+// a bounded number of counted boots like any entry; booting it for real means
+// it works, so it gets all its tries back (ADR-0003, firmware/bios/INTERFACE.md).
+// Recovery B has no counter. It touches no generation and no manifest state.
+func blessRecovery(slot string, m *manifest.Manifest, bootStorage string, isUEFI bool) error {
+	switch slot {
+	case "b":
+		fmt.Println("recovery B has no boot counter: nothing to re-arm")
+		return nil
+	case "a":
+	default:
+		return fmt.Errorf("--recovery takes a or b, not %q", slot)
+	}
+
+	if isUEFI {
+		efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+		if err := bls.Rearm(efiDir, "vintner-recovery-a", m.Tries); err != nil {
+			return fmt.Errorf("re-arm recovery A: %w", err)
+		}
+		fmt.Printf("recovery A re-armed: %d tries\n", m.Tries)
+		return nil
+	}
+
+	envPath := filepath.Join(bootStorage, "grub", "grubenv")
+	env, err := grubenv.Read(envPath)
+	if err != nil {
+		return fmt.Errorf("read grubenv: %w", err)
+	}
+	env.Set("VINTNER_T_RA", strings.Repeat("x", m.Tries))
+	// VINTNER_BOOTED=RA is this boot's own mark. Any other value belongs to a
+	// generation that failed just before and must stay, so the failure counts.
+	if v, ok := env.Get("VINTNER_BOOTED"); ok && v == "RA" {
+		env.Unset("VINTNER_BOOTED")
+	}
+	if err := grubenv.Write(envPath, env); err != nil {
+		return fmt.Errorf("write grubenv: %w", err)
+	}
+	fmt.Printf("recovery A re-armed: %d tries\n", m.Tries)
+	return nil
+}

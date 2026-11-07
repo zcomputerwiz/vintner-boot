@@ -228,13 +228,13 @@ EOF
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/os1-slot.cfg" ::/vintner/bios/os-1/slot.cfg
 
 # Create slot.cfg for recovery A and B
-RECA_CMDLINE="console=ttyS0 vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
+RECA_CMDLINE="console=ttyS0 vintner.recovery=a vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
 cat <<EOF > "$OUT/reca-slot.cfg"
 set vintner_cmdline="$RECA_CMDLINE"
 EOF
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/reca-slot.cfg" ::/vintner/bios/recovery-a/slot.cfg
 
-RECB_CMDLINE="console=ttyS0 vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
+RECB_CMDLINE="console=ttyS0 vintner.recovery=b vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
 cat <<EOF > "$OUT/recb-slot.cfg"
 set vintner_cmdline="$RECB_CMDLINE"
 EOF

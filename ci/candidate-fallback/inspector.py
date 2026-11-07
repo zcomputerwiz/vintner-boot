@@ -306,7 +306,7 @@ def identify_booted(log, firmware, prev, curr):
     # Recovery: whole tokens of the kernel's command line
     for line in re.findall(r"Command line: (.*)$", text, re.M):
         toks = line.split()
-        if "vintner.recovery=1" in toks or "vintner.recovery_test=1" in toks:
+        if any(t in ("vintner.recovery=1", "vintner.recovery=a", "vintner.recovery=b", "vintner.recovery_test=1") for t in toks):
             if "vintner.test_slot=b" in toks:
                 return "recovery-b"
             return "recovery-a" if "vintner.recovery_test=1" in toks else "recovery"
