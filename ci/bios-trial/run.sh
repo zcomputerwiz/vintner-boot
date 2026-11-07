@@ -128,12 +128,13 @@ boot() { # [qmp]: one boot, QMP commands from stdin; appends the booted test id 
 		timeout 300 "${QEMU[@]}" -monitor none </dev/null >/dev/null 2>&1 || true
 	fi
 	cp "$OUT/log" "$OUT/$SCEN-boot$N.log"
-	# GRUB prints "error:" lines for failed commands, such as a missing module.
-	# They must not appear on an otherwise silent boot (R10, WO-0010 1.3).
-	if grep -aq '^error:' "$OUT/log"; then
+	# GRUB prints "error:" lines for failed commands, such as a missing module,
+	# after clear-screen escapes on the serial terminal. They must not appear
+	# on an otherwise silent boot (R10, WO-0010 1.3).
+	if sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -aq 'error:'; then
 		OK=0
 		echo "$SCEN boot $N: GRUB error on the serial console:" >&2
-		grep -a '^error:' "$OUT/log" >&2
+		sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -a 'error:' >&2
 	fi
 	BOOTED="$BOOTED $(grep -ao -m1 'VINTNER-TEST-BOOTED id=[A-Za-z0-9-]*' "$OUT/log" | sed 's/.*id=//' || echo NONE)"
 }
