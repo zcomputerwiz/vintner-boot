@@ -1055,10 +1055,20 @@ func TestBlessHealthReporting_SelectionPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Side-loaded file on the ESP, which is a different partition from boot storage.
+	espDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(espDir, "loader", "addons"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(espDir, "loader", "addons", "esp.addon.efi"), []byte("addon"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Run bless and check stdout reports
 	out := blessOutput(t, []string{
 		"--boot-storage", bootStorage,
 		"--efivars", efivarsDir,
+		"--esp", espDir,
 	})
 
 	if !hasLine(out, "LoaderEntryDefault is set: debian-6.12.efi") {
@@ -1072,6 +1082,9 @@ func TestBlessHealthReporting_SelectionPolicy(t *testing.T) {
 	}
 	if !hasLine(out, "foreign entry in /loader/entries: aaa.conf") {
 		t.Errorf("expected foreign entry in /loader/entries report in output, got: %q", out)
+	}
+	if !hasLine(out, "side-loaded file: ESP:loader/addons/esp.addon.efi") {
+		t.Errorf("expected ESP side-loaded file report in output, got: %q", out)
 	}
 	if !hasLine(out, "side-loaded file: loader/addons/side.addon.efi") {
 		t.Errorf("expected side-loaded file report in output, got: %q", out)

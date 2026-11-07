@@ -17,3 +17,14 @@ func TestDevice(t *testing.T) {
 		}
 	}
 }
+
+func TestESPDevice(t *testing.T) {
+	if got, err := ESPDevice("ABCD-1234"); err != nil || got != "/dev/disk/by-partuuid/abcd-1234" {
+		t.Errorf("ESPDevice = %q, %v", got, err)
+	}
+	for _, bad := range []string{"", "../x", "a b"} {
+		if _, err := ESPDevice(bad); err == nil {
+			t.Errorf("ESPDevice(%q) succeeded", bad)
+		}
+	}
+}

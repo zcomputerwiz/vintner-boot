@@ -57,60 +57,22 @@ func Scan(bootStorage string) (*View, error) {
 			if v.UEFIFiles[e.Name()], err = fileSHA256(filepath.Join(efiDir, e.Name())); err != nil {
 				return nil, err
 			}
-		} else if strings.HasSuffix(e.Name(), ".extra.d") {
-			extraFiles, err := readDir(filepath.Join(efiDir, e.Name()))
-			if err != nil {
-				return nil, err
-			}
-			for _, ef := range extraFiles {
-				if !ef.IsDir() {
-					v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("EFI", "Linux", e.Name(), ef.Name())))
-				}
-			}
 		}
 	}
 
 	entriesDir := filepath.Join(bootStorage, "loader", "entries")
-	if entries, err := readDir(entriesDir); err != nil {
+	entries, err = readDir(entriesDir)
+	if err != nil {
 		return nil, err
-	} else {
-		for _, e := range entries {
-			if !e.IsDir() {
-				v.LoaderEntries = append(v.LoaderEntries, e.Name())
-			} else if strings.HasSuffix(e.Name(), ".extra.d") {
-				extraFiles, err := readDir(filepath.Join(entriesDir, e.Name()))
-				if err != nil {
-					return nil, err
-				}
-				for _, ef := range extraFiles {
-					if !ef.IsDir() {
-						v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("loader", "entries", e.Name(), ef.Name())))
-					}
-				}
-			}
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			v.LoaderEntries = append(v.LoaderEntries, e.Name())
 		}
 	}
 
-	addonsDir := filepath.Join(bootStorage, "loader", "addons")
-	if entries, err := readDir(addonsDir); err != nil {
+	if v.SideLoaded, err = SideLoaded(bootStorage); err != nil {
 		return nil, err
-	} else {
-		for _, e := range entries {
-			if !e.IsDir() {
-				v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("loader", "addons", e.Name())))
-			}
-		}
-	}
-
-	credsDir := filepath.Join(bootStorage, "loader", "credentials")
-	if entries, err := readDir(credsDir); err != nil {
-		return nil, err
-	} else {
-		for _, e := range entries {
-			if !e.IsDir() {
-				v.SideLoaded = append(v.SideLoaded, filepath.ToSlash(filepath.Join("loader", "credentials", e.Name())))
-			}
-		}
 	}
 
 	biosDir := filepath.Join(bootStorage, "vintner", "bios")
@@ -565,4 +527,58 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 	}
 
 	return reports
+}
+
+// SideLoaded lists the side-loaded files under root, a mounted boot storage
+// partition or ESP: files in /EFI/Linux/*.extra.d, /loader/entries/*.extra.d,
+// /loader/addons/ and /loader/credentials/ (threat model T6). The paths are
+// relative to root with forward slashes. A missing directory is empty.
+func SideLoaded(root string) ([]string, error) {
+	var out []string
+	for _, parent := range []string{filepath.Join("EFI", "Linux"), filepath.Join("loader", "entries")} {
+		entries, err := readDir(filepath.Join(root, parent))
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if !e.IsDir() || !strings.HasSuffix(e.Name(), ".extra.d") {
+				continue
+			}
+			files, err := readDir(filepath.Join(root, parent, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			for _, f := range files {
+				if !f.IsDir() {
+					out = append(out, filepath.ToSlash(filepath.Join(parent, e.Name(), f.Name())))
+				}
+			}
+		}
+	}
+	for _, dir := range []string{"addons", "credentials"} {
+		entries, err := readDir(filepath.Join(root, "loader", dir))
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				out = append(out, filepath.ToSlash(filepath.Join("loader", dir, e.Name())))
+			}
+		}
+	}
+	return out, nil
+}
+
+// AddESP adds the side-loaded files found on the mounted ESP at root to the
+// view, each path prefixed with "ESP:" so a report names the partition.
+func (v *View) AddESP(root string) error {
+	files, err := SideLoaded(root)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		v.SideLoaded = append(v.SideLoaded, "ESP:"+f)
+	}
+	sort.Strings(v.SideLoaded)
+	return nil
 }

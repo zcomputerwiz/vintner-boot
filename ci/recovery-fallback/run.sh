@@ -312,13 +312,24 @@ SVCEOF
 
 		echo "--- Booting $case_id Boot $boot ---"
 		START_TIME=$(date +%s)
+		# F1-F3 hang for good once they print these lines; stop there instead of
+		# waiting out the 120 s timeout. F4 powers itself off.
+		case "$case_id" in
+			F1) RUN_QEMU_STOP_ON='Dropping to a shell' ;;
+			F2) RUN_QEMU_STOP_ON='Kernel panic - not syncing' ;;
+			F3) RUN_QEMU_STOP_ON='You are in emergency mode' ;;
+			*) RUN_QEMU_STOP_ON='' ;;
+		esac
 		run_qemu "$CASE_DISK" "$SEED_IMG" "$BOOT_LOG" 120 "$CASE_VARS"
+		RUN_QEMU_STOP_ON=''
 		END_TIME=$(date +%s)
 		DURATION=$((END_TIME - START_TIME))
 
 		# run_qemu does not return timeout's status; a run killed at 120 s spans
 		# at least 120 whole seconds of date +%s.
-		if [ "$DURATION" -ge 120 ]; then
+		if [ "$RUN_QEMU_STOPPED" = 1 ]; then
+			BOOT_TERM[$boot]="hung, stopped early"
+		elif [ "$DURATION" -ge 120 ]; then
 			BOOT_TERM[$boot]="killed at timeout"
 		else
 			BOOT_TERM[$boot]="powered off"

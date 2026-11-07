@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -27,6 +28,7 @@ func cmdBless(args []string) {
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
 	secureBootDir := fs.String("secureboot-dir", "/etc/vintner/secureboot", "directory holding machine keys and certificates")
+	espDir := fs.String("esp", "", "ESP directory to scan for side-loaded files (default: mount the manifest's esp.partuuid read-only on demand)")
 
 	fs.Parse(args)
 
@@ -206,6 +208,31 @@ func cmdBless(args []string) {
 	}
 
 	actions, reports := state.Reconcile(m, v)
+
+	// Threat model T6: side-loaded files also count on the ESP. Found by the
+	// manifest's partition identity, mounted read-only; /boot/efi need not be
+	// mounted. An unreadable ESP is reported, not fatal.
+	if isUEFI || *espDir != "" {
+		root := *espDir
+		if root == "" && m.ESP != nil {
+			dev, derr := bootstorage.ESPDevice(m.ESP.PartUUID)
+			if derr == nil {
+				var unmount func() error
+				if unmount, derr = bootstorage.MountESP(dev); derr == nil {
+					defer func() { _ = unmount() }()
+					root = bootstorage.ESPMountPoint
+				}
+			}
+			if derr != nil {
+				reports = append(reports, fmt.Sprintf("esp: cannot scan for side-loaded files: %v", derr))
+			}
+		}
+		if root != "" {
+			if err := v.AddESP(root); err != nil {
+				reports = append(reports, fmt.Sprintf("esp: cannot scan for side-loaded files: %v", err))
+			}
+		}
+	}
 	reports = append(reports, state.CheckHealth(m, v, *efivarsDir, *secureBootDir, isUEFI)...)
 
 	for _, r := range reports {
