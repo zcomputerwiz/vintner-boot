@@ -1,0 +1,1 @@
+biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval loadenv keystatus serial terminal halt reboot all_video

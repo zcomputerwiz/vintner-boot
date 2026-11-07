@@ -77,9 +77,9 @@ done
 # boot storage partition and core.img and modules can never mismatch.
 # The early config is per machine (the fs UUID); grub.cfg stays static.
 printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' "${FS_SERIAL:0:4}" "${FS_SERIAL:4}" "\$root" > "$OUT/early.cfg"
+# shellcheck disable=SC2046
 trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$GRUBDIR" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
-	biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval \
-	loadenv keystatus serial terminal halt reboot
+	$(cat firmware/bios/core-modules.txt)
 # What grub-bios-setup does for GPT with a BIOS Boot Partition (util/setup.c,
 # GRUB 2.12), minus Reed-Solomon codes. It cannot run here: it insists on
 # opening the host's root device.
@@ -128,6 +128,13 @@ boot() { # [qmp]: one boot, QMP commands from stdin; appends the booted test id 
 		timeout 300 "${QEMU[@]}" -monitor none </dev/null >/dev/null 2>&1 || true
 	fi
 	cp "$OUT/log" "$OUT/$SCEN-boot$N.log"
+	# GRUB prints "error:" lines for failed commands, such as a missing module.
+	# They must not appear on an otherwise silent boot (R10, WO-0010 1.3).
+	if grep -aq '^error:' "$OUT/log"; then
+		OK=0
+		echo "$SCEN boot $N: GRUB error on the serial console:" >&2
+		grep -a '^error:' "$OUT/log" >&2
+	fi
 	BOOTED="$BOOTED $(grep -ao -m1 'VINTNER-TEST-BOOTED id=[A-Za-z0-9-]*' "$OUT/log" | sed 's/.*id=//' || echo NONE)"
 }
 expect() { # what actual expected

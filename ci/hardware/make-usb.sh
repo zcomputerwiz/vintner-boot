@@ -245,9 +245,9 @@ EOF
 	printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' \
 		"${FS_SERIAL:0:4}" "${FS_SERIAL:4}" "\$root" > "$OUT/early.cfg"
 
+# shellcheck disable=SC2046
 	trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$grubdir" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
-		biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval \
-		loadenv keystatus serial terminal halt reboot
+		$(cat firmware/bios/core-modules.txt)
 
 	# Embed core.img and MBR jump code
 	python3 - "$img" "$OUT/core.img" "$grubdir/boot.img" "$embed_lba" $((2 * 1024 * 1024)) <<'EOF'

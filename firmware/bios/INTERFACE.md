@@ -8,7 +8,9 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 - GRUB comes from Debian trixie's `grub-pc-bin`. `boot.img` goes into the MBR code area. `core.img` goes into the BIOS Boot Partition.
 - `core.img` contains every module `grub.cfg` uses, so GRUB loads no module from disk:
 
-  `biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval loadenv keystatus serial terminal halt reboot`
+  `biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval loadenv keystatus serial terminal halt reboot all_video`
+
+  The list lives in [`core-modules.txt`](core-modules.txt), which every image builder reads; `ci/lint/grub-modules.sh` fails if `grub.cfg` uses a module outside it.
 
 - The early configuration embedded in `core.img` is the only per-machine part:
 
