@@ -9,7 +9,7 @@ This is how to run the project's tests on a Windows workstation, as CI does. Eac
 | Clone in the WSL filesystem, `~/vintner-boot` | Where the QEMU suites run. Its `origin` is the Windows checkout. |
 | VirtualBox 7.2 on Windows | Dry runs of the real-hardware images (`ci/hardware/`): one more firmware implementation, still virtual. |
 
-Check a machine at any time with:
+Before pushing, run the local gate, which runs everything CI runs ([below](#the-local-gate-everything-ci-runs)). Check a machine at any time with:
 
 ```bash
 ci/local/check-env.sh --loop
@@ -55,7 +55,7 @@ trixie's `golang-go` is Go 1.24, which is what `src/go.mod` asks for. If `go.mod
 ### 3. Your user: KVM, sudo, never root
 
 - **KVM group:** run `sudo usermod -aG kvm "$USER"`, then `wsl --shutdown` from Windows so the new group applies.
-- **sudo:** the suites call `sudo` partway through a run, for `losetup` and `mount`. If sudo asks for a password, run `sudo -v` just before starting a suite, or the run stops at a prompt.
+- **sudo:** the suites call `sudo` partway through a run, for `losetup` and `mount`. The local gate (below) runs jobs with no terminal, so it needs sudo without a password. That's reasonable in a distribution kept for testing: `echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/90-$USER`. To run a single suite by hand with a password-protected sudo, run `sudo -v` just before starting it, or the run stops at a prompt.
 - **Never root:** run the tests and git as your own user, never as root or through `sudo git`.
 
 ### 4. Git identity in WSL
@@ -104,7 +104,24 @@ wsl -d Debian -e sh -c 'cd /mnt/d/Projects/vintner-boot && git ls-files -z "*.sh
 
 Use `wsl -e`, as above. `wsl -- <command>` passes the command through your login shell first, which expands `$variables` before `sh -c` sees them.
 
-### QEMU suites
+### The local gate: everything CI runs
+
+[`ci/local/run-all.sh`](../ci/local/run-all.sh) runs every CI job in the WSL clone, one at a time: the `lint.yml` jobs, the `qemu-baseline.yml` boots and every `qemu-tests.yml` suite. It ends with a pass/fail table and exits 1 if any job failed. Run it before pushing:
+
+```bash
+cd ~/vintner-boot && ci/local/run-all.sh --ref <branch>
+```
+
+How it works:
+- `--ref <branch>` fetches from `origin` (the Windows checkout) and switches the clone to that branch, detached. Without it, the gate tests whatever the clone has checked out.
+- The QEMU job list is read from the workflow files, so it follows CI. `--list` prints it.
+- To run part of the gate, name jobs or groups (`lint`, `baseline`, `qemu`): for example `ci/local/run-all.sh lint publish-uefi interrupt-bios`.
+- As in CI, each job starts without its earlier output and is judged by its exit status.
+- Each job runs with no terminal, so a prompt that CI never sees can't stall the run. For the same reason the gate needs sudo without a password.
+- Each job has a time limit (`--timeout`, default 120 minutes). A job that runs over is stopped and marked TIMEOUT, and any loop devices and mounts it left under `ci/out/` or `recovery/out/` are released. Ctrl-C does the same for the running job.
+- Logs and `summary.tsv` go to `ci/out/local/run-all/<time>/`.
+
+### QEMU suites one at a time
 
 Bring the WSL clone to the branch you want to test. Changes not committed on Windows are not in it:
 
