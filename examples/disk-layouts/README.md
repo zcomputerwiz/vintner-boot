@@ -13,7 +13,7 @@ Identity is by **PARTUUID** (and the filesystem UUID of the root), never by devi
 | Boot storage (XBOOTLDR) | `BC13C2FF-59E6-4262-A352-B275FD6F7172` | FAT32, plain, unencrypted | **Required.** Never in fstab, never mounted outside the vintner services. Found through `vintner.bootstorage=PARTUUID=` |
 | Root | `4F68BCE3-E8CD-4DB1-96E7-FBCAF984B709` (x86-64 root) or the type of the filesystem's kind | ext4 | Plain partition. md, LVM and LUKS: see `docs/accepted-platforms.md` |
 
-The boot storage partition carries the GPT attribute bit 63 (`no-auto`, "do not mount automatically"), so that `systemd-gpt-auto-generator` never mounts it. `ci/integration/uefi-bless` (A5) checks that no generated mount unit names it.
+The product's installer should set the GPT attribute bit 63 (`no-auto`, "do not mount automatically") on the boot storage partition. Without it `systemd-gpt-auto-generator` could mount an XBOOTLDR partition at `/boot`; it skips a populated `/boot`, which Debian's always is (architecture §5). `ci/integration/uefi-bless` (A5) checks on the CI base disk, which does not set the bit, that no generated mount unit names boot storage. `vintner install` does not change the partition table, so it does not set the bit.
 
 ## Sizes
 
