@@ -136,7 +136,9 @@ get_booted_image() {
 	local rec=" vintner.recovery=a "
 	[ "$fw" = "bios" ] && rec=" vintner.recovery_test=1 "
 	if [[ "$words" == *"$rec"* ]] && [[ "$words" != *" vintner.test_slot=b "* ]]; then
-		if [ "$fw" = "bios" ] && ! clean_ansi < "$log" | grep -qE 'vintner: trying recovery-a($|[^-[:alnum:]])'; then
+		# No grep -q after a pipe: under pipefail grep exits early, the writer gets
+		# SIGPIPE ("tr: write error: Broken pipe") and a present line reads as missing.
+		if [ "$fw" = "bios" ] && ! clean_ansi < "$log" | grep -E 'vintner: trying recovery-a($|[^-[:alnum:]])' >/dev/null; then
 			echo "recovery-a-missing-bios-log"
 			return
 		fi
@@ -519,7 +521,7 @@ SVCEOF
 			# The test UKIs carry no vintner.root=, so recovery must name the base disk's root from the manifest.
 			MANIFEST_LINE="root from the manifest on boot storage: UUID=$ROOT_FS_UUID"
 			# Anchored at the end so the whole UUID is compared.
-			if clean_ansi < "$B4_LOG" | grep -q "$MANIFEST_LINE\$"; then
+			if clean_ansi < "$B4_LOG" | grep "$MANIFEST_LINE$" >/dev/null; then
 				D4_EVID="$MANIFEST_LINE; $D4_EVID"
 			else
 				D4_MANIFEST_OK=false
