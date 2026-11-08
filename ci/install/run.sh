@@ -10,7 +10,7 @@
 # Needs: root (sudo), debootstrap, a network and a Debian mirror, sfdisk, mkfs.vfat,
 # mkfs.ext4, losetup, qemu-system-x86_64, OVMF.
 # Usage: ci/install/run.sh   (writes ci/out/install/results.tsv)
-# shellcheck disable=SC2024 # the logs are written by this user into OUT; only the commands need root
+# shellcheck disable=SC2002,SC2024 # the pipe reads efivarfs, which cannot seek; the logs are written by this user into OUT
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -103,7 +103,8 @@ echo "CMDLINE: $(cat /proc/cmdline)"
 if [ -d /sys/firmware/efi ]; then
 	mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null
 	f=/sys/firmware/efi/efivars/LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
-	[ -r "$f" ] && echo "LOADER_ENTRY_SELECTED: $(tail -c +5 "$f" | tr -d '\0')"
+		# efivarfs cannot seek, so the variable is read through a pipe; the first 4 bytes are its attributes.
+		[ -r "$f" ] && echo "LOADER_ENTRY_SELECTED: $(cat "$f" | tail -c +5 | tr -d '\0')"
 fi
 echo "BLESS_ACTIVE: $(systemctl is-active vintner-bless.service)"
 echo "=== VINTNER-INSTALL-REPORT-END ==="
