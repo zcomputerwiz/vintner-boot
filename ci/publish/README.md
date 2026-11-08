@@ -14,7 +14,7 @@ CI runs it as `publish-uefi` and `publish-bios` in `.github/workflows/qemu-tests
 2. **Prepared disk:** from the base disk:
    - installs `systemd-ukify` and `systemd-boot-efi` in the guest with `apt-get` (not `systemd-boot`, which is a conflicting package, architecture §5);
    - in the same operation, holds `linux-image-cloud-amd64` and os-1's kernel package `linux-image-$KERNEL_ABI` (ABI from the base disk's `base.env`) with `apt-mark hold`. This keeps any upgrade of the cloud kernel from publishing an extra generation during the cases;
-   - copies the two hooks `integration/kernel-hooks/zz-vintner` and `integration/initramfs-hooks/zz-vintner` (`chmod 0755`) and the host-built static `vintner` binary to the guest root;
+   - arms the two hooks the package ships, `/etc/kernel/postinst.d/zz-vintner` and `/etc/initramfs/post-update.d/zz-vintner` (`chmod 0755`) and copies the host-built static `vintner` binary to the guest root;
    - boots once so `os-1` is blessed `GOOD`.
    - verified before any cases that the prepared disk has exactly one image, `os-1`, `GOOD`, and nothing under `/vintner/staging/`.
 3. **Cases:** each case starts from a fresh sparse copy of the prepared disk.

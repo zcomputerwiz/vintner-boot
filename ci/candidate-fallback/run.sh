@@ -97,6 +97,16 @@ if ! grep -q "=== OP EXIT: 0 ===" "$OUT/prep-install.log"; then
 	exit 1
 fi
 
+# 2b. Arm the two hooks that the package ships (vintner-base.sh leaves them off, so
+# that installing packages in the prep step above publishes nothing)
+echo "Arming the vintner kernel and initramfs hooks in the guest..."
+LOOP=$(sudo losetup -P -f --show "$PREP_RAW")
+sudo mount "${LOOP}p1" "$MNT"
+sudo chmod 0755 "$MNT/etc/kernel/postinst.d/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
+sudo umount "$MNT"
+sudo losetup -d "$LOOP"
+LOOP=""
+
 # 2c. Boot once so that os-1 is blessed GOOD
 echo "Booting preparation step 2: boot once to bless os-1..."
 PREP_BLESS_SEED=$(make_seed "prep-bless" "true")

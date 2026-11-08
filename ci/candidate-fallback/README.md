@@ -10,7 +10,7 @@ CI runs it as `candidate-uefi` and `candidate-bios` in `.github/workflows/qemu-t
 
 ## Method
 
-1. **Base disk:** built once per run by `ci/lib/vintner-base.sh`, with `systemd-ukify` and `systemd-boot-efi` installed, `vintner-core` installed from its package (the kernel and initramfs hooks, the binary and the unit come with it), and `os-1` booted once so that it is blessed `GOOD`. Each case starts from a sparse copy of this disk.
+1. **Base disk:** built once per run by `ci/lib/vintner-base.sh`, with `systemd-ukify` and `systemd-boot-efi` installed, `vintner-core` installed from its package (the binary, the unit and the hooks come with it; the hooks are armed by this row after the install of the packages), and `os-1` booted once so that it is blessed `GOOD`. Each case starts from a sparse copy of this disk.
 2. **Publish candidate generation 2:** each broken case publishes its candidate, generation 2, through the real publisher:
    - In the operation boot, a modification is placed under `/etc/initramfs-tools/`.
    - `update-initramfs -u -k "$(uname -r)"` runs, triggering the initramfs hook which publishes candidate generation 2 as `TRYING`.

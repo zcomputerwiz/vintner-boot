@@ -305,6 +305,11 @@ for m in dev/pts dev proc; do sudo umount "$MNT/$m"; done
 sudo rm -f "$MNT/root/vintner-core.deb"
 [ "$PKG_RC" -eq 0 ] || { echo "installing vintner-core into the guest failed (rc=$PKG_RC)" >&2; exit 1; }
 sudo chroot "$MNT" dpkg-query -W -f='${Package} ${Version}\n' vintner-core systemd-ukify sbsigntool | tee -a "$VERSIONS"
+# The hooks arrive armed. Rows install other packages (kernels, initramfs tools) in
+# the guest before the step they test, and a row arms the hooks when it wants vintner
+# to publish: until then they are left off, as they were when the rows copied them in
+# by hand.
+sudo chmod a-x "$MNT/etc/kernel/postinst.d/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
 
 # Ensure machine-id exists
 MACHINE_ID=$(cat "$MNT/etc/machine-id" 2>/dev/null || true)

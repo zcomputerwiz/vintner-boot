@@ -4,7 +4,7 @@
 # what WO-0010 2.1 to 2.3 promise:
 #   - vintner-core installs before and after plymouth with no dpkg prompt or error,
 #     and never changes plymouth's /etc/plymouth/plymouthd.conf;
-#   - the binary, hooks, unit, masks and /etc/kernel/install.conf are in place;
+#   - the binary, hooks, unit, masks, /etc/kernel/install.conf and the stub are in place;
 #   - removing the package takes the masks, hooks and unit away; purging removes
 #     the conffiles;
 #   - vintner-platform cannot be installed beside a stock loader package;
@@ -81,6 +81,8 @@ check "arch" "vintner-core is Architecture: amd64" \
 	test "$(dpkg-deb -f "$DEBS/$core_deb" Architecture)" = amd64
 check "depends-ukify" "vintner-core Depends: systemd-ukify" \
 	bash -c "dpkg-deb -f '$DEBS/$core_deb' Depends | grep -q systemd-ukify"
+check "depends-stub" "vintner-core Depends: systemd-boot-efi (the stub vintner publish builds images with)" \
+	bash -c "dpkg-deb -f '$DEBS/$core_deb' Depends | grep -q systemd-boot-efi"
 check "no-plymouthd-conf" "vintner-core does not ship /etc/plymouth/plymouthd.conf" \
 	bash -c "! dpkg-deb -c '$DEBS/$core_deb' | grep -q 'etc/plymouth/plymouthd.conf'"
 
@@ -102,6 +104,8 @@ check "A-plymouthd-conf-untouched" "plymouthd.conf is still plymouth's, byte for
 # Files, masks, owner.
 check "files" "/usr/sbin/vintner, both hooks, the Plymouth hook, the unit" \
 	sudo bash -c "cd '$D' && test -x usr/sbin/vintner && test -x etc/kernel/postinst.d/zz-vintner && test -x etc/initramfs/post-update.d/zz-vintner && test -x usr/share/initramfs-tools/hooks/plymouth-vintner && test -f usr/lib/systemd/system/vintner-bless.service"
+check "stub-installed" "installing vintner-core brings the systemd-stub that vintner publish needs" \
+	sudo test -s "$D/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
 check "install-conf" "/etc/kernel/install.conf is layout=other and owned by vintner-core" \
 	bash -c "test \"\$(sudo cat '$D/etc/kernel/install.conf')\" = layout=other && sudo chroot '$D' dpkg -S /etc/kernel/install.conf | grep -q '^vintner-core:'"
 check "mask-bless-boot" "systemd-bless-boot.service is masked (/dev/null)" \

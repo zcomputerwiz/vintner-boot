@@ -265,6 +265,10 @@ apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--fo
 [ -f /tmp/repo-plymouthd.conf ] && cp /tmp/repo-plymouthd.conf /etc/plymouth/plymouthd.conf
 plymouth-set-default-theme vintner-bgrt
 
+# The package ships the vintner hooks; vintner-base.sh leaves them off, so that the apt
+# step above publishes nothing. Arm them now.
+chmod 755 /etc/kernel/postinst.d/zz-vintner /etc/initramfs/post-update.d/zz-vintner
+
 
 GENERIC_KVER=$(ls -d /lib/modules/*-amd64 | grep -v cloud | sort -V | tail -n 1 | xargs -n1 basename)
 echo "Generic kernel is $GENERIC_KVER"
