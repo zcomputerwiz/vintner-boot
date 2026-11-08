@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 KEY=""
 CERT=""
 UKI_ONLY=0
+NO_UKI=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -31,12 +32,16 @@ while [ $# -gt 0 ]; do
 			CERT="${1#*=}"
 			shift
 			;;
+		--no-uki)
+			NO_UKI=1
+			shift
+			;;
 		--uki-only)
 			UKI_ONLY=1
 			shift
 			;;
 		--help|-h)
-			echo "Usage: $0 [--key <key.pem>] [--cert <cert.pem>] [--uki-only]" >&2
+			echo "Usage: $0 [--key <key.pem>] [--cert <cert.pem>] [--uki-only | --no-uki]" >&2
 			exit 0
 			;;
 		*)
@@ -68,7 +73,9 @@ fi
 OUT=recovery/out
 ROOT=$OUT/root
 INITRD=$OUT/initrd
-VERSION=$(date -u +%Y%m%d)-$(git rev-parse --short HEAD)
+# A source package has no .git, and dpkg-buildpackage sets SOURCE_DATE_EPOCH.
+REV=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
+VERSION=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d)-$REV
 
 if [ "$UKI_ONLY" = "1" ] && [ -f "$OUT/vmlinuz" ] && [ -f "$OUT/initrd.img" ] && [ -f "$ROOT/usr/lib/systemd/ukify" ]; then
 	echo "Skipping initrd build (--uki-only)"
@@ -115,8 +122,8 @@ else
 	done
 	# The same static binary as the host's (ADR-0002); recovery re-arms
 	# recovery A with "vintner bless --recovery a".
-	(cd src && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "../$INITRD/usr/sbin/vintner" ./cmd/vintner)
-	echo "vintner $(git rev-parse --short HEAD) ($(go version | cut -d' ' -f3))" >> "$OUT/versions.txt"
+	(cd src && CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w" -o "../$INITRD/usr/sbin/vintner" ./cmd/vintner)
+	echo "vintner $REV ($(go version | cut -d' ' -f3))" >> "$OUT/versions.txt"
 	install -m 0755 recovery/initramfs/init "$INITRD/init"
 	echo "$VERSION" > "$INITRD/etc/vintner/version"
 	grep -v '^#' recovery/initramfs/modules.list > "$INITRD/etc/vintner/modules"
@@ -145,6 +152,7 @@ if [ -n "$KEY" ] && [ -n "$CERT" ]; then
 fi
 
 for slot in a b; do
+	[ "$NO_UKI" = 1 ] && break
 	S=${slot^^}
 	printf 'ID=debian\nIMAGE_ID=vintner-recovery-%s\nIMAGE_VERSION=%s\nPRETTY_NAME="vintner recovery %s (%s)"\n' \
 		"$slot" "$VERSION" "$S" "$VERSION" > "$OUT/osrel-$slot"
@@ -166,4 +174,6 @@ for slot in a b; do
 done
 
 cat "$OUT/versions.txt" 2>/dev/null || true
-stat -c '%n %s' "$OUT"/vmlinuz "$OUT"/initrd.img "$OUT"/vintner-recovery-*.efi | awk '{printf "%-40s %6.1f MiB\n", $1, $2/1048576}'
+outs=("$OUT"/vmlinuz "$OUT"/initrd.img)
+[ "$NO_UKI" = 1 ] || outs+=("$OUT"/vintner-recovery-*.efi)
+stat -c '%n %s' "${outs[@]}" | awk '{printf "%-40s %6.1f MiB\n", $1, $2/1048576}'

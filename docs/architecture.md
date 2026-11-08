@@ -135,7 +135,7 @@ Installer choice: **Debian Installer preseed with late commands and custom insta
 Debian package boundaries (v1):
 
 - `vintner-core`: common boot metadata schema, manifest validation, state model, CLI and API; the publisher (kernel/initramfs hooks, image build/verify/sign, atomic staging and garbage collection); health checks and the bless service for both firmware backends.
-- `vintner-platform`: **inert** platform payloads (systemd-boot and shim binaries, GRUB core image and modules, recovery images) installed under `/usr/lib/vintner/payloads/`. Installing or upgrading this package never touches the ESP, boot storage or NVRAM; only an explicit, signed `vintner platform-update` deploys a payload. This is the ownership mechanism: APT delivers, the operator deploys.
+- `vintner-platform` (`amd64`, because the payloads are x86 objects): **inert** platform payloads (systemd-boot and the stub, GRUB boot sector and modules from which the installer builds the core image, the recovery kernel and initramfs from which it assembles the recovery UKIs; shim follows with Secure Boot, `docs/packaging.md`) installed under `/usr/lib/vintner/payloads/`. Installing or upgrading this package never touches the ESP, boot storage or NVRAM; only an explicit, signed `vintner platform-update` deploys a payload. This is the ownership mechanism: APT delivers, the operator deploys.
 - `vintner-installer`: guided/automated installation integration, partition setup, firmware probe, boot entry registration; later also a udeb.
 - The recovery image is a separately versioned **build target** in this repository, shipped inside `vintner-platform`, not a runtime package of its own.
 

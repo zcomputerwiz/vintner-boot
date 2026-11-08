@@ -12,6 +12,7 @@ export GOFLAGS=-trimpath -mod=readonly -buildvcs=false
 override_dh_auto_build:
 	mkdir -p debian/build
 	cd src && go build -ldflags "-s -w" -o ../debian/build/vintner ./cmd/vintner
+	sh debian/stage-payloads.sh
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))

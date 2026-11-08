@@ -1,6 +1,6 @@
 # Debian packaging
 
-What `debian/` builds and why (WO-0010 2.1 to 2.3). The packages build with `dpkg-buildpackage -us -uc -b` on Debian 13 (Go 1.24, no network, standard library only).
+What `debian/` builds and why (WO-0010 2.1 to 2.4). The packages build with `dpkg-buildpackage -us -uc -b` on Debian 13 (Go 1.24, standard library only). The `vintner-core` build needs no network; the `vintner-platform` payload stage downloads the recovery packages (see below).
 
 ## vintner-core (amd64)
 
@@ -31,9 +31,35 @@ What an upgrade of `plymouth` does to such an edit:
 - a new `plymouth` version whose shipped file is unchanged also asks nothing, because dpkg only asks when the maintainer's file changed and the local file differs;
 - if a future `plymouth` changes its shipped file, dpkg asks interactively; `unattended-upgrades` passes `--force-confold` by default, so it keeps the edit. I did not test this last case.
 
-## vintner-platform (all)
-`Conflicts: systemd-boot, grub-pc, grub-efi-amd64, shim-signed, grub-cloud-amd64, grub-efi-ia32, grub-coreboot, grub-xen, grub-ieee1275, refind` (architecture §5). apt resolves a conflict by removing the installed package, so installing one of them removes `vintner-platform`; `dpkg -i` refuses. The payloads this package is meant to carry (WO-0010 2.4) are not shipped yet.
+## vintner-platform (amd64)
+`Conflicts: systemd-boot, grub-pc, grub-efi-amd64, shim-signed, grub-cloud-amd64, grub-efi-ia32, grub-coreboot, grub-xen, grub-ieee1275, refind` (architecture §5). apt resolves a conflict by removing the installed package, so installing one of them removes `vintner-platform`; `dpkg -i` refuses.
+
+It is `amd64`, not `all` as architecture §5 first had it: it carries x86-64 EFI binaries and i386-pc GRUB objects, which an `all` package must not.
+
+### Payloads (WO-0010 2.4)
+Everything is under `/usr/lib/vintner/payloads/`. The package has **no maintainer scripts** and no other path than that directory, `/usr/share/doc` and `/usr/share/lintian`, so installing, upgrading or removing it cannot write to the ESP, boot storage or NVRAM (`ci/package/install-test.sh` checks both). Deploying a payload is the installer's act (WO-0010 3.2).
+
+| Path | Source | Used for |
+|---|---|---|
+| `uefi/systemd-bootx64.efi` | `systemd-boot-efi` (Build-Depends) | the loader, `\EFI\vintner\systemd-bootx64.efi` |
+| `uefi/linuxx64.efi.stub` | `systemd-boot-efi` | the stub `ukify` puts before a kernel, for the recovery UKIs |
+| `uefi/loader.conf` | `firmware/uefi/loader.conf` | `\loader\loader.conf` |
+| `bios/i386-pc/` | `grub-pc-bin` (Build-Depends) | what `grub-mkimage -d` reads: `boot.img`, `kernel.img`, `diskboot.img`, `lzma_decompress.img`, `moddep.lst` and every module. None of GRUB's own programs is shipped, and the modules are not stripped (GRUB reads their symbol tables; `debian/vintner-platform.lintian-overrides`) |
+| `bios/grub.cfg`, `bios/core-modules.txt` | `firmware/bios/` | the static configuration and the modules `core.img` is built with |
+| `recovery/vmlinuz`, `recovery/initrd.img`, `recovery/versions.txt` | `recovery/build.sh --no-uki` | the recovery kernel and initramfs |
+| `VERSIONS` | | package versions of the two Debian sources and of the recovery packages |
+| `MANIFEST` | | `sha256sum` of every other file; what "deploy and verify" checks against |
+
+Three things are deliberately not shipped:
+- **`core.img`.** Its early configuration names the boot storage by FAT UUID, which exists only on the target, so the installer builds it from `bios/i386-pc/` and `core-modules.txt` (`grub-mkimage` is in `grub-common`).
+- **The recovery UKIs.** Tier A signs them with the owner's key, so the installer assembles them with `ukify` from `recovery/vmlinuz`, `recovery/initrd.img` and `uefi/linuxx64.efi.stub` (the command line is `console=tty0 console=ttyS0,115200 vintner.recovery=<a|b>`, as in `recovery/build.sh`). A prebuilt unsigned UKI would be thrown away in tier A and cost 23 MiB each.
+- **shim.** It belongs to Phase 5 (Secure Boot completion), which takes it from the pinned `shim-signed` `.deb`.
+
+### Where the payload files come from, and what that costs
+The build needs `systemd-boot-efi` and `grub-pc-bin` installed, and takes the files from them. The recovery kernel and initramfs come from `recovery/build.sh`, which **downloads** the Debian trixie packages it unpacks from `deb.debian.org`. That is a network access during the build, which Debian's own build daemons do not allow; it is acceptable here because this is not an archive package, and the alternative, Build-Depends on a kernel, busybox, cryptsetup, lvm2 and mdadm, would install the same trixie packages from the same archive. Set `VINTNER_RECOVERY_DIR` to a directory that already holds `vmlinuz`, `initrd.img` and `versions.txt` to build offline. The recovery initramfs holds the same static `vintner` as `vintner-core`, built from the same tree.
+
+Licences: the payloads are unmodified Debian files and keep their upstream licences (`debian/copyright`); `VERSIONS` names the source packages for the corresponding source.
 
 ## Checks
 - `debian-package` (lint workflow): build in a Debian 13 container, `lintian --fail-on error`. Overrides are in `debian/vintner-core.lintian-overrides` with their reasons.
-- `package-install` (lint workflow, `ci/package/install-test.sh`): debootstrap a trixie chroot, install `vintner-core` before and after `plymouth`, check the files and masks, remove, purge, and the `Conflicts`.
+- `package-install` (lint workflow, `ci/package/install-test.sh`): debootstrap a trixie chroot, install `vintner-core` before and after `plymouth`, check the files and masks, remove, purge, the `Conflicts`, and that `vintner-platform` is inert and its `MANIFEST` verifies.

@@ -2,7 +2,9 @@ Source: vintner-boot
 Section: admin
 Priority: optional
 Maintainer: zcomputerwiz <zcomputerwiz@users.noreply.github.com>
-Build-Depends: debhelper-compat (= 13), golang-go (>= 2:1.24~)
+Build-Depends: debhelper-compat (= 13), golang-go (>= 2:1.24~),
+ binutils, ca-certificates, cpio, curl, kmod, xz-utils,
+ grub-pc-bin, systemd-boot-efi
 Standards-Version: 4.7.2
 Rules-Requires-Root: no
 
@@ -17,15 +19,16 @@ Description: vintner boot platform - core tools, publisher and health checks
  health checks and the bless service for both firmware backends.
 
 Package: vintner-platform
-Architecture: all
+Architecture: amd64
+Depends: ${misc:Depends}
 Conflicts: systemd-boot, grub-pc, grub-efi-amd64, shim-signed, grub-cloud-amd64,
  grub-efi-ia32, grub-coreboot, grub-xen, grub-ieee1275, refind
 Description: vintner boot platform - inert boot loader and recovery payloads
  Platform payloads installed under /usr/lib/vintner/payloads/: the
- systemd-boot and shim binaries, the GRUB core image and modules, and the
- recovery images. Installing or upgrading this package never touches the
- ESP, boot storage or NVRAM; only an explicit, signed
- "vintner platform-update" deploys a payload.
+ systemd-boot and systemd-stub binaries, the GRUB BIOS boot sector and
+ modules, and the recovery kernel and initramfs. Installing or upgrading
+ this package never touches the ESP, boot storage or NVRAM; deploying a
+ payload is an explicit act of the installer.
 
 Package: vintner-installer
 Architecture: all
