@@ -1,6 +1,9 @@
 #!/usr/bin/make -f
 # The vintner binary is static (CGO_ENABLED=0) and uses only the Go standard
-# library (ADR-0002), so the build needs no network and no module cache.
+# library (ADR-0002), so the Go build needs no network and no module cache. The
+# vintner-platform payload stage (debian/stage-payloads.sh) runs in every build of
+# this source package and downloads the recovery packages unless
+# VINTNER_RECOVERY_DIR is set.
 export CGO_ENABLED=0
 export GOCACHE=$(CURDIR)/debian/.gocache
 # -buildvcs=false: a source package has no .git, and git refuses a checkout owned by another user.

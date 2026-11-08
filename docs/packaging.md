@@ -1,6 +1,6 @@
 # Debian packaging
 
-What `debian/` builds and why (WO-0010 2.1 to 2.4). The packages build with `dpkg-buildpackage -us -uc -b` on Debian 13 (Go 1.24, standard library only). The `vintner-core` build needs no network; the `vintner-platform` payload stage downloads the recovery packages (see below).
+What `debian/` builds and why (WO-0010 2.1 to 2.4). The packages build with `dpkg-buildpackage -us -uc -b` on Debian 13 (Go 1.24, standard library only). The Go build needs no network, but the payload stage runs in every build of this source package (`vintner-core` included) and downloads the recovery packages unless `VINTNER_RECOVERY_DIR` is set (see below).
 
 ## vintner-core (amd64)
 
@@ -53,7 +53,7 @@ Everything is under `/usr/lib/vintner/payloads/`. The package has **no maintaine
 Three things are deliberately not shipped:
 - **`core.img`.** Its early configuration names the boot storage by FAT UUID, which exists only on the target, so the installer builds it from `bios/i386-pc/` and `core-modules.txt` (`grub-mkimage` is in `grub-common`).
 - **The recovery UKIs.** Tier A signs them with the owner's key, so the installer assembles them with `ukify` from `recovery/vmlinuz`, `recovery/initrd.img` and `uefi/linuxx64.efi.stub` (the command line is `console=tty0 console=ttyS0,115200 vintner.recovery=<a|b>`, as in `recovery/build.sh`). A prebuilt unsigned UKI would be thrown away in tier A and cost 23 MiB each.
-- **shim.** It belongs to Phase 5 (Secure Boot completion), which takes it from the pinned `shim-signed` `.deb`.
+- **shim.** It belongs to WO-0010 Phase 5 (Secure Boot completion), which takes it from the pinned `shim-signed` `.deb`.
 
 ### Where the payload files come from, and what that costs
 The build needs `systemd-boot-efi` and `grub-pc-bin` installed, and takes the files from them. The recovery kernel and initramfs come from `recovery/build.sh`, which **downloads** the Debian trixie packages it unpacks from `deb.debian.org`. That is a network access during the build, which Debian's own build daemons do not allow; it is acceptable here because this is not an archive package, and the alternative, Build-Depends on a kernel, busybox, cryptsetup, lvm2 and mdadm, would install the same trixie packages from the same archive. Set `VINTNER_RECOVERY_DIR` to a directory that already holds `vmlinuz`, `initrd.img` and `versions.txt` to build offline. The recovery initramfs holds the same static `vintner` as `vintner-core`, built from the same tree.

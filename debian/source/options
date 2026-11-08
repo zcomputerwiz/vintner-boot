@@ -1,0 +1,4 @@
+# recovery/build.sh fills recovery/out (hundreds of MB of downloaded packages); keep it out of a source package.
+tar-ignore = recovery/out
+tar-ignore = debian/build
+tar-ignore = debian/.gocache
