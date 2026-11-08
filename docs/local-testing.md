@@ -47,7 +47,7 @@ sudo apt-get update
 ```
 
 ```bash
-sudo apt-get install -y golang-go shellcheck curl qemu-system-x86 qemu-utils ovmf seabios mtools fdisk e2fsprogs kmod cpio xz-utils python3-pefile python3-virt-firmware sbsigntool cloud-image-utils binutils systemd-boot-efi systemd-ukify grub-common build-essential debhelper dpkg-dev lintian
+sudo apt-get install -y golang-go shellcheck curl qemu-system-x86 qemu-utils ovmf seabios mtools fdisk e2fsprogs kmod cpio xz-utils python3-pefile python3-virt-firmware sbsigntool cloud-image-utils binutils systemd-boot-efi systemd-ukify grub-common build-essential debhelper dpkg-dev lintian debootstrap debian-archive-keyring dosfstools
 ```
 
 trixie's `golang-go` is Go 1.24, which is what `src/go.mod` asks for. If `go.mod` moves to a newer Go, install that from go.dev.

@@ -307,3 +307,96 @@ func TestCmdline(t *testing.T) {
 }
 
 var _ = gpttest.New
+
+// exitCode1 is what dpkg-query returns when some of the names are unknown.
+type exitCode1 struct{}
+
+func (exitCode1) Error() string { return "exit status 1" }
+func (exitCode1) ExitCode() int { return 1 }
+
+func TestRemoveStockDistinguishesAFailedQueryFromNothingInstalled(t *testing.T) {
+	// exit status 1 with no ii lines: nothing installed.
+	none := runnerFunc(func(context.Context, string, ...string) ([]byte, error) {
+		return []byte("dpkg-query: no packages found matching grub-pc"), exitCode1{}
+	})
+	if removed, err := RemoveStock(context.Background(), none, "/", ""); err != nil || len(removed) != 0 {
+		t.Errorf("nothing installed: %v, %v", removed, err)
+	}
+	// Anything else is a failure, not "nothing to remove".
+	for name, err := range map[string]error{
+		"no dpkg-query": errors.New("exec: \"dpkg-query\": executable file not found in $PATH"),
+		"chroot failed": errors.New("exit status 127"),
+	} {
+		r := runnerFunc(func(context.Context, string, ...string) ([]byte, error) { return nil, err })
+		if _, got := RemoveStock(context.Background(), r, "/", ""); got == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+func TestStockLoadersStayWhenVintnerDoesNotStartYet(t *testing.T) {
+	// Another system on the ESP: BOOTX64.EFI is left alone, so nothing makes the
+	// firmware start vintner and the stock loader must not be removed.
+	e, sr, f, log := fullEnv(t, "uefi")
+	sr.installed = []string{"grub-efi-amd64"}
+	os.MkdirAll(filepath.Join(e.esp, "EFI/Microsoft/Boot"), 0o755)
+	os.MkdirAll(filepath.Join(e.esp, "EFI/debian"), 0o755)
+	if _, err := Install(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(filepath.Join(e.esp, "EFI/debian")) || len(sr.apt) != 0 {
+		t.Errorf("the stock loader was removed although vintner is not what the firmware starts (apt %v)", sr.apt)
+	}
+	if !strings.Contains(log.String(), "stock loaders were left in place") {
+		t.Errorf("the log does not say so:\n%s", log.String())
+	}
+}
+
+func TestAFailureAfterPublishingCanBeResumed(t *testing.T) {
+	e, sr, f, _ := fullEnv(t, "both")
+	sr.installed = []string{"grub-pc"}
+	e.opts.Disk = &syncFailsOnce{Disk: e.disk, fail: true}
+	f.Options.Disk = e.opts.Disk
+
+	_, err := Install(context.Background(), f)
+	var se *Error
+	if !errors.As(err, &se) || !se.Resumable || se.Step != "BIOS boot code" {
+		t.Fatalf("first run: %v (resumable %v)", err, se != nil && se.Resumable)
+	}
+	if len(sr.apt) != 0 {
+		t.Error("the stock loader was purged although the takeover failed")
+	}
+	// Installing again is refused: generation 1 is published.
+	if _, err := Install(context.Background(), f); err == nil || !strings.Contains(err.Error(), "installed system") {
+		t.Fatalf("a second Install: %v", err)
+	}
+
+	res, err := Resume(context.Background(), f)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if res.Manifest.Images[0].Generation != 1 {
+		t.Errorf("manifest %+v", res.Manifest.Images)
+	}
+	if !exists(filepath.Join(e.esp, "EFI/BOOT/BOOTX64.EFI")) {
+		t.Error("Resume did not take over the removable path")
+	}
+	if len(sr.apt) != 1 {
+		t.Errorf("Resume did not purge the stock loader: %v", sr.apt)
+	}
+}
+
+func TestResumeRefusesWhatIsNotAHalfFinishedInstall(t *testing.T) {
+	e, _, f, _ := fullEnv(t, "uefi")
+	if _, err := Resume(context.Background(), f); err == nil || !strings.Contains(err.Error(), "nothing to resume") {
+		t.Errorf("an empty boot storage: %v", err)
+	}
+	if _, err := Install(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+	f.Layout.BootStorage.UUID = "9d11fdb7-c9b6-475f-8336-ebdb5b830355"
+	if _, err := Resume(context.Background(), f); err == nil || !strings.Contains(err.Error(), "another layout") {
+		t.Errorf("a manifest of another layout: %v", err)
+	}
+	_ = e
+}

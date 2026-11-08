@@ -125,7 +125,7 @@ func TestInstallUsage(t *testing.T) {
 type noStock struct{}
 
 func (noStock) Run(context.Context, string, ...string) ([]byte, error) {
-	return []byte("dpkg-query: no packages found"), os.ErrNotExist
+	return []byte("dpkg-query: no packages found"), exit1{}
 }
 
 func installTarget(t *testing.T) string {
@@ -200,3 +200,9 @@ func TestInstallReportsAFailure(t *testing.T) {
 		t.Errorf("rc %d, stderr %q", rc, errb.String())
 	}
 }
+
+// exit1 is dpkg-query's exit status when some of the names are unknown.
+type exit1 struct{}
+
+func (exit1) Error() string { return "exit status 1" }
+func (exit1) ExitCode() int { return 1 }

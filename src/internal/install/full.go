@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 )
 
@@ -43,11 +46,13 @@ type FullOptions struct {
 //  1. deploy vintner's files (Stage), without changing how the machine boots;
 //  2. publish generation 1 with an explicit command line and root identity;
 //  3. take booting over (Cutover) and read it all back;
-//  4. remove \EFI\debian and purge the stock loader packages;
+//  4. remove \EFI\debian and purge the stock loader packages, but only when
+//     booting really starts vintner now;
 //  5. verify again.
 //
 // A failure before step 3 leaves the stock boot path as it was. A failure
-// later leaves vintner booting; the Error says what was changed.
+// after step 2 is resumable: the Error says what was changed and Resume
+// continues from step 3.
 func Install(ctx context.Context, f FullOptions) (*Result, error) {
 	f.Options.fill()
 	dep, err := Stage(ctx, f.Options)
@@ -55,8 +60,7 @@ func Install(ctx context.Context, f FullOptions) (*Result, error) {
 		return nil, err
 	}
 	fail := func(step string, err error) (*Result, error) {
-		e := &Error{Step: step, Err: err, Changed: append([]string(nil), dep.Changed()...)}
-		return nil, e
+		return nil, &Error{Step: step, Err: err, Changed: append([]string(nil), dep.Changed()...)}
 	}
 
 	abi := f.KernelABI
@@ -93,31 +97,131 @@ func Install(ctx context.Context, f FullOptions) (*Result, error) {
 	if _, err := publish.Publish(ctx, po); err != nil {
 		return fail("publish", err)
 	}
+	// Nothing may be taken over unless the manifest really holds generation 1.
+	if err := checkGenerationOne(f.BootStorageDir); err != nil {
+		return fail("publish", err)
+	}
+	return finish(ctx, f, dep)
+}
 
-	if err := dep.Cutover(); err != nil {
-		return nil, err
-	}
-	if err := dep.Verify(); err != nil {
-		return nil, err
-	}
-
-	removed, err := RemoveStock(ctx, f.Runner, f.TargetDir, f.ESPDir)
-	for _, r := range removed {
-		dep.d.rec("%s", r)
-	}
+func checkGenerationOne(bootStorageDir string) error {
+	m, err := manifest.Load(filepath.Join(bootStorageDir, "vintner", "state"))
 	if err != nil {
-		return fail("stock loaders", err)
+		return fmt.Errorf("the manifest cannot be read after publishing: %w", err)
+	}
+	if len(m.Images) != 1 || m.Images[0].Generation != 1 {
+		return fmt.Errorf("the manifest does not hold exactly generation 1 after publishing (%d images)", len(m.Images))
+	}
+	return nil
+}
+
+// finish is steps 3 to 5, shared by Install and Resume. A failure in it is
+// resumable: generation 1 is published.
+func finish(ctx context.Context, f FullOptions, dep *Deployment) (*Result, error) {
+	fail := func(step string, err error) (*Result, error) {
+		var se *Error
+		if errors.As(err, &se) {
+			se.Resumable = true
+			return nil, se
+		}
+		return nil, &Error{Step: step, Err: err, Changed: append([]string(nil), dep.Changed()...), Resumable: true}
+	}
+	if err := dep.Cutover(); err != nil {
+		return fail("takeover", err)
 	}
 	if err := dep.Verify(); err != nil {
-		return nil, err
+		return fail("verify", err)
+	}
+
+	if took, why := dep.TookOver(); !took {
+		dep.d.rec("the stock loaders were left in place: %s", why)
+	} else {
+		removed, err := RemoveStock(ctx, f.Runner, f.TargetDir, f.ESPDir)
+		for _, r := range removed {
+			dep.d.rec("%s", r)
+		}
+		if err != nil {
+			return fail("stock loaders", err)
+		}
+		if err := dep.Verify(); err != nil {
+			return fail("verify", err)
+		}
 	}
 	res := dep.Result()
-	loaded, err := manifest.Load(filepath.Join(f.BootStorageDir, "vintner", "state"))
-	if err != nil || len(loaded.Images) != 1 || loaded.Images[0].Generation != 1 {
-		return fail("verify", fmt.Errorf("the manifest does not hold generation 1 after publishing (%v)", err))
+	if err := checkGenerationOne(f.BootStorageDir); err != nil {
+		return fail("verify", err)
 	}
+	loaded, _ := manifest.Load(filepath.Join(f.BootStorageDir, "vintner", "state"))
 	res.Manifest = loaded
 	return res, nil
+}
+
+// Resume continues an installation that published generation 1 and failed
+// afterwards: it takes booting over, removes the stock loaders when that is
+// safe, and verifies. It refuses a boot storage that does not hold exactly
+// generation 1 of this layout's installation.
+func Resume(ctx context.Context, f FullOptions) (*Result, error) {
+	f.Options.fill()
+	o := f.Options
+	if o.Now == nil {
+		o.Now = func() time.Time { return time.Now().UTC() }
+	}
+	if o.LookPath == nil {
+		o.LookPath = exec.LookPath
+	}
+	d := &deployer{Options: o, resumed: true}
+	d.espFiles = map[string]string{}
+	d.bsFiles = map[string]string{}
+	dep := &Deployment{d}
+	step := func(err error) (*Result, error) { return nil, d.wrap(err) }
+
+	d.uefi = o.Firmware == "uefi" || o.Firmware == "both"
+	d.bios = o.Firmware == "bios" || o.Firmware == "both"
+	l := o.Layout
+	if l == nil || l.BootStorage == nil || l.Root == nil || o.Payload == nil {
+		return step(d.fail("check", errors.New("a layout that internal/layout accepted and a verified payload are required")))
+	}
+	d.bs = l.BootStorage.UUID
+	m, err := manifest.Load(filepath.Join(o.BootStorageDir, "vintner", "state"))
+	if err != nil {
+		return step(d.fail("check", fmt.Errorf("nothing to resume: %w", err)))
+	}
+	if len(m.Images) != 1 || m.Images[0].Generation != 1 {
+		return step(d.fail("check", fmt.Errorf("only an installation with exactly generation 1 can be resumed (this one has %d images)", len(m.Images))))
+	}
+	if !strings.EqualFold(m.BootStorage.PartUUID, l.BootStorage.UUID) || !strings.EqualFold(m.Root.PartUUID, l.Root.UUID) || m.Firmware != o.Firmware {
+		return step(d.fail("check", errors.New("the manifest on boot storage belongs to another layout or firmware")))
+	}
+	d.m = m
+	if d.uefi {
+		if l.ESP == nil || o.ESPDir == "" {
+			return step(d.fail("check", errors.New("an ESP and its mount directory are required for uefi")))
+		}
+		if err := checkWritable(o.ESPDir); err != nil {
+			return step(d.fail("check", fmt.Errorf("the ESP: %w", err)))
+		}
+		d.espFiles["EFI/vintner/systemd-bootx64.efi"] = payload.SystemdBoot
+		d.espFiles["loader/loader.conf"] = payload.LoaderConf
+	}
+	if d.bios {
+		if l.BIOSBoot == nil || o.Disk == nil || l.BootFS == nil {
+			return step(d.fail("check", errors.New("a BIOS Boot Partition, the disk and boot storage's FAT identity are required for bios")))
+		}
+		if _, err := d.LookPath("grub-mkimage"); err != nil {
+			return step(d.fail("check", errors.New("grub-mkimage is not installed (package grub-common); it builds GRUB's core image")))
+		}
+		if d.bootImg, err = os.ReadFile(o.Payload.Path(payload.GrubDir + "/boot.img")); err != nil || len(d.bootImg) != 512 {
+			return step(d.fail("check", fmt.Errorf("the payload's boot.img is not a 512-byte boot sector (%v)", err)))
+		}
+		if d.core, err = BuildCore(ctx, o.Runner, o.Payload, l.BootFS.UUID()); err != nil {
+			return step(d.fail("core.img", err))
+		}
+		if int64(len(d.core)) > l.BIOSBoot.Size(512) {
+			return step(d.fail("core.img", errors.New("core.img does not fit in the BIOS Boot Partition")))
+		}
+	}
+	fmt.Fprintln(f.Log, "resuming: generation 1 is published")
+	return finish(ctx, f, dep)
 }
 
 // fill sets the defaults Stage sets, so that Install can use them before it.
@@ -236,9 +340,13 @@ func RemoveStock(ctx context.Context, r Runner, target, espDir string) ([]string
 		return r.Run(ctx, name, args...)
 	}
 	out, err := run("dpkg-query", append([]string{"-W", "-f=${db:Status-Abbrev} ${Package}\\n"}, StockLoaderPackages...)...)
-	if err != nil && len(out) == 0 {
-		// dpkg-query exits 1 when none of the names is known: nothing to remove.
-		return removed, nil
+	if err != nil {
+		// dpkg-query exits 1 when some name is not a known package, and still lists the
+		// others; any other failure (no dpkg-query, no chroot) is not "nothing installed".
+		var ec interface{ ExitCode() int }
+		if !errors.As(err, &ec) || ec.ExitCode() != 1 {
+			return removed, fmt.Errorf("dpkg-query: %w: %s", err, strings.TrimSpace(string(out)))
+		}
 	}
 	var installed []string
 	for _, line := range strings.Split(string(out), "\n") {

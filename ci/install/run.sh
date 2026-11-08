@@ -4,7 +4,9 @@
 # disk and `vintner install` turns it into a vintner system, from inside a chroot
 # of the target, as an installer would. Nothing is copied into the guest by hand:
 # the packages come from the .deb files (VINTNER_DEBS, as for the other rows) and
-# `vintner install` does the rest. The disk is then booted under SeaBIOS and under
+# `vintner install` does the rest. A stock loader (grub-pc, and Debian's directory on
+# the ESP) is installed first and must be gone afterwards. The disk is then booted
+# under SeaBIOS and under
 # OVMF, and each must boot generation 1 and bless it GOOD.
 #
 # Needs: root (sudo), debootstrap, a network and a Debian mirror, sfdisk, mkfs.vfat,
@@ -139,15 +141,29 @@ done
 sudo cp "$CORE_DEB" "$MNT/root/vintner-core.deb"
 sudo cp "$PLATFORM_DEB" "$MNT/root/vintner-platform.deb"
 
-echo "=== installing the packages ==="
+# A stock Debian loader, as an installer finds it: grub-pc and Debian's directory on the ESP.
+echo "=== installing a stock loader (grub-pc) ==="
+sudo chroot "$MNT" sh -c 'echo "grub-pc grub-pc/install_devices_empty boolean true" | debconf-set-selections'
+sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get install -y --no-install-recommends grub-pc > "$OUT/grub-pc.log" 2>&1 \
+	|| { tail -n 30 "$OUT/grub-pc.log" >&2; exit 1; }
+sudo mkdir -p "$MNT/boot/efi/EFI/debian"
+echo "stock shim" | sudo tee "$MNT/boot/efi/EFI/debian/shimx64.efi" >/dev/null
+
+# vintner-platform conflicts with the stock loaders, so it cannot be installed beside
+# grub-pc: the installer takes the payloads out of the package without installing it
+# (architecture section 5), deploys and verifies, removes the stock loader, and the
+# package is installed afterwards.
+echo "=== installing vintner-core and unpacking the payloads ==="
 sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C \
-	apt-get install -y --no-install-recommends /root/vintner-core.deb /root/vintner-platform.deb > "$OUT/packages.log" 2>&1 \
+	apt-get install -y --no-install-recommends /root/vintner-core.deb > "$OUT/packages.log" 2>&1 \
 	|| { tail -n 30 "$OUT/packages.log" >&2; exit 1; }
+sudo mkdir -p "$MNT/root/vp"
+sudo chroot "$MNT" dpkg-deb -x /root/vintner-platform.deb /root/vp
 
 echo "=== vintner install ==="
 INSTALL_RC=0
 sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
-	> "$OUT/install.log" 2>&1 || INSTALL_RC=$?
+	--payload-dir /root/vp/usr/lib/vintner/payloads > "$OUT/install.log" 2>&1 || INSTALL_RC=$?
 cat "$OUT/install.log"
 if [ "$INSTALL_RC" -eq 0 ] && grep -q '^installed:' "$OUT/install.log"; then
 	record "I1-install" PASS "vintner install exited 0 and reported the installation"
@@ -156,7 +172,21 @@ else
 	exit 1
 fi
 
-sudo rm -f "$MNT/root/vintner-core.deb" "$MNT/root/vintner-platform.deb"
+# The stock loader is gone, and vintner-platform now installs.
+if sudo chroot "$MNT" dpkg-query -W -f='${Status}' grub-pc 2>/dev/null | grep -q 'install ok installed'; then
+	record "I6-stock-loader-removed" FAIL "grub-pc is still installed"
+elif [ -e "$MNT/boot/efi/EFI/debian" ]; then
+	record "I6-stock-loader-removed" FAIL "EFI/debian is still on the ESP"
+else
+	record "I6-stock-loader-removed" PASS "grub-pc is purged and EFI/debian is gone"
+fi
+if sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C apt-get install -y --no-install-recommends /root/vintner-platform.deb > "$OUT/platform.log" 2>&1; then
+	record "I7-platform-installs-after" PASS "vintner-platform installs once the stock loader is gone"
+else
+	record "I7-platform-installs-after" FAIL "vintner-platform does not install after the purge, see platform.log"
+fi
+
+sudo rm -rf "$MNT/root/vintner-core.deb" "$MNT/root/vintner-platform.deb" "$MNT/root/vp"
 unmount_all
 
 # --- Boot it ----------------------------------------------------------------

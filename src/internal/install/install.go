@@ -83,9 +83,11 @@ type Result struct {
 
 // Error is a failed step, with everything that was changed before it.
 type Error struct {
-	Step    string
-	Err     error
-	Changed []string
+	// Resumable is set when generation 1 is published and a later step failed: vintner install --resume continues.
+	Resumable bool
+	Step      string
+	Err       error
+	Changed   []string
 }
 
 func (e *Error) Error() string { return "install: " + e.Step + ": " + e.Err.Error() }
@@ -156,7 +158,7 @@ func (p *Deployment) Manifest() *manifest.Manifest { return p.d.m }
 func (p *Deployment) Changed() []string { return p.d.changed }
 
 // Deploy stages, takes over and verifies in one go, without publishing an
-// image: the machine then boots recovery A (vintner install --deploy-only).
+// image: the machine then boots recovery A (the tests and a manual smoke test use it).
 func Deploy(ctx context.Context, o Options) (*Result, error) {
 	p, err := Stage(ctx, o)
 	if err != nil {
@@ -173,11 +175,13 @@ func Deploy(ctx context.Context, o Options) (*Result, error) {
 
 type deployer struct {
 	Options
-	changed []string
-	m       *manifest.Manifest
-	emb     *Embedded
-	core    []byte
-	bootImg []byte
+	changed            []string
+	m                  *manifest.Manifest
+	emb                *Embedded
+	tookUEFI, tookBIOS bool // cutover wrote what makes the firmware start vintner
+	resumed            bool // Resume: boot storage already holds generation 1
+	core               []byte
+	bootImg            []byte
 
 	uefi, bios bool
 	bs         string // PARTUUID of boot storage
@@ -302,6 +306,7 @@ func (d *deployer) cutover() error {
 			return d.fail("BIOS boot code", err)
 		}
 		d.emb = emb
+		d.tookBIOS = true
 		d.rec("wrote them, flushed")
 	}
 	return nil
@@ -635,6 +640,7 @@ func (d *deployer) cutoverESP() error {
 	if err := d.copyToESP("EFI/BOOT/BOOTX64.EFI", payload.SystemdBoot); err != nil {
 		return d.fail("ESP", err)
 	}
+	d.tookUEFI = true
 	return nil
 }
 
@@ -672,7 +678,7 @@ func (d *deployer) verify() error {
 		if err != nil {
 			return d.fail("verify", err)
 		}
-		if v, _ := env.Get("VINTNER_T_RA"); v != strings.Repeat("x", d.Tries) {
+		if v, _ := env.Get("VINTNER_T_RA"); v == "" || (!d.resumed && v != strings.Repeat("x", d.Tries)) {
 			return d.fail("verify", errors.New("grubenv does not read back as written"))
 		}
 		if err := VerifyEmbedded(d.Disk, d.emb); err != nil {
@@ -744,4 +750,20 @@ func (d *deployer) removableOverwritable() (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// TookOver reports whether booting now starts vintner on every firmware that was
+// asked for: the BIOS boot code was written, and on UEFI the removable path
+// holds vintner's loader. When it does not (another system uses the ESP, or the
+// removable path holds another loader), the stock loaders must stay: nothing else
+// makes the firmware start vintner until the NVRAM entry of WO-0010 3.3 exists.
+func (p *Deployment) TookOver() (bool, string) {
+	d := p.d
+	if d.uefi && !d.tookUEFI {
+		return false, "the firmware does not start vintner on UEFI: EFI/BOOT/BOOTX64.EFI was left alone (another system uses the ESP or the removable path holds another loader) and no NVRAM entry is created yet"
+	}
+	if d.bios && !d.tookBIOS {
+		return false, "the BIOS boot code was not written"
+	}
+	return true, ""
 }

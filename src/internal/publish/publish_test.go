@@ -1321,3 +1321,37 @@ func TestPublishFirstGeneration(t *testing.T) {
 		})
 	}
 }
+
+// An installed system carries the newest image's command line forward; the
+// initial one is for the first image only.
+func TestInitialCmdlineIsIgnoredOnceAnImageExists(t *testing.T) {
+	rootDir, bootStorageDir, m := setupTestEnv(t, "uefi")
+	abi := "6.12.111-amd64"
+	setupKernelFiles(t, rootDir, abi)
+	res, err := Publish(context.Background(), Options{
+		KernelABI: abi, BootStorageDir: bootStorageDir, RootDir: rootDir,
+		LockFile:         filepath.Join(bootStorageDir, "publish.lock"),
+		CmdlineContent:   m.Images[0].Cmdline,
+		InitialCmdline:   "root=UUID=" + m.Root.UUID + " ro vintner.bootstorage=PARTUUID=" + m.BootStorage.PartUUID + " init=/bin/sh",
+		PackageQuery:     mockPackageQuery{pkg: "linux-image-" + abi, ver: "6.12.111-1"},
+		UKIBuilder:       mockUKIBuilder{},
+		DiskSpaceChecker: mockDiskChecker{free: 100 << 20},
+		Clock:            mockClock{t: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := manifest.Load(filepath.Join(bootStorageDir, "vintner", "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cmdline string
+	for _, img := range got.Images {
+		if img.Generation == res.Generation {
+			cmdline = img.Cmdline
+		}
+	}
+	if cmdline != m.Images[0].Cmdline || strings.Contains(cmdline, "init=/bin/sh") {
+		t.Errorf("generation %d got the command line %q, want the newest image's %q", res.Generation, cmdline, m.Images[0].Cmdline)
+	}
+}

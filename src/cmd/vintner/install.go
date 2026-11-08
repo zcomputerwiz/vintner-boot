@@ -43,6 +43,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	check := fs.Bool("check", false, "only check the layout and the payloads; change nothing")
 	kernel := fs.String("kernel", "", "kernel ABI of generation 1 (default: the newest kernel with an initramfs in <target>/boot)")
 	cmdlineFile := fs.String("cmdline-file", "", "the product's kernel options (default <target>/etc/kernel/cmdline)")
+	resume := fs.Bool("resume", false, "continue an installation that published generation 1 and failed afterwards: take booting over, remove the stock loaders, verify")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -134,7 +135,12 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		installTestHook(&opts)
 	}
 	fmt.Fprintln(stdout, "installing:")
-	res, err := install.Install(context.Background(), opts)
+	var res *install.Result
+	if *resume {
+		res, err = install.Resume(context.Background(), opts)
+	} else {
+		res, err = install.Install(context.Background(), opts)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "vintner install: %v\n", err)
 		var se *install.Error
@@ -145,6 +151,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 			}
 		}
 		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed. Booting changes at the first \"wrote EFI/BOOT/BOOTX64.EFI\" or \"writing core.img\" line; both come after generation 1 is published")
+		if errors.As(err, &se) && se.Resumable {
+			fmt.Fprintln(stderr, "vintner install: generation 1 is published; run the same command again with --resume to finish")
+		}
 		return 1
 	}
 	fmt.Fprintf(stdout, "installed: %d changes; installation %s; generation 1 is TRYING and is blessed GOOD by the first boot that reaches boot-complete.target\n", len(res.Changed), res.Manifest.InstallationID)
