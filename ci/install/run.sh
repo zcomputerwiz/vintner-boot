@@ -10,6 +10,7 @@
 # Needs: root (sudo), debootstrap, a network and a Debian mirror, sfdisk, mkfs.vfat,
 # mkfs.ext4, losetup, qemu-system-x86_64, OVMF.
 # Usage: ci/install/run.sh   (writes ci/out/install/results.tsv)
+# shellcheck disable=SC2024 # the logs are written by this user into OUT; only the commands need root
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -100,6 +101,7 @@ exec > /dev/ttyS0 2>&1
 echo "=== VINTNER-INSTALL-REPORT-BEGIN ==="
 echo "CMDLINE: $(cat /proc/cmdline)"
 if [ -d /sys/firmware/efi ]; then
+	mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null
 	f=/sys/firmware/efi/efivars/LoaderEntrySelected-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f
 	[ -r "$f" ] && echo "LOADER_ENTRY_SELECTED: $(tail -c +5 "$f" | tr -d '\0')"
 fi

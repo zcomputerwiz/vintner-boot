@@ -62,7 +62,8 @@ for entry in \
 	mkfs.ext4:e2fsprogs debugfs:e2fsprogs modprobe:kmod cpio:cpio xz:xz-utils \
 	objcopy:binutils cloud-localds:cloud-image-utils \
 	sbsign:sbsigntool sbverify:sbsigntool ukify:systemd-ukify \
-	grub-editenv:grub-common dpkg-deb:dpkg python3:python3 sudo:sudo; do
+	grub-editenv:grub-common dpkg-deb:dpkg python3:python3 sudo:sudo \
+	debootstrap:debootstrap mkfs.vfat:dosfstools; do
 	cmd=${entry%%:*} pkg=${entry#*:}
 	if command -v "$cmd" >/dev/null 2>&1; then
 		ok "$cmd"
