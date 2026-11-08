@@ -114,9 +114,9 @@ put_env() { mcopy -o -i "$BS" "$OUT/env" ::/grub/grubenv; }
 vars() { get_env; editenv "$OUT/env" list 2>/dev/null | grep '^VINTNER_' | LC_ALL=C sort | paste -sd ';'; }
 set_env() { editenv "$OUT/env" create; editenv "$OUT/env" set "$@"; put_env; }
 
-SCEN="" BOOTED="" OK=1 N=0
+SCEN="" BOOTED="" OK=1 N=0 EXPECT_ERR=0
 begin() {
-	SCEN=$1 BOOTED="" OK=1 N=0
+	SCEN=$1 BOOTED="" OK=1 N=0 EXPECT_ERR=0
 	cp --sparse=always "$TEMPLATE" "$IMG"
 }
 boot() { # [qmp]: one boot, QMP commands from stdin; appends the booted test id to BOOTED
@@ -130,8 +130,9 @@ boot() { # [qmp]: one boot, QMP commands from stdin; appends the booted test id 
 	cp "$OUT/log" "$OUT/$SCEN-boot$N.log"
 	# GRUB prints "error:" lines for failed commands, such as a missing module,
 	# after clear-screen escapes on the serial terminal. They must not appear
-	# on an otherwise silent boot (R10, WO-0010 1.3).
-	if sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -aq 'error:'; then
+	# on an otherwise silent boot (R10, WO-0010 1.3). B6, B7 and B9 break the
+	# disk on purpose and set EXPECT_ERR.
+	if [ "$EXPECT_ERR" = 0 ] && sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -aq 'error:'; then
 		OK=0
 		echo "$SCEN boot $N: GRUB error on the serial console:" >&2
 		sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -a 'error:' >&2
@@ -207,14 +208,14 @@ boot
 expect "grubenv sha256" "$(get_env && sha256sum < "$OUT/env")" "$before"
 end "rb"
 
-begin B6-corrupt-grubenv
+begin B6-corrupt-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 head -c 1024 /dev/zero | tr '\0' '?' > "$OUT/env" && put_env
 before=$(get_env && sha256sum < "$OUT/env")
 boot
 expect "grubenv sha256" "$(get_env && sha256sum < "$OUT/env")" "$before"
 end "ra"
 
-begin B7-missing-kernel
+begin B7-missing-kernel; EXPECT_ERR=1 # GRUB reports the missing file
 set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
 mdel -i "$BS" ::/vintner/bios/os-2/vmlinuz
 boot
@@ -239,7 +240,7 @@ SCEN="B8-shift-menu (menu $menu)"
 end OBSERVE
 
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
-begin B9-empty-grubenv
+begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 : > "$OUT/env" && put_env
 boot
 expect "grubenv size" "$(get_env && stat -c %s "$OUT/env")" 0
