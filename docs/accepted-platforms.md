@@ -62,3 +62,20 @@ A line that is accepted but not tested says so. Nothing here is accepted on the 
 - the running system is not Debian 13, or a boot loader package that conflicts with `vintner-platform` cannot be removed.
 
 These checks belong to 3.2; this file is the list they implement.
+
+## `vintner install --check`
+
+`vintner install --check --disk DEV --firmware uefi|bios|both` reads the disk and the payloads and changes nothing. It prints what it found and refuses with one line per broken rule:
+
+| Rule | Refuses when |
+|---|---|
+| L0 | the firmware is not `uefi`, `bios` or `both` |
+| L1 | the disk has no GPT, or an MBR partition sits beside it, or a CRC does not match |
+| L2 | there is not exactly one boot storage partition (type `BC13C2FF-...`), unless `--boot-storage-partuuid` names it |
+| L3 | boot storage is not FAT32 (so also: encrypted, LVM, md or blank) |
+| L4 | boot storage is under 1 GiB |
+| L5 | UEFI or both, and there is no single ESP (or `--esp-partuuid`), or it is not FAT or under 2 MiB |
+| L6 | BIOS or both, and there is no BIOS Boot Partition of at least 1 MiB |
+| L7 | the root is not on this disk, is the boot storage, is not ext4 on a plain partition, or is ambiguous (name it with `--root-partuuid`) |
+
+It also verifies the payload directory (`/usr/lib/vintner/payloads`, or `--payload-dir`) against its `MANIFEST`: a file that differs, is missing or is not listed, or a file a deployment needs that is absent, refuses. It reads the partition table, the FAT boot sectors and the ext4 superblock itself, so it needs no mounts. Deploying (3.2) comes next; without `--check` the command says so and exits 2.
