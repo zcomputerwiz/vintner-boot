@@ -3,7 +3,8 @@
 # library (ADR-0002), so the build needs no network and no module cache.
 export CGO_ENABLED=0
 export GOCACHE=$(CURDIR)/debian/.gocache
-export GOFLAGS=-trimpath -mod=readonly
+# -buildvcs=false: a source package has no .git, and git refuses a checkout owned by another user.
+export GOFLAGS=-trimpath -mod=readonly -buildvcs=false
 
 %:
 	dh $@
