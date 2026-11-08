@@ -176,11 +176,10 @@ sudo cp "$TAGGED_BIN" "$MNT/usr/sbin/vintner"
 sudo chmod 0755 "$MNT/usr/sbin/vintner"
 sudo ln -sf /usr/sbin/vintner "$MNT/usr/bin/vintner"
 
-sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/etc/kernel/postinst.d/zz-vintner"
+# The package ships the hooks; vintner-base.sh leaves them off (not executable) so that
+# installing packages in the prep step publishes nothing. They are armed here, after it.
 sudo chmod 0755 "$MNT/etc/kernel/postinst.d/zz-vintner"
 
-sudo mkdir -p "$MNT/etc/initramfs/post-update.d"
-sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
 sudo chmod 0755 "$MNT/etc/initramfs/post-update.d/zz-vintner"
 
 sudo umount "$MNT"

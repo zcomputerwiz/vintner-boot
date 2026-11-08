@@ -178,6 +178,18 @@ for ((k = 1; k <= JOBS; k++)); do
 	rm -f "${ROOTS[$k]}/ci/out/Packages" "${ROOTS[$k]}/recovery/out/Packages"
 done
 
+# The qemu rows install vintner from the packages (WO-0010 2.5). CI builds them once
+# in a job of their own, so do the same here, once for all slots.
+for i in "${RUN[@]}"; do
+	if [ "${GROUPS_[$i]}" = qemu ]; then
+		VINTNER_DEBS=$REPO/ci/out/local/vintner-debs
+		export VINTNER_DEBS
+		echo "run-all: building the vintner packages into $VINTNER_DEBS"
+		ci/package/build-debs.sh "$VINTNER_DEBS" > "$RUN_DIR/build-debs.log" 2>&1 || { tail -n 30 "$RUN_DIR/build-debs.log" >&2; die "building the vintner packages failed (log: $RUN_DIR/build-debs.log)"; }
+		break
+	fi
+done
+
 # --- Running -------------------------------------------------------------------------
 # Unmount and detach whatever an earlier or failed job left under ci/out or
 # recovery/out of one slot's checkout. Only paths inside that checkout are touched.

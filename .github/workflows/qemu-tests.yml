@@ -8,6 +8,7 @@ on:
 
 jobs:
   boot-test:
+    needs: build-debs
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -72,6 +73,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Download the vintner packages
+        uses: actions/download-artifact@v4
+        with:
+          name: vintner-debs
+          path: ci/out/vintner-debs
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -98,6 +105,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Run ${{ matrix.name }}
+        env:
+          VINTNER_DEBS: ${{ github.workspace }}/ci/out/vintner-debs
         run: ${{ matrix.run }}
 
       - name: Upload logs
@@ -111,3 +120,22 @@ jobs:
             ${{ matrix.out }}/*.txt
             ${{ matrix.out }}/*.ppm
           retention-days: 7
+
+  build-debs:
+    # The rows install vintner from these packages (WO-0010 2.5). Trixie, because the package
+    # builds with Go 1.24 (ubuntu-24.04 ships 1.22); lint.yml builds and lints the same packages.
+    runs-on: ubuntu-24.04
+    container: debian:trixie
+    steps:
+      - name: Install packaging tools
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git build-essential debhelper dpkg-dev golang-go curl xz-utils cpio kmod binutils grub-pc-bin systemd-boot-efi
+      - uses: actions/checkout@v7
+      - name: Build binary packages
+        run: dpkg-buildpackage -us -uc -b
+      - name: Keep the packages
+        run: mkdir -p vintner-debs && cp ../*.deb vintner-debs/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vintner-debs
+          path: vintner-debs/*.deb
+          retention-days: 3

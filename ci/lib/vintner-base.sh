@@ -115,9 +115,27 @@ for u in "$ROOT/usr/lib/systemd/ukify" "$ROOT/usr/bin/ukify"; do
 done
 [ -n "$UKIFY" ] || { echo "ukify not found in root" >&2; exit 1; }
 
-# --- 2. Build static vintner binary -----------------------------------------
-echo "=== Building static vintner binary ==="
-(cd src && CGO_ENABLED=0 go build -o "../$OUT/vintner" ./cmd/vintner)
+# --- 2. The vintner packages --------------------------------------------------
+# The guest gets vintner from the .deb files, as a product would (WO-0010 2.5).
+# VINTNER_DEBS names a directory that holds them (CI passes the artifact of the
+# package build); otherwise they are built here from the tree, on a Debian 13 host.
+echo "=== Locating the vintner packages ==="
+PKG_DIR=${VINTNER_DEBS:-ci/out/vintner-debs}
+TREE_NOW=$(ci/package/build-debs.sh --tree)
+have_debs() { compgen -G "$PKG_DIR/vintner-core_*.deb" >/dev/null && compgen -G "$PKG_DIR/vintner-platform_*.deb" >/dev/null; }
+if [ -z "${VINTNER_DEBS:-}" ] && { ! have_debs || [ "$(cat "$PKG_DIR/SOURCE_TREE" 2>/dev/null)" != "$TREE_NOW" ]; }; then
+	# The recovery kernel and initramfs were built above; the payload stage reuses them.
+	VINTNER_RECOVERY_DIR=$PWD/recovery/out ci/package/build-debs.sh "$PKG_DIR"
+fi
+have_debs || { echo "no vintner-core and vintner-platform .deb in $PKG_DIR" >&2; exit 1; }
+CORE_DEB=$(compgen -G "$PKG_DIR/vintner-core_*.deb" | head -n 1)
+PLATFORM_DEB=$(compgen -G "$PKG_DIR/vintner-platform_*.deb" | head -n 1)
+CORE_DEB=$(realpath "$CORE_DEB")
+PLATFORM_DEB=$(realpath "$PLATFORM_DEB")
+echo "vintner-core $(dpkg-deb -f "$CORE_DEB" Version) ($CORE_DEB)" | tee -a "$VERSIONS"
+# The host-side copy of the binary is the package's own.
+dpkg-deb --fsys-tarfile "$CORE_DEB" | tar -xO ./usr/sbin/vintner > "$OUT/vintner"
+chmod 0755 "$OUT/vintner"
 
 # --- 3. Base image and raw disk layout ---------------------------------------
 echo "=== Preparing dual-firmware disk image ==="
@@ -258,8 +276,6 @@ KERNEL_ABI=$(basename "$KERNEL_IMG" | sed 's/^vmlinuz-//')
 echo "Guest kernel: $KERNEL_ABI"
 echo "guest-kernel: $KERNEL_ABI" >> "$VERSIONS"
 
-cp "$KERNEL_IMG" "$OUT/vmlinuz"
-cp "$INITRD_IMG" "$OUT/initrd.img"
 # os-1's .osrel per ADR-0003: the installed os-release with IMAGE_ID=vintner-os,
 # IMAGE_VERSION=<generation> and the ABI appended to PRETTY_NAME, so images the
 # publisher adds (generation 2 and up) sort above it.
@@ -269,23 +285,49 @@ OS_PRETTY=$(sed -n 's/^PRETTY_NAME=//p' "$MNT/etc/os-release" | tr -d '"')
 	printf 'PRETTY_NAME="%s, %s"\nIMAGE_ID=vintner-os\nIMAGE_VERSION=1\n' "$OS_PRETTY" "$KERNEL_ABI"
 } > "$OUT/osrel"
 
-# Install static vintner binary
-sudo cp "$OUT/vintner" "$MNT/usr/sbin/vintner"
-sudo chmod 0755 "$MNT/usr/sbin/vintner"
+# Install vintner-core from its package (WO-0010 2.5): the binary, both hooks, the
+# Plymouth hook, vintner-bless.service (enabled), the two masks and
+# /etc/kernel/install.conf all come from the .deb, with its dependencies from the
+# Debian archive. The guest is not running, so apt runs in a chroot of the mounted
+# root with the host's resolver.
+sudo cp "$CORE_DEB" "$MNT/root/vintner-core.deb"
+for m in proc dev dev/pts; do
+	sudo mount --bind "/$m" "$MNT/$m"
+	# rslave: what happens under the guest root (a busy or lazy unmount) must not
+	# propagate back to the real /proc, /dev and /dev/pts; a shared bind mount can
+	# break the host (it did: wsl.exe could not start processes in the distro).
+	sudo mount --make-rslave "$MNT/$m"
+done
+sudo mv "$MNT/etc/resolv.conf" "$MNT/etc/resolv.conf.ci-save"
+sudo cp --dereference /etc/resolv.conf "$MNT/etc/resolv.conf"
+PKG_RC=0
+sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C sh -c \
+	'apt-get update && apt-get install -y --no-install-recommends /root/vintner-core.deb' || PKG_RC=$?
+sudo rm -f "$MNT/etc/resolv.conf"
+sudo mv "$MNT/etc/resolv.conf.ci-save" "$MNT/etc/resolv.conf"
+# Processes that package scripts left running in the chroot (agents, daemons) keep
+# the bind mounts busy: stop what has the guest root as its root, then unmount.
+MNT_REAL=$(realpath "$MNT")
+for p in /proc/[0-9]*; do
+	if [ "$(sudo readlink "$p/root" 2>/dev/null)" = "$MNT_REAL" ]; then sudo kill "${p#/proc/}" 2>/dev/null || true; fi
+done
+sleep 1
+for m in dev/pts dev proc; do sudo umount "$MNT/$m" || sudo umount -l "$MNT/$m"; done
+sudo rm -f "$MNT/root/vintner-core.deb"
+[ "$PKG_RC" -eq 0 ] || { echo "installing vintner-core into the guest failed (rc=$PKG_RC)" >&2; exit 1; }
+sudo chroot "$MNT" dpkg-query -W -f='${Package} ${Version}\n' vintner-core systemd-ukify sbsigntool | tee -a "$VERSIONS"
+# The hooks arrive armed. Rows install other packages (kernels, initramfs tools) in
+# the guest before the step they test, and a row arms the hooks when it wants vintner
+# to publish: until then they are left off, as they were when the rows copied them in
+# by hand.
+sudo chmod a-x "$MNT/etc/kernel/postinst.d/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
 
-# Install vintner-bless.service
-sudo cp integration/systemd-units/vintner-bless.service "$MNT/usr/lib/systemd/system/vintner-bless.service"
-sudo chmod 0644 "$MNT/usr/lib/systemd/system/vintner-bless.service"
-sudo mkdir -p "$MNT/etc/systemd/system/basic.target.wants"
-sudo ln -sf /usr/lib/systemd/system/vintner-bless.service "$MNT/etc/systemd/system/basic.target.wants/vintner-bless.service"
-
-# Mask systemd-bless-boot.service and systemd-boot-update.service
-sudo ln -sf /dev/null "$MNT/etc/systemd/system/systemd-bless-boot.service"
-sudo ln -sf /dev/null "$MNT/etc/systemd/system/systemd-boot-update.service"
-
-# Configure /etc/kernel/install.conf with layout=other
-sudo mkdir -p "$MNT/etc/kernel"
-echo "layout=other" | sudo tee "$MNT/etc/kernel/install.conf" >/dev/null
+# os-1 is what is in the guest now, after the package install above: installing
+# vintner-core and its dependencies runs update-initramfs, so the initramfs differs
+# from the one in the downloaded image, and a copy taken earlier would not match it.
+INITRD_IMG=$(ls "$MNT"/boot/initrd.img-"$KERNEL_ABI")
+cp "$KERNEL_IMG" "$OUT/vmlinuz"
+cp "$INITRD_IMG" "$OUT/initrd.img"
 
 # Ensure machine-id exists
 MACHINE_ID=$(cat "$MNT/etc/machine-id" 2>/dev/null || true)

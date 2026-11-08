@@ -56,7 +56,7 @@ export VINTNER_EXTRA_CMDLINE='quiet splash vt.global_cursor_default=0 bgrt_disab
 ./ci/lib/vintner-base.sh "$FIRMWARE" "$OUT"
 # shellcheck source=/dev/null # written by vintner-base.sh
 . "$OUT/base.env"
-VINTNER_BIN="$OUT/vintner"
+
 # shellcheck source=ci/lib/vintner-qemu.sh
 . ci/lib/vintner-qemu.sh
 
@@ -109,29 +109,13 @@ lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
 LOOP=$(sudo losetup -P -f --show "$TEST_DISK")
 sudo mount "${LOOP}p1" "$MNT"
 
-# Install theme assets into root filesystem
-sudo mkdir -p "$MNT/usr/share/plymouth/themes/vintner-bgrt"
-sudo cp -a graphics/plymouth-theme/. "$MNT/usr/share/plymouth/themes/vintner-bgrt/"
 
 # Install plymouthd.conf
 sudo mkdir -p "$MNT/etc/plymouth" "$MNT/tmp"
 sudo cp integration/plymouth/plymouthd.conf "$MNT/tmp/repo-plymouthd.conf"
 sudo cp integration/plymouth/plymouthd.conf "$MNT/etc/plymouth/plymouthd.conf"
 
-# Install initramfs hook
-sudo mkdir -p "$MNT/etc/initramfs-tools/hooks"
-sudo cp integration/initramfs-hooks/plymouth-vintner "$MNT/etc/initramfs-tools/hooks/plymouth-vintner"
-sudo chmod 755 "$MNT/etc/initramfs-tools/hooks/plymouth-vintner"
 
-# Stage zz-vintner hooks in /root to be installed in guest prep after apt
-sudo mkdir -p "$MNT/root"
-sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/root/zz-vintner-kernel"
-sudo chmod 0755 "$MNT/root/zz-vintner-kernel"
-sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/root/zz-vintner-initramfs"
-sudo chmod 0755 "$MNT/root/zz-vintner-initramfs"
-sudo cp "$VINTNER_BIN" "$MNT/usr/sbin/vintner"
-sudo chmod 0755 "$MNT/usr/sbin/vintner"
-sudo ln -sf /usr/sbin/vintner "$MNT/usr/bin/vintner"
 
 # Install systemd drop-in override for Plymouth debug logging without wrappers
 sudo mkdir -p "$MNT/etc/systemd/system/plymouth-start.service.d"
@@ -281,9 +265,10 @@ apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--fo
 [ -f /tmp/repo-plymouthd.conf ] && cp /tmp/repo-plymouthd.conf /etc/plymouth/plymouthd.conf
 plymouth-set-default-theme vintner-bgrt
 
-mkdir -p /etc/kernel/postinst.d /etc/initramfs/post-update.d
-cp /root/zz-vintner-kernel /etc/kernel/postinst.d/zz-vintner && chmod 755 /etc/kernel/postinst.d/zz-vintner
-cp /root/zz-vintner-initramfs /etc/initramfs/post-update.d/zz-vintner && chmod 755 /etc/initramfs/post-update.d/zz-vintner
+# The package ships the vintner hooks; vintner-base.sh leaves them off, so that the apt
+# step above publishes nothing. Arm them now.
+chmod 755 /etc/kernel/postinst.d/zz-vintner /etc/initramfs/post-update.d/zz-vintner
+
 
 GENERIC_KVER=$(ls -d /lib/modules/*-amd64 | grep -v cloud | sort -V | tail -n 1 | xargs -n1 basename)
 echo "Generic kernel is $GENERIC_KVER"

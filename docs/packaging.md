@@ -15,7 +15,7 @@ What `debian/` builds and why (WO-0010 2.1 to 2.4). The packages build with `dpk
 | `/etc/kernel/install.conf` | `layout=other` |
 | `/usr/share/plymouth/themes/vintner-bgrt/` | the theme |
 
-`Depends: sbsigntool, systemd-ukify`.
+`Depends: sbsigntool, systemd-boot-efi, systemd-ukify`. `systemd-boot-efi` is there for the stub: `vintner publish` builds the images with `/usr/lib/systemd/boot/efi/linuxx64.efi.stub`, which `systemd-ukify` does not pull in (found by the lifecycle rows in WO-0010 2.5: a kernel install on a guest with `vintner-core` and no stub failed in the hook, and with it the dpkg configure of the kernel package). `systemd-boot-efi` carries no maintainer script, unlike `systemd-boot`, which `vintner-platform` conflicts with.
 
 ### How the two systemd-boot services stay inactive
 `systemd-bless-boot.service` would remove the boot counter that vintner re-arms (ADR-0003); `systemd-boot-update.service` runs `bootctl update`. Both units exist only in Debian's `systemd-boot` package (checked against the trixie Contents index). The package ships `/etc/systemd/system/<unit>` as a symlink to `/dev/null`, which wins over the unit in `/usr/lib/systemd/system` if `systemd-boot` is installed later. `deb-systemd-helper unmask` in that package's postinst leaves them alone, because it removes only masks that it created itself (it needs its own state file). Removing `vintner-core` removes the symlinks and the units are stock again. `ci/package/install-test.sh` checks the masks, and that remove and purge take them away.
@@ -62,4 +62,16 @@ Licences: the payloads are unmodified Debian files and keep their upstream licen
 
 ## Checks
 - `debian-package` (lint workflow): build in a Debian 13 container, `lintian --fail-on error`. Overrides are in `debian/vintner-core.lintian-overrides` with their reasons.
+- `build-debs` (`qemu-tests.yml`): the same build, for the QEMU rows to install from; see the last section.
 - `package-install` (lint workflow, `ci/package/install-test.sh`): debootstrap a trixie chroot, install `vintner-core` before and after `plymouth`, check the files and masks, remove, purge, the `Conflicts`, and that `vintner-platform` is inert and its `MANIFEST` verifies.
+
+## The QEMU rows install from the packages (WO-0010 2.5)
+`ci/lib/vintner-base.sh`, which builds the guest every row starts from, no longer copies the binary, the unit, the masks and `install.conf` into the guest by hand. It installs `vintner-core` with `apt-get install /root/vintner-core.deb` in a chroot of the mounted guest root, so the binary, both hooks, the Plymouth hook, the enabled unit, the masks and `/etc/kernel/install.conf` come from the package, and `systemd-ukify` and `sbsigntool` from the Debian archive through its `Depends`. The binary the host side of the rows runs (`$OUT/vintner`) is extracted from the same `.deb`. `ci/graphics` no longer copies the theme or the Plymouth hook either.
+
+The two kernel and initramfs hooks come from the package too, but the base guest leaves them **off** (not executable), as they were before the rows used the package: the rows install kernels and other packages before the step they test, and an armed hook would publish a new generation at each of those (the first run of the lifecycle rows on the packages showed it: a kernel install on a guest with `vintner-core` published during the `apt-get` and changed what the rows count). `ci/publish`, `ci/publish-interrupt`, `ci/candidate-fallback` and `ci/graphics` arm the packaged hooks with `chmod` at the point where they used to copy them in. The lifecycle rows therefore still run with the hooks off; running them with the hooks armed means saying what an ordinary kernel install on a vintner system may change (new generations, nothing of the loader or recovery), and is open.
+
+Where the packages come from:
+- **CI:** the `build-debs` job of `qemu-tests.yml` builds them in a `debian:trixie` container once and hands them to every row as the artifact `vintner-debs`, through `VINTNER_DEBS`.
+- **Locally:** `ci/local/run-all.sh` runs `ci/package/build-debs.sh` once before the qemu rows and sets `VINTNER_DEBS`. A row run by hand builds them itself into `ci/out/vintner-debs` when they are missing or were built from another tree (`SOURCE_TREE`); that needs a Debian 13 host with the build dependencies, otherwise it stops and says so.
+
+Still by hand: `ci/integration/uefi-bless` and `ci/integration/bios-bless` (they do not use `vintner-base.sh`), and `/etc/plymouth/plymouthd.conf` in `ci/graphics` until `vintner install --plymouth-theme` exists (WO-0010 3.2).

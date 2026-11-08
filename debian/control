@@ -10,7 +10,7 @@ Rules-Requires-Root: no
 
 Package: vintner-core
 Architecture: amd64
-Depends: ${misc:Depends}, sbsigntool, systemd-ukify
+Depends: ${misc:Depends}, sbsigntool, systemd-boot-efi, systemd-ukify
 Recommends: plymouth, plymouth-themes
 Description: vintner boot platform - core tools, publisher and health checks
  Common boot metadata schema, manifest validation, state model, CLI and
