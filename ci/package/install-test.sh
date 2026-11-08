@@ -7,7 +7,10 @@
 #   - the binary, hooks, unit, masks and /etc/kernel/install.conf are in place;
 #   - removing the package takes the masks, hooks and unit away; purging removes
 #     the conffiles;
-#   - vintner-platform cannot be installed beside a stock loader package.
+#   - vintner-platform cannot be installed beside a stock loader package;
+#   - vintner-platform is inert (no maintainer scripts, files only under
+#     /usr/lib/vintner/payloads), carries a verifiable payload set, and removing
+#     it removes the payloads.
 # Needs: root (sudo), debootstrap, network access to a Debian mirror.
 # Usage: ci/package/install-test.sh DIR   (DIR holds vintner-core_*.deb and vintner-platform_*.deb)
 # shellcheck disable=SC2016 # dpkg-query expands ${Status}, not the shell
@@ -158,6 +161,59 @@ for pkg in systemd-boot grub-pc grub-efi-amd64 shim-signed; do
 		record "C-conflicts-$pkg" FAIL "$pkg can be installed beside vintner-platform, see c-$pkg.log"
 	fi
 done
+sudo umount "$D/proc"
+
+# --- D: vintner-platform is inert and carries the payloads ------------------
+# Inert: no maintainer script at all, so installing, upgrading or removing it can
+# only write the files it ships, and those lie under /usr/lib/vintner/payloads
+# and /usr/share/doc (and /usr/share/lintian). Nothing can reach the ESP, boot storage or NVRAM.
+check "D-arch" "vintner-platform is Architecture: amd64 (x86 loaders and GRUB i386-pc objects)" \
+	test "$(dpkg-deb -f "$DEBS/$platform_deb" Architecture)" = amd64
+# The control archive of an inert package holds control and md5sums, nothing that dpkg runs.
+platform_ctl=$OUT/platform-control
+rm -rf "$platform_ctl"
+dpkg-deb -e "$DEBS/$platform_deb" "$platform_ctl"
+check "D-no-maintainer-scripts" "the control archive of vintner-platform is control and md5sums only (no maintainer script, trigger or conffile)" \
+	test "$(find "$platform_ctl" -type f -printf '%f\n' | sort | paste -sd' ')" = "control md5sums"
+# Every path, directories included: the root and the parents of the payload directory
+# are the only ones outside it.
+platform_paths=$(dpkg-deb --fsys-tarfile "$DEBS/$platform_deb" | tar -t)
+stray=$(printf '%s\n' "$platform_paths" | grep -vE '^\./($|usr/$|usr/lib/$|usr/lib/vintner/|usr/share/$|usr/share/doc/|usr/share/lintian/)' || true)
+if [ -z "$stray" ]; then
+	record "D-paths" PASS "every path in vintner-platform is under /usr/lib/vintner, /usr/share/doc or /usr/share/lintian"
+else
+	record "D-paths" FAIL "paths outside the payload directory: $(printf '%s' "$stray" | head -3 | paste -sd' ')"
+fi
+D=$(scenario platform)
+apt_install "$D" "/root/$core_deb" "/root/$platform_deb" > "$OUT/d-platform.log" || true
+if [ "$(in_chroot "$D" dpkg-query -W -f '${Status}' vintner-platform)" = "install ok installed" ] &&
+	! grep -qi 'Configuration file\|dpkg: error\|^E:' "$OUT/d-platform.log"; then
+	record "D-install" PASS "vintner-platform installs beside vintner-core with no prompt or error"
+else
+	record "D-install" FAIL "see d-platform.log"
+fi
+check "D-payload-files" "systemd-boot, stub, loader.conf, boot.img, modules, grub.cfg, recovery kernel and initramfs are in place" \
+	sudo bash -c "cd '$D/usr/lib/vintner/payloads' && test -s uefi/systemd-bootx64.efi && test -s uefi/linuxx64.efi.stub && test -s uefi/loader.conf && test -s bios/i386-pc/boot.img && test -s bios/i386-pc/kernel.img && test -s bios/i386-pc/moddep.lst && test -s bios/grub.cfg && test -s bios/core-modules.txt && test -s recovery/vmlinuz && test -s recovery/initrd.img && test -s VERSIONS"
+check "D-core-modules-present" "every module in core-modules.txt exists in the shipped i386-pc directory" \
+	sudo bash -c "cd '$D/usr/lib/vintner/payloads/bios' && for m in \$(cat core-modules.txt); do test -s i386-pc/\$m.mod || exit 1; done"
+check "D-manifest" "MANIFEST lists every payload file and sha256sum -c passes" \
+	sudo bash -c "cd '$D/usr/lib/vintner/payloads' && sha256sum --quiet -c MANIFEST && test \"\$(find . -type f ! -name MANIFEST | wc -l)\" = \"\$(wc -l < MANIFEST)\""
+check "D-recovery-initrd-has-vintner" "the shipped recovery initramfs carries /init and the vintner binary" \
+	sudo bash -c "cd '$D/usr/lib/vintner/payloads/recovery' && xz -dc initrd.img | cpio -it --quiet 2>/dev/null | grep -qx 'usr/sbin/vintner' && xz -dc initrd.img | cpio -it --quiet 2>/dev/null | grep -qx 'init'"
+# The module set is enough: grub-mkimage, reading only the shipped directory, builds
+# a core.img from core-modules.txt with an early config of the kind the installer
+# writes. grub-common is not in Conflicts, and nothing else is installed for it.
+apt_install "$D" grub-common > "$OUT/d-grub-common.log" || true
+check "D-core-img-builds" "grub-mkimage builds a core.img from the shipped files and core-modules.txt alone" \
+	sudo chroot "$D" sh -c 'cd /usr/lib/vintner/payloads/bios && printf "search --no-floppy --fs-uuid --set=root 0000-0000\nset prefix=(\$root)/grub\n" > /tmp/early.cfg && grub-mkimage -O i386-pc -d i386-pc -p /grub -c /tmp/early.cfg -o /tmp/core.img $(cat core-modules.txt) && test -s /tmp/core.img'
+check "D-no-grub-programs" "none of GRUB's own programs (grub-bios-setup, grub-ntldr-img) is shipped" \
+	sudo bash -c "cd '$D/usr/lib/vintner/payloads' && ! find . -name 'grub-*' | grep -q ."
+# Remove: the payloads go, and nothing else is touched.
+in_chroot "$D" dpkg --remove vintner-platform > "$OUT/d-remove.log" 2>&1 || true
+check "D-remove" "removing vintner-platform removes the payload directory" \
+	sudo test ! -e "$D/usr/lib/vintner/payloads"
+check "D-remove-keeps-core" "removing vintner-platform leaves vintner-core installed" \
+	bash -c "test \"\$(sudo chroot '$D' dpkg-query -W -f '\${Status}' vintner-core)\" = 'install ok installed'"
 sudo umount "$D/proc"
 
 echo

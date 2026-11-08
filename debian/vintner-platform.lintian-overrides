@@ -1,0 +1,7 @@
+# The GRUB modules are relocatable objects that GRUB loads and links itself at run
+# time; it reads their symbol tables, so stripping them would break them. They are
+# Debian's own grub-pc-bin files, shipped as they are and never executed on the host.
+vintner-platform: unstripped-binary-or-object [usr/lib/vintner/payloads/bios/i386-pc/*]
+# kernel.img is the freestanding core of GRUB, which the BIOS runs in real mode;
+# it is input to grub-mkimage, never run on the host.
+vintner-platform: statically-linked-binary [usr/lib/vintner/payloads/bios/i386-pc/kernel.img]
