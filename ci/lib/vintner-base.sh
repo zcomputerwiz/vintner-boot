@@ -299,7 +299,14 @@ sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C sh -c \
 	'apt-get update && apt-get install -y --no-install-recommends /root/vintner-core.deb' || PKG_RC=$?
 sudo rm -f "$MNT/etc/resolv.conf"
 sudo mv "$MNT/etc/resolv.conf.ci-save" "$MNT/etc/resolv.conf"
-for m in dev/pts dev proc; do sudo umount "$MNT/$m"; done
+# Processes that package scripts left running in the chroot (agents, daemons) keep
+# the bind mounts busy: stop what has the guest root as its root, then unmount.
+MNT_REAL=$(realpath "$MNT")
+for p in /proc/[0-9]*; do
+	if [ "$(sudo readlink "$p/root" 2>/dev/null)" = "$MNT_REAL" ]; then sudo kill "${p#/proc/}" 2>/dev/null || true; fi
+done
+sleep 1
+for m in dev/pts dev proc; do sudo umount "$MNT/$m" || sudo umount -l "$MNT/$m"; done
 sudo rm -f "$MNT/root/vintner-core.deb"
 [ "$PKG_RC" -eq 0 ] || { echo "installing vintner-core into the guest failed (rc=$PKG_RC)" >&2; exit 1; }
 sudo chroot "$MNT" dpkg-query -W -f='${Package} ${Version}\n' vintner-core systemd-ukify sbsigntool | tee -a "$VERSIONS"
