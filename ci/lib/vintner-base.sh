@@ -291,7 +291,13 @@ OS_PRETTY=$(sed -n 's/^PRETTY_NAME=//p' "$MNT/etc/os-release" | tr -d '"')
 # Debian archive. The guest is not running, so apt runs in a chroot of the mounted
 # root with the host's resolver.
 sudo cp "$CORE_DEB" "$MNT/root/vintner-core.deb"
-for m in proc dev dev/pts; do sudo mount --bind "/$m" "$MNT/$m"; done
+for m in proc dev dev/pts; do
+	sudo mount --bind "/$m" "$MNT/$m"
+	# rslave: what happens under the guest root (a busy or lazy unmount) must not
+	# propagate back to the real /proc, /dev and /dev/pts; a shared bind mount can
+	# break the host (it did: wsl.exe could not start processes in the distro).
+	sudo mount --make-rslave "$MNT/$m"
+done
 sudo mv "$MNT/etc/resolv.conf" "$MNT/etc/resolv.conf.ci-save"
 sudo cp --dereference /etc/resolv.conf "$MNT/etc/resolv.conf"
 PKG_RC=0
