@@ -149,7 +149,18 @@ mkdir -p /mnt/bs
 # right disk) and mounted read-write. B never writes a counter.
 rslot=$(arg recovery)
 rearm="skipped (no vintner.recovery=a|b)"
-case $rslot in a | b) rearm="skipped (boot storage not found by its manifest)" ;; esac
+rsdev=$bsdev
+case $rslot in
+	a | b)
+		rearm="skipped (boot storage not found by its manifest)"
+		# A vintner.root= on the command line skips the manifest lookup above;
+		# the re-arm still needs the partition the manifest names.
+		if [ -z "$rsdev" ]; then
+			r=$(manifest_root 2>/dev/null)
+			[ -n "$r" ] && rsdev=${r#* }
+		fi
+		;;
+esac
 for p in /sys/class/block/*/partition; do
 	dev=/dev/$(basename "$(dirname "$p")")
 	[ -n "$bsdev" ] && [ "$dev" != "$bsdev" ] && continue
@@ -157,7 +168,7 @@ for p in /sys/class/block/*/partition; do
 	if [ -d /mnt/bs/vintner ] && mount -o remount,rw /mnt/bs; then
 		d=/mnt/bs/vintner/recovery-logs/${L##*/}
 		mkdir -p "$d" && cp "$L"/* "$d"/ && sync && logs=$dev:/vintner/recovery-logs/${L##*/}
-		if [ -n "$bsdev" ] && { [ "$rslot" = a ] || [ "$rslot" = b ]; }; then
+		if [ "$dev" = "$rsdev" ] && { [ "$rslot" = a ] || [ "$rslot" = b ]; }; then
 			if r=$(vintner bless --recovery "$rslot" --boot-storage /mnt/bs 2>&1); then
 				rearm="ok: $r"
 			else

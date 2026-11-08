@@ -485,15 +485,17 @@ SVCEOF
 
 		eval "${BOOT_COUNTERS[4]}"
 		if [ "$FIRMWARE" = "uefi" ]; then
-			if [ "$reca_tag" != "+2-1" ]; then
+			# Boot 4 used one try (+2-1); recovery A then re-armed itself (WO-0010 1.1).
+			if [ "$reca_tag" != "+3-0" ]; then
 				D3_OK=false
-				D3_EVID_PARTS+=("recovery A counter $reca_tag, expected +2-1")
+				D3_EVID_PARTS+=("recovery A counter $reca_tag, expected +3-0 (re-armed)")
 			fi
 			reca_evid="counter after: $reca_name"
 		else
-			if [ "$tra" != "xx" ] || [ "$booted" != "RA" ]; then
+			# Recovery A used one try (xx), then re-armed itself and cleared BOOTED (WO-0010 1.1).
+			if [ "$tra" != "xxx" ] || [ -n "$booted" ]; then
 				D3_OK=false
-				D3_EVID_PARTS+=("vars: T_RA=$tra, BOOTED=$booted, expected xx and RA")
+				D3_EVID_PARTS+=("vars: T_RA=$tra, BOOTED=$booted, expected xxx and empty (re-armed)")
 			fi
 			reca_evid="grubenv after: VINTNER_T_RA=$tra, VINTNER_BOOTED=$booted"
 		fi
