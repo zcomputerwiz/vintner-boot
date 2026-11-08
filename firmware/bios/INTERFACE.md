@@ -8,7 +8,11 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 - GRUB comes from Debian trixie's `grub-pc-bin`. `boot.img` goes into the MBR code area. `core.img` goes into the BIOS Boot Partition.
 - `core.img` contains every module `grub.cfg` uses, so GRUB loads no module from disk:
 
-  `biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval loadenv keystatus serial terminal halt reboot`
+  `biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval loadenv keystatus serial terminal halt reboot all_video`
+
+  The list lives in [`core-modules.txt`](core-modules.txt), which every image builder reads; `ci/lint/grub-modules.sh` fails if `grub.cfg` uses a module outside it.
+
+- `grub.cfg` sets up the serial terminal only if the `serial` command succeeds, and clears the screen if it does not, so a machine without a serial port shows no error (WO-0010 1.4; checked by `ci/bios-trial/noserial.py`).
 
 - The early configuration embedded in `core.img` is the only per-machine part:
 
@@ -27,7 +31,7 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 | `/vintner/bios/recovery-a/{vmlinuz,initrd.img,slot.cfg}` | recovery updater | Recovery A |
 | `/vintner/bios/recovery-b/{vmlinuz,initrd.img,slot.cfg}` | recovery updater | Recovery B |
 
-`slot.cfg` sets only `vintner_cmdline` (and optionally `vintner_title`) with `set`, for example:
+`slot.cfg` sets only `vintner_cmdline` (and optionally `vintner_title`) with `set`. The command lines of recovery A and B carry `vintner.recovery=a` and `vintner.recovery=b`: they tell the recovery image whether to re-arm `VINTNER_T_RA` (`vintner bless --recovery`). Example:
 
 ```
 set vintner_cmdline="root=UUID=<root fs uuid> ro quiet vintner.bootstorage=PARTUUID=<boot storage partuuid>"

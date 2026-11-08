@@ -1,6 +1,7 @@
 #!/bin/bash
 # Candidate fallback integration test on an installed vintner system (WO-0006).
 #
+t	# B1 panics in the initramfs and then hangs: stop once the panic is printed.		STOP_FLAG=()		if [ "$CASE" = "B1" ]; then STOP_FLAG=(--stop-on "Kernel panic - not syncing"); fi
 # Tests that a bad candidate image falls back to the known-good image after
 # bounded attempts, on both UEFI and BIOS, across panic, health failure,
 # hang and early kill.
@@ -282,6 +283,9 @@ EOF
 		if [ "$CASE" = "B4" ] && [ "$B" -le 3 ]; then
 			KILL_FLAG=("--kill-on-cmdline")
 		fi
+		# B1 panics in the initramfs and then hangs: stop once the panic is printed.
+		STOP_FLAG=()
+		if [ "$CASE" = "B1" ]; then STOP_FLAG=(--stop-on "Kernel panic - not syncing"); fi
 
 		echo "Booting $CASE Boot $B..."
 		VARS_ARG=()
@@ -302,6 +306,7 @@ EOF
 			"${CODE_ARG[@]}" \
 			--timeout 120 \
 			"${KILL_FLAG[@]}" \
+			"${STOP_FLAG[@]}" \
 			--meta-out "$META_JSON"
 
 		read_disk "$CASE_DISK" "${CASE}-read-boot${B}"

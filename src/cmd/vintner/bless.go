@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -27,6 +28,8 @@ func cmdBless(args []string) {
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
 	secureBootDir := fs.String("secureboot-dir", "/etc/vintner/secureboot", "directory holding machine keys and certificates")
+	espDir := fs.String("esp", "", "ESP directory to scan for side-loaded files (default: mount the manifest's esp.partuuid read-only on demand)")
+	recoverySlot := fs.String("recovery", "", "run from the recovery image of slot a or b: re-arm recovery A (WO-0010 1.1), touch nothing else")
 
 	fs.Parse(args)
 
@@ -63,6 +66,14 @@ func cmdBless(args []string) {
 
 	info, err := os.Stat(*efivarsDir)
 	isUEFI := err == nil && info.IsDir()
+
+	if *recoverySlot != "" {
+		if err := blessRecovery(*recoverySlot, m, *bootStorage, isUEFI); err != nil {
+			fmt.Fprintf(os.Stderr, "vintner bless: %v\n", err)
+			osExit(1)
+		}
+		return
+	}
 
 	if isUEFI {
 		_, val, err := efivar.GetString(*efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo)
@@ -206,6 +217,31 @@ func cmdBless(args []string) {
 	}
 
 	actions, reports := state.Reconcile(m, v)
+
+	// Threat model T6: side-loaded files also count on the ESP. Found by the
+	// manifest's partition identity, mounted read-only; /boot/efi need not be
+	// mounted. An unreadable ESP is reported, not fatal.
+	if isUEFI || *espDir != "" {
+		root := *espDir
+		if root == "" && m.ESP != nil {
+			dev, derr := bootstorage.ESPDevice(m.ESP.PartUUID)
+			if derr == nil {
+				var unmount func() error
+				if unmount, derr = bootstorage.MountESP(dev); derr == nil {
+					defer func() { _ = unmount() }()
+					root = bootstorage.ESPMountPoint
+				}
+			}
+			if derr != nil {
+				reports = append(reports, fmt.Sprintf("esp: cannot scan for side-loaded files: %v", derr))
+			}
+		}
+		if root != "" {
+			if err := v.AddESP(root); err != nil {
+				reports = append(reports, fmt.Sprintf("esp: cannot scan for side-loaded files: %v", err))
+			}
+		}
+	}
 	reports = append(reports, state.CheckHealth(m, v, *efivarsDir, *secureBootDir, isUEFI)...)
 
 	for _, r := range reports {
@@ -255,3 +291,45 @@ func cmdBless(args []string) {
 }
 
 var osExit = os.Exit
+
+// blessRecovery is what the recovery image runs once its early checks pass
+// (boot storage found by its manifest and mounted read-write). Recovery A has
+// a bounded number of counted boots like any entry; booting it for real means
+// it works, so it gets all its tries back (ADR-0003, firmware/bios/INTERFACE.md).
+// Recovery B has no counter. It touches no generation and no manifest state.
+func blessRecovery(slot string, m *manifest.Manifest, bootStorage string, isUEFI bool) error {
+	switch slot {
+	case "b":
+		fmt.Println("recovery B has no boot counter: nothing to re-arm")
+		return nil
+	case "a":
+	default:
+		return fmt.Errorf("--recovery takes a or b, not %q", slot)
+	}
+
+	if isUEFI {
+		efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+		if err := bls.Rearm(efiDir, "vintner-recovery-a", m.Tries); err != nil {
+			return fmt.Errorf("re-arm recovery A: %w", err)
+		}
+		fmt.Printf("recovery A re-armed: %d tries\n", m.Tries)
+		return nil
+	}
+
+	envPath := filepath.Join(bootStorage, "grub", "grubenv")
+	env, err := grubenv.Read(envPath)
+	if err != nil {
+		return fmt.Errorf("read grubenv: %w", err)
+	}
+	env.Set("VINTNER_T_RA", strings.Repeat("x", m.Tries))
+	// VINTNER_BOOTED=RA is this boot's own mark. Any other value belongs to a
+	// generation that failed just before and must stay, so the failure counts.
+	if v, ok := env.Get("VINTNER_BOOTED"); ok && v == "RA" {
+		env.Unset("VINTNER_BOOTED")
+	}
+	if err := grubenv.Write(envPath, env); err != nil {
+		return fmt.Errorf("write grubenv: %w", err)
+	}
+	fmt.Printf("recovery A re-armed: %d tries\n", m.Tries)
+	return nil
+}

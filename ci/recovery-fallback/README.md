@@ -39,10 +39,11 @@ CI runs it as `fallback-uefi` and `fallback-bios` in `.github/workflows/qemu-tes
 |---|---|---|---|
 | D1 | G0, every boot | 5 boots, all os-1, report shows `BLESS_ACTIVE: active`, counter re-armed each time (UEFI `+3-0`; BIOS `VINTNER_T_1=xxx` and no `VINTNER_BOOTED`) | any other image, bless not active, any other counter, fewer than 5 boots |
 | D2 | F1–F4, boots 1–3 | os-1 each time; counter after each UEFI `+2-1`, `+1-2`, `+0-3`, BIOS `T_1` `xx`, `x`, `0` with `VINTNER_BOOTED=1`; the case's failure line on every one of the three boots | any other image or counter, or a boot without its failure line |
-| D3 | F1–F4, boot 4 | recovery A, not B; recovery A's counter then UEFI `+2-1`, BIOS `VINTNER_T_RA=xx` and `VINTNER_BOOTED=RA` | any other image or counter |
+| D3 | F1–F4, boot 4 | recovery A, not B; recovery A used one try and then re-armed itself (WO-0010 1.1): UEFI `+3-0`, BIOS `VINTNER_T_RA=xxx` and `VINTNER_BOOTED` empty | any other image or counter |
 | D4 | F1–F4, boot 4's report | F2–F4: `root=mounted ro=yes`, compared whole. On UEFI also the line `root from the manifest on boot storage: UUID=<the base root's UUID>`, compared to the end of the UUID. F1 is OBSERVED. | other fields, no report, or (UEFI) no such manifest line, F1 included |
 | D5 | F1–F4 | root partition sha256 equal before and after boot 4 | any difference |
-| D6 | F1–F4, boots 1–3 | OBSERVED: powered off, or killed at the timeout | — |
+| D6 | F1–F4, boots 1–3 | OBSERVED: powered off, hung and stopped early (the log shows the shell prompt, panic or emergency mode), or killed at the timeout | — |
+| D7 | R1 | root broken: os-1 three times, then recovery A four times in a row (tries + 1), each reaching its checks and printing `VINTNER-RECOVERY-REARM slot=a ok:`; recovery A back at `+3-0` (UEFI) or `VINTNER_T_RA=xxx` with no `VINTNER_BOOTED` (BIOS) | recovery B or anything else in place of the fourth recovery A boot, no re-arm line, wrong counter |
 
 Failure lines for D2:
 
@@ -76,10 +77,10 @@ GitHub Actions, KVM, 2026-10-16: run 38951457063 on commit `b723618`. Copied fro
 | D2 | F2 | PASS | os-1 boots 1-3; counters: B1: +2-1, B2: +1-2, B3: +0-3; failure: Target filesystem doesn't have requested /sbin/init.; kernel panic: none |
 | D2 | F3 | PASS | os-1 boots 1-3; counters: B1: +2-1, B2: +1-2, B3: +0-3; failure: You are in emergency mode. After logging in, type "journalctl -xb" to view |
 | D2 | F4 | PASS | os-1 boots 1-3; counters: B1: +2-1, B2: +1-2, B3: +0-3; failure: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
-| D3 | F1 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
-| D3 | F2 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
-| D3 | F3 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
-| D3 | F4 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+2-1.efi |
+| D3 | F1 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+3-0.efi |
+| D3 | F2 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+3-0.efi |
+| D3 | F3 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+3-0.efi |
+| D3 | F4 | PASS | boot 4 ran Recovery A (not B); counter after: vintner-recovery-a+3-0.efi |
 | D4 | F1 | OBSERVED | root from the manifest on boot storage: UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a; VINTNER-RECOVERY-TEST root=failed ro=no logs=/dev/vda2:/vintner/recovery-logs/20261016T190807 |
 | D4 | F2 | PASS | root from the manifest on boot storage: UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a; VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T191437 |
 | D4 | F3 | PASS | root from the manifest on boot storage: UUID=4e9f54f3-865c-43fa-9b87-69ad69d4dd9a; VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T192107 |
@@ -102,10 +103,10 @@ GitHub Actions, KVM, 2026-10-16: run 38951457063 on commit `b723618`. Copied fro
 | D2 | F2 | PASS | os-1 boots 1-3; counters: B1: T_1=xx,BOOTED=1; B2: T_1=x,BOOTED=1; B3: T_1=0,BOOTED=1; failure: Target filesystem doesn't have requested /sbin/init.; kernel panic: none |
 | D2 | F3 | PASS | os-1 boots 1-3; counters: B1: T_1=xx,BOOTED=1; B2: T_1=x,BOOTED=1; B3: T_1=0,BOOTED=1; failure: You are in emergency mode. After logging in, type "journalctl -xb" to view |
 | D2 | F4 | PASS | os-1 boots 1-3; counters: B1: T_1=xx,BOOTED=1; B2: T_1=x,BOOTED=1; B3: T_1=0,BOOTED=1; failure: [FAILED] Failed to start vintner-test-health.service.; [DEPEND] Dependency failed for boot-complete.target - Boot Completion Check. |
-| D3 | F1 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
-| D3 | F2 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
-| D3 | F3 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
-| D3 | F4 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xx, VINTNER_BOOTED=RA |
+| D3 | F1 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xxx, VINTNER_BOOTED= |
+| D3 | F2 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xxx, VINTNER_BOOTED= |
+| D3 | F3 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xxx, VINTNER_BOOTED= |
+| D3 | F4 | PASS | boot 4 ran Recovery A (not B); grubenv after: VINTNER_T_RA=xxx, VINTNER_BOOTED= |
 | D4 | F1 | OBSERVED | VINTNER-RECOVERY-TEST root=failed ro=no logs=/dev/vda2:/vintner/recovery-logs/20261016T190754 |
 | D4 | F2 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T191422 |
 | D4 | F3 | PASS | VINTNER-RECOVERY-TEST root=mounted ro=yes logs=/dev/vda2:/vintner/recovery-logs/20261016T192049 |

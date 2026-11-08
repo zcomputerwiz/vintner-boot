@@ -40,6 +40,7 @@ bash recovery/build.sh --uki-only [--key <key.pem>] [--cert <cert.pem>]
 |---|---|
 | `vintner.root=UUID=<fs uuid>` or `vintner.root=/dev/...` | Root to mount read-only. The UUID is the manifest's `root.uuid`. ext4 is mounted with `noload`, so no journal is replayed. Without this parameter, recovery takes `root.uuid` from the valid manifest copy with the highest `seq` on boot storage ([`schema/manifest.md`](../schema/manifest.md); valid here means line 2 is the SHA-256 of line 1). The UEFI recovery UKIs rely on this: they are shared by every installation, so their command line names no root. |
 | `vintner.recovery_test=1` | Print `VINTNER-RECOVERY-TEST root=<absent\|mounted\|failed> ro=<yes\|no> logs=<path>` on `ttyS0` and power off. |
+| `vintner.recovery=a` or `vintner.recovery=b` | Which recovery this is. Recovery A runs `vintner bless --recovery a` once boot storage is found by its manifest and mounted read-write, which gives recovery A all its tries back (UEFI: renames `vintner-recovery-a+<left>-<done>.efi` to `+<tries>-0`; BIOS: sets `VINTNER_T_RA`). Recovery B never writes a counter. Without the parameter nothing is re-armed. The result is in the console and in `/vintner/recovery-logs/<time>/rearm.txt`. |
 
 **Storage layers:**
 - md arrays are assembled with `--readonly`.
@@ -93,8 +94,8 @@ Measured with `linux-image-6.12.107+deb13-amd64` 6.12.107-1 and `busybox-static`
 | Artifact | Size |
 |---|---|
 | `vmlinuz` | 11.6 MiB |
-| `initrd.img` | 10.0 MiB, xz (67 modules, the storage tools and their libraries) |
-| each recovery UKI | 21.7 MiB |
+| `initrd.img` | 11.4 MiB, xz (67 modules, the storage tools and their libraries, the 4.3 MiB vintner binary) |
+| each recovery UKI | 23.1 MiB |
 
 Architecture §5 budgets 300 MiB per recovery image. `libcrypto` (6.3 MiB) is the largest addition. The initramfs is xz-compressed; with gzip it would be 14.2 MiB.
 

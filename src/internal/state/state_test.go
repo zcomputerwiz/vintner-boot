@@ -607,3 +607,19 @@ func TestScan_SelectionPolicyAndSideLoaded(t *testing.T) {
 		t.Errorf("v.UEFIFiles missing vintner-os-1.efi")
 	}
 }
+
+func TestAddESPReportsSideLoadedFilesWithPartitionPrefix(t *testing.T) {
+	esp := t.TempDir()
+	os.MkdirAll(filepath.Join(esp, "loader", "addons"), 0755)
+	os.MkdirAll(filepath.Join(esp, "EFI", "Linux", "x.efi.extra.d"), 0755)
+	os.WriteFile(filepath.Join(esp, "loader", "addons", "a.addon.efi"), nil, 0644)
+	os.WriteFile(filepath.Join(esp, "EFI", "Linux", "x.efi.extra.d", "b.raw"), nil, 0644)
+	v := &View{SideLoaded: []string{"loader/credentials/c"}}
+	if err := v.AddESP(esp); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ESP:EFI/Linux/x.efi.extra.d/b.raw", "ESP:loader/addons/a.addon.efi", "loader/credentials/c"}
+	if !reflect.DeepEqual(v.SideLoaded, want) {
+		t.Errorf("SideLoaded = %v, want %v", v.SideLoaded, want)
+	}
+}
