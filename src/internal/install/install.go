@@ -98,8 +98,15 @@ var (
 	ownESPDirs = map[string]bool{"boot": true, "vintner": true, "debian": true}
 )
 
-// Deploy deploys vintner onto the layout.
-func Deploy(ctx context.Context, o Options) (res *Result, err error) {
+// Deployment is a staged installation. Stage writes everything that does not
+// change how the machine boots; Cutover writes what does, after the caller has
+// published the first generation; Verify reads it all back.
+type Deployment struct{ d *deployer }
+
+// Stage checks the layout and deploys vintner's files on boot storage and the
+// ESP, without taking over booting: the loader in \EFI\vintner is not what the
+// firmware starts yet, and the BIOS boot sector is not touched.
+func Stage(ctx context.Context, o Options) (*Deployment, error) {
 	if o.Tries == 0 {
 		o.Tries = 3
 	}
@@ -125,18 +132,43 @@ func Deploy(ctx context.Context, o Options) (res *Result, err error) {
 		o.Log = io.Discard
 	}
 	d := &deployer{Options: o}
-	defer func() {
-		if err != nil {
-			var se *Error
-			if errors.As(err, &se) {
-				se.Changed = d.changed
-			}
-		}
-	}()
-	if err := d.run(ctx); err != nil {
+	if err := d.stage(ctx); err != nil {
+		return nil, d.wrap(err)
+	}
+	return &Deployment{d}, nil
+}
+
+// Cutover takes booting over: \EFI\BOOT\BOOTX64.EFI (when it is safe) and, for
+// BIOS, GRUB's boot code in the BIOS Boot Partition and the boot sector.
+func (p *Deployment) Cutover() error { return p.d.wrap(p.d.cutover()) }
+
+// Verify reads everything back.
+func (p *Deployment) Verify() error { return p.d.wrap(p.d.verify()) }
+
+// Result says what was changed so far.
+func (p *Deployment) Result() *Result { return &Result{Changed: p.d.changed, Manifest: p.d.m} }
+
+// Manifest is the manifest Stage wrote.
+func (p *Deployment) Manifest() *manifest.Manifest { return p.d.m }
+
+// Changed lists what has been changed so far, for a failure report that comes
+// from outside this package.
+func (p *Deployment) Changed() []string { return p.d.changed }
+
+// Deploy stages, takes over and verifies in one go, without publishing an
+// image: the machine then boots recovery A (vintner install --deploy-only).
+func Deploy(ctx context.Context, o Options) (*Result, error) {
+	p, err := Stage(ctx, o)
+	if err != nil {
 		return nil, err
 	}
-	return &Result{Changed: d.changed, Manifest: d.m}, nil
+	if err := p.Cutover(); err != nil {
+		return nil, err
+	}
+	if err := p.Verify(); err != nil {
+		return nil, err
+	}
+	return p.Result(), nil
 }
 
 type deployer struct {
@@ -144,12 +176,23 @@ type deployer struct {
 	changed []string
 	m       *manifest.Manifest
 	emb     *Embedded
+	core    []byte
+	bootImg []byte
 
 	uefi, bios bool
 	bs         string // PARTUUID of boot storage
 	espUUID    string
 	espFiles   map[string]string // path under the ESP to the payload file it must equal
 	bsFiles    map[string]string // path under boot storage to the sha256 it must have
+}
+
+// wrap attaches what was changed so far to a failed step.
+func (d *deployer) wrap(err error) error {
+	var se *Error
+	if err != nil && errors.As(err, &se) {
+		se.Changed = append([]string(nil), d.changed...)
+	}
+	return err
 }
 
 func (d *deployer) rec(format string, a ...any) {
@@ -160,7 +203,7 @@ func (d *deployer) rec(format string, a ...any) {
 
 func (d *deployer) fail(step string, err error) error { return &Error{Step: step, Err: err} }
 
-func (d *deployer) run(ctx context.Context) error {
+func (d *deployer) stage(ctx context.Context) error {
 	d.uefi = d.Firmware == "uefi" || d.Firmware == "both"
 	d.bios = d.Firmware == "bios" || d.Firmware == "both"
 	l := d.Layout
@@ -178,13 +221,9 @@ func (d *deployer) run(ctx context.Context) error {
 	d.bsFiles = map[string]string{}
 
 	// Everything that can fail without writing is checked first.
-	tools := []string{}
 	if d.bios {
-		tools = append(tools, "grub-mkimage")
-	}
-	for _, t := range tools {
-		if _, err := d.LookPath(t); err != nil {
-			return d.fail("check", fmt.Errorf("%s is not installed (package grub-common); it builds GRUB's core image", t))
+		if _, err := d.LookPath("grub-mkimage"); err != nil {
+			return d.fail("check", errors.New("grub-mkimage is not installed (package grub-common); it builds GRUB's core image"))
 		}
 	}
 	machineID, err := d.machineID()
@@ -197,9 +236,11 @@ func (d *deployer) run(ctx context.Context) error {
 	if err := checkWritable(d.BootStorageDir); err != nil {
 		return d.fail("check", fmt.Errorf("boot storage: %w", err))
 	}
-	bootImg, err := os.ReadFile(d.Payload.Path(payload.GrubDir + "/boot.img"))
-	if d.bios && (err != nil || len(bootImg) != 512) {
-		return d.fail("check", fmt.Errorf("the payload's boot.img is not a 512-byte boot sector (%v)", err))
+	if d.bios {
+		d.bootImg, err = os.ReadFile(d.Payload.Path(payload.GrubDir + "/boot.img"))
+		if err != nil || len(d.bootImg) != 512 {
+			return d.fail("check", fmt.Errorf("the payload's boot.img is not a 512-byte boot sector (%v)", err))
+		}
 	}
 	if d.uefi {
 		if err := d.checkESP(); err != nil {
@@ -209,14 +250,13 @@ func (d *deployer) run(ctx context.Context) error {
 			return d.fail("check", fmt.Errorf("the ESP: %w", err))
 		}
 	}
-	var core []byte
 	if d.bios {
 		fmt.Fprintln(d.Log, "building GRUB's core image")
-		if core, err = BuildCore(ctx, d.Runner, d.Payload, l.BootFS.UUID()); err != nil {
+		if d.core, err = BuildCore(ctx, d.Runner, d.Payload, l.BootFS.UUID()); err != nil {
 			return d.fail("core.img", err)
 		}
-		if int64(len(core)) > l.BIOSBoot.Size(512) {
-			return d.fail("core.img", fmt.Errorf("core.img is %d bytes and the BIOS Boot Partition %d", len(core), l.BIOSBoot.Size(512)))
+		if int64(len(d.core)) > l.BIOSBoot.Size(512) {
+			return d.fail("core.img", fmt.Errorf("core.img is %d bytes and the BIOS Boot Partition %d", len(d.core), l.BIOSBoot.Size(512)))
 		}
 	}
 	version, err := os.ReadFile(d.Payload.Path(payload.RecoveryVer))
@@ -228,7 +268,7 @@ func (d *deployer) run(ctx context.Context) error {
 		return d.fail("check", errors.New("the payload's recovery version is empty"))
 	}
 
-	// Boot storage first, then the ESP, then the BIOS boot sector.
+	// Boot storage first, then the ESP's own files.
 	if err := d.bootStorage(ctx, recVersion); err != nil {
 		return err
 	}
@@ -241,18 +281,30 @@ func (d *deployer) run(ctx context.Context) error {
 		return err
 	}
 	if d.uefi {
-		if err := d.deployESP(); err != nil {
+		if err := d.stageESP(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *deployer) cutover() error {
+	if d.uefi {
+		if err := d.cutoverESP(); err != nil {
 			return err
 		}
 	}
 	if d.bios {
+		l := d.Layout
 		d.rec("writing core.img to the BIOS Boot Partition (partition %d) and GRUB boot code to the boot sector", l.BIOSBoot.Number)
-		if d.emb, err = EmbedGRUB(d.Disk, *l.BIOSBoot, bootImg, core); err != nil {
+		emb, err := EmbedGRUB(d.Disk, *l.BIOSBoot, d.bootImg, d.core)
+		if err != nil {
 			return d.fail("BIOS boot code", err)
 		}
+		d.emb = emb
 		d.rec("wrote them, flushed")
 	}
-	return d.verify()
+	return nil
 }
 
 func (d *deployer) machineID() (string, error) {
@@ -529,29 +581,38 @@ func (d *deployer) writeManifest(machineID, recVersion string) error {
 	return nil
 }
 
-func (d *deployer) deployESP() error {
-	copyPayload := func(rel, payloadRel string) error {
-		b, err := os.ReadFile(d.Payload.Path(payloadRel))
-		if err != nil {
-			return err
-		}
-		p := filepath.Join(d.ESPDir, filepath.FromSlash(rel))
-		if err := writeFileSync(p, b); err != nil {
-			return err
-		}
-		d.espFiles[rel] = payloadRel
-		d.rec("wrote %s on the ESP", rel)
-		return nil
+func (d *deployer) copyToESP(rel, payloadRel string) error {
+	b, err := os.ReadFile(d.Payload.Path(payloadRel))
+	if err != nil {
+		return err
 	}
+	p := filepath.Join(d.ESPDir, filepath.FromSlash(rel))
+	if err := writeFileSync(p, b); err != nil {
+		return err
+	}
+	d.espFiles[rel] = payloadRel
+	d.rec("wrote %s on the ESP", rel)
+	return nil
+}
+
+// stageESP writes vintner's own files. The firmware does not start them until
+// cutoverESP (or an NVRAM entry) points at them.
+func (d *deployer) stageESP() error {
 	if err := d.mkdir(d.ESPDir, "EFI/vintner", "loader"); err != nil {
 		return d.fail("ESP", err)
 	}
-	if err := copyPayload("EFI/vintner/systemd-bootx64.efi", payload.SystemdBoot); err != nil {
+	if err := d.copyToESP("EFI/vintner/systemd-bootx64.efi", payload.SystemdBoot); err != nil {
 		return d.fail("ESP", err)
 	}
-	if err := copyPayload("loader/loader.conf", payload.LoaderConf); err != nil {
+	if err := d.copyToESP("loader/loader.conf", payload.LoaderConf); err != nil {
 		return d.fail("ESP", err)
 	}
+	return nil
+}
+
+// cutoverESP puts the loader in the removable path, where firmware without a
+// boot entry for vintner looks, unless another system could be using it.
+func (d *deployer) cutoverESP() error {
 	other, err := otherSystemOnESP(d.ESPDir)
 	if err != nil {
 		return d.fail("ESP", err)
@@ -571,7 +632,7 @@ func (d *deployer) deployESP() error {
 	if err := d.mkdir(d.ESPDir, "EFI/BOOT"); err != nil {
 		return d.fail("ESP", err)
 	}
-	if err := copyPayload("EFI/BOOT/BOOTX64.EFI", payload.SystemdBoot); err != nil {
+	if err := d.copyToESP("EFI/BOOT/BOOTX64.EFI", payload.SystemdBoot); err != nil {
 		return d.fail("ESP", err)
 	}
 	return nil
@@ -603,7 +664,7 @@ func (d *deployer) verify() error {
 	if err != nil {
 		return d.fail("verify", err)
 	}
-	if m.InstallationID != d.m.InstallationID || m.Seq != d.m.Seq {
+	if m.InstallationID != d.m.InstallationID || m.Seq < d.m.Seq { // publishing generation 1 moves the manifest on
 		return d.fail("verify", errors.New("the manifest does not read back as written"))
 	}
 	if d.bios {

@@ -1251,3 +1251,73 @@ func TestExampleManifestsPassPublisherCmdlineCheck(t *testing.T) {
 		}
 	}
 }
+
+// TestPublishFirstGeneration: vintner install leaves a manifest with no image,
+// and the first publish takes its command line from Options.InitialCmdline.
+func TestPublishFirstGeneration(t *testing.T) {
+	for _, fw := range []string{"uefi", "bios", "both"} {
+		t.Run(fw, func(t *testing.T) {
+			rootDir, bootStorageDir, m := setupTestEnv(t, fw)
+			stateDir := filepath.Join(bootStorageDir, "vintner", "state")
+			cmdline := m.Images[0].Cmdline
+			m.Images = []manifest.Image{}
+			m.NextGeneration = 1
+			if err := manifest.Save(stateDir, m); err != nil {
+				t.Fatal(err)
+			}
+			os.RemoveAll(filepath.Join(bootStorageDir, "vintner", "bios", "os-1"))
+			env := &grubenv.Env{}
+			env.Set("VINTNER_T_RA", "xxx")
+			if err := grubenv.Write(filepath.Join(bootStorageDir, "grub", "grubenv"), env); err != nil {
+				t.Fatal(err)
+			}
+			abi := "6.12.111-amd64"
+			setupKernelFiles(t, rootDir, abi)
+			opts := Options{
+				KernelABI: abi, BootStorageDir: bootStorageDir, RootDir: rootDir,
+				LockFile:         filepath.Join(bootStorageDir, "publish.lock"),
+				CmdlineContent:   cmdline, // only names the boot storage
+				PackageQuery:     mockPackageQuery{pkg: "linux-image-" + abi, ver: "6.12.111-1"},
+				UKIBuilder:       mockUKIBuilder{},
+				DiskSpaceChecker: mockDiskChecker{free: 100 << 20},
+				Clock:            mockClock{t: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)},
+			}
+
+			// Without the initial command line there is nothing to publish with.
+			if _, err := Publish(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "no image command line") {
+				t.Fatalf("without InitialCmdline: %v", err)
+			}
+
+			opts.InitialCmdline = cmdline
+			res, err := Publish(context.Background(), opts)
+			if err != nil {
+				t.Fatalf("Publish: %v", err)
+			}
+			if res.Generation != 1 || res.Unchanged {
+				t.Errorf("result %+v, want generation 1", res)
+			}
+			got, err := manifest.Load(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Images) != 1 || got.Images[0].Generation != 1 || got.Images[0].State != "TRYING" || got.Images[0].Cmdline != cmdline || got.NextGeneration != 2 {
+				t.Errorf("manifest %+v", got)
+			}
+			if fw != "uefi" {
+				e, err := grubenv.Read(filepath.Join(bootStorageDir, "grub", "grubenv"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if v, _ := e.Get("VINTNER_ORDER"); v != "1" {
+					t.Errorf("VINTNER_ORDER=%q", v)
+				}
+				if v, _ := e.Get("VINTNER_T_1"); v != "xxx" {
+					t.Errorf("VINTNER_T_1=%q", v)
+				}
+				if v, _ := e.Get("VINTNER_T_RA"); v != "xxx" {
+					t.Errorf("recovery A tries were disturbed: %q", v)
+				}
+			}
+		})
+	}
+}

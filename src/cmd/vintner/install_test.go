@@ -13,12 +13,14 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/gpt"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/gpt/gpttest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/install"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/publish/publishtest"
 )
 
 func installDisk(t *testing.T, withBootStorage bool) string {
@@ -114,52 +116,86 @@ func TestInstallUsage(t *testing.T) {
 		t.Errorf("no --disk: rc %d", rc)
 	}
 	errb.Reset()
-	if rc := runInstall([]string{"--disk", "x", "--firmware", "both"}, &out, &errb); rc != 2 || !strings.Contains(errb.String(), "not implemented") {
-		t.Errorf("without --check: rc %d, stderr %q", rc, errb.String())
+	if rc := runInstall([]string{"--disk", "x"}, &out, &errb); rc != 2 {
+		t.Errorf("no --firmware: rc %d, stderr %q", rc, errb.String())
 	}
 }
 
-type cmdFakeUKI struct{}
+// noStock reports that no stock loader package is installed.
+type noStock struct{}
 
-func (cmdFakeUKI) Build(_ context.Context, r publish.UKIRequest) error {
-	return os.WriteFile(r.OutputPath, []byte("UKI"), 0o644)
+func (noStock) Run(context.Context, string, ...string) ([]byte, error) {
+	return []byte("dpkg-query: no packages found"), os.ErrNotExist
 }
 
-func TestInstallDeployOnly(t *testing.T) {
-	installTestHook = func(o *install.Options) { o.UKI = cmdFakeUKI{} }
+func installTarget(t *testing.T) string {
+	t.Helper()
+	target := t.TempDir()
+	os.MkdirAll(filepath.Join(target, "etc", "apt", "apt.conf.d"), 0o755)
+	os.MkdirAll(filepath.Join(target, "usr/lib/systemd/boot/efi"), 0o755)
+	os.MkdirAll(filepath.Join(target, "boot"), 0o755)
+	os.MkdirAll(filepath.Join(target, "lib/modules/6.12.9-amd64"), 0o755)
+	os.WriteFile(filepath.Join(target, "etc/machine-id"), []byte("3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f\n"), 0o644)
+	os.WriteFile(filepath.Join(target, "etc/os-release"), []byte("PRETTY_NAME=\"Debian\"\nID=debian\n"), 0o644)
+	os.WriteFile(filepath.Join(target, "usr/lib/systemd/boot/efi/linuxx64.efi.stub"), []byte("stub"), 0o644)
+	os.WriteFile(filepath.Join(target, "boot/vmlinuz-6.12.9-amd64"), []byte("k"), 0o644)
+	os.WriteFile(filepath.Join(target, "boot/initrd.img-6.12.9-amd64"), []byte("i"), 0o644)
+	os.WriteFile(filepath.Join(target, "lib/modules/6.12.9-amd64/modules.dep"), []byte("#"), 0o644)
+	return target
+}
+
+func installHook(lock string) func(*install.FullOptions) {
+	return func(o *install.FullOptions) {
+		o.UKI = publishtest.UKIBuilder{}
+		o.Runner = noStock{}
+		o.Publish = publish.Options{
+			LockFile:         lock,
+			PackageQuery:     publishtest.PackageQuery{Pkg: "linux-image-6.12.9-amd64", Ver: "6.12.9-1"},
+			UKIBuilder:       publishtest.UKIBuilder{},
+			DiskSpaceChecker: publishtest.DiskChecker{Free: 100 << 20},
+			Clock:            publishtest.Clock{T: time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)},
+		}
+	}
+}
+
+func TestInstallFull(t *testing.T) {
+	bs := t.TempDir()
+	installTestHook = installHook(filepath.Join(bs, "publish.lock"))
 	defer func() { installTestHook = nil }()
-	target, esp, bs := t.TempDir(), t.TempDir(), t.TempDir()
-	os.MkdirAll(filepath.Join(target, "etc"), 0o755)
-	os.WriteFile(filepath.Join(target, "etc", "machine-id"), []byte("3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f\n"), 0o644)
-	args := []string{"--deploy-only", "--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
+	target, esp := installTarget(t), t.TempDir()
+	args := []string{"--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
 		"--target", target, "--esp", esp, "--boot-storage", bs}
 
 	var out, errb bytes.Buffer
 	if rc := runInstall(args, &out, &errb); rc != 0 {
-		t.Fatalf("rc %d, stderr %q", rc, errb.String())
+		t.Fatalf("rc %d, stderr %q, stdout %q", rc, errb.String(), out.String())
 	}
-	for _, p := range []string{filepath.Join(esp, "EFI/vintner/systemd-bootx64.efi"), filepath.Join(bs, "vintner/state/manifest-a"), filepath.Join(bs, "EFI/Linux/vintner-recovery-b.efi")} {
+	for _, p := range []string{filepath.Join(esp, "EFI/vintner/systemd-bootx64.efi"), filepath.Join(esp, "EFI/BOOT/BOOTX64.EFI"), filepath.Join(bs, "EFI/Linux/vintner-os-1+3-0.efi"), filepath.Join(bs, "EFI/Linux/vintner-recovery-b.efi")} {
 		if _, err := os.Stat(p); err != nil {
 			t.Errorf("missing %s", p)
 		}
 	}
-	if !strings.Contains(out.String(), "not done yet: publishing generation 1") {
+	if !strings.Contains(out.String(), "generation 1 is TRYING") {
 		t.Errorf("stdout %q", out.String())
 	}
 
-	// A second run replaces a deployment that published nothing.
+	// A second run finds an installed system and changes nothing.
 	out.Reset()
 	errb.Reset()
-	if rc := runInstall(args, &out, &errb); rc != 0 || !strings.Contains(out.String(), "earlier deployment that published nothing is replaced") {
-		t.Errorf("second run: rc %d, stdout %q, stderr %q", rc, out.String(), errb.String())
+	if rc := runInstall(args, &out, &errb); rc != 1 || !strings.Contains(errb.String(), "installed system") {
+		t.Errorf("second run: rc %d, stderr %q", rc, errb.String())
 	}
 }
 
-func TestInstallDeployOnlyReportsAFailure(t *testing.T) {
-	target := t.TempDir() // no /etc/machine-id
+func TestInstallReportsAFailure(t *testing.T) {
+	bs := t.TempDir()
+	installTestHook = installHook(filepath.Join(bs, "publish.lock"))
+	defer func() { installTestHook = nil }()
+	target := installTarget(t)
+	os.Remove(filepath.Join(target, "etc/machine-id"))
 	var out, errb bytes.Buffer
-	rc := runInstall([]string{"--deploy-only", "--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
-		"--target", target, "--esp", t.TempDir(), "--boot-storage", t.TempDir()}, &out, &errb)
+	rc := runInstall([]string{"--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
+		"--target", target, "--esp", t.TempDir(), "--boot-storage", bs}, &out, &errb)
 	if rc != 1 || !strings.Contains(errb.String(), "machine-id") || !strings.Contains(errb.String(), "everything that was changed") {
 		t.Errorf("rc %d, stderr %q", rc, errb.String())
 	}
