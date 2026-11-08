@@ -62,4 +62,14 @@ Licences: the payloads are unmodified Debian files and keep their upstream licen
 
 ## Checks
 - `debian-package` (lint workflow): build in a Debian 13 container, `lintian --fail-on error`. Overrides are in `debian/vintner-core.lintian-overrides` with their reasons.
+- `build-debs` (`qemu-tests.yml`): the same build, for the QEMU rows to install from; see the last section.
 - `package-install` (lint workflow, `ci/package/install-test.sh`): debootstrap a trixie chroot, install `vintner-core` before and after `plymouth`, check the files and masks, remove, purge, the `Conflicts`, and that `vintner-platform` is inert and its `MANIFEST` verifies.
+
+## The QEMU rows install from the packages (WO-0010 2.5)
+`ci/lib/vintner-base.sh`, which builds the guest every row starts from, no longer copies the binary, the unit, the masks and `install.conf` into the guest by hand. It installs `vintner-core` with `apt-get install /root/vintner-core.deb` in a chroot of the mounted guest root, so the binary, both hooks, the Plymouth hook, the enabled unit, the masks and `/etc/kernel/install.conf` come from the package, and `systemd-ukify` and `sbsigntool` from the Debian archive through its `Depends`. The binary the host side of the rows runs (`$OUT/vintner`) is extracted from the same `.deb`. `ci/candidate-fallback` and `ci/graphics` no longer copy the hooks, the binary or the theme either.
+
+Where the packages come from:
+- **CI:** the `build-debs` job of `qemu-tests.yml` builds them in a `debian:trixie` container once and hands them to every row as the artifact `vintner-debs`, through `VINTNER_DEBS`.
+- **Locally:** `ci/local/run-all.sh` runs `ci/package/build-debs.sh` once before the qemu rows and sets `VINTNER_DEBS`. A row run by hand builds them itself into `ci/out/vintner-debs` when they are missing or were built from another tree (`SOURCE_TREE`); that needs a Debian 13 host with the build dependencies, otherwise it stops and says so.
+
+Still by hand: `ci/integration/uefi-bless` and `ci/integration/bios-bless` (they do not use `vintner-base.sh`), and `/etc/plymouth/plymouthd.conf` in `ci/graphics` until `vintner install --plymouth-theme` exists (WO-0010 3.2).

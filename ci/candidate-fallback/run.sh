@@ -58,7 +58,7 @@ trap cleanup EXIT
 # shellcheck source=ci/lib/vintner-qemu.sh
 . ci/lib/vintner-qemu.sh
 
-VINTNER_BIN="$OUT/vintner"
+VINTNER_BIN="$OUT/vintner" # the binary of the vintner-core package, extracted by vintner-base.sh
 
 # read_disk <disk> <name>: one host read of boot storage (§3), saved as $OUT/<name>.json and listings.
 read_disk() {
@@ -70,10 +70,6 @@ read_disk() {
 		--out-prefix "$OUT/$2"
 }
 
-if [ ! -f "$VINTNER_BIN" ]; then
-	echo "Building static vintner binary on host..."
-	(cd src && CGO_ENABLED=0 go build -o "../$VINTNER_BIN" ./cmd/vintner)
-fi
 
 # --- 2. Prepare golden test disk (Setup §2) ----------------------------------
 echo "=================================================================="
@@ -100,28 +96,6 @@ if ! grep -q "=== OP EXIT: 0 ===" "$OUT/prep-install.log"; then
 	tr -d '\r' < "$OUT/prep-install.log" | tail -n 40 >&2
 	exit 1
 fi
-
-# 2b. Copy the two hooks to guest root
-echo "Copying hooks and updated vintner binary to guest root..."
-echo "Block devices on host before losetup (prep hooks):"
-lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS
-LOOP=$(sudo losetup -P -f --show "$PREP_RAW")
-sudo mount "${LOOP}p1" "$MNT"
-
-sudo cp "$VINTNER_BIN" "$MNT/usr/sbin/vintner"
-sudo chmod 0755 "$MNT/usr/sbin/vintner"
-sudo ln -sf /usr/sbin/vintner "$MNT/usr/bin/vintner"
-
-sudo cp "integration/kernel-hooks/zz-vintner" "$MNT/etc/kernel/postinst.d/zz-vintner"
-sudo chmod 0755 "$MNT/etc/kernel/postinst.d/zz-vintner"
-
-sudo mkdir -p "$MNT/etc/initramfs/post-update.d"
-sudo cp "integration/initramfs-hooks/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
-sudo chmod 0755 "$MNT/etc/initramfs/post-update.d/zz-vintner"
-
-sudo umount "$MNT"
-sudo losetup -d "$LOOP"
-LOOP=""
 
 # 2c. Boot once so that os-1 is blessed GOOD
 echo "Booting preparation step 2: boot once to bless os-1..."
