@@ -6,6 +6,7 @@ This directory contains the tools and instructions for verifying how real PC fir
 
 - `ci/hardware/make-usb.sh`: Generates bootable USB disk images (`uefi.img` and `bios.img`), safely writes them to USB media, and inspects results afterwards.
 - `ci/hardware/README.md`: Instructions for human testers, test procedures, and results tables.
+- `ci/hardware/vbox-dry-run.sh`: Boots either image once in VirtualBox from WSL and checks B1 to B4 (plain boot only) by reading the disk back.
 
 ## Generated Images
 
@@ -100,7 +101,9 @@ ci/hardware/make-usb.sh inspect bios /dev/sdX
 
 ## Virtual-machine dry runs
 
-These runs check the images and the procedure. They are not real-hardware results: QEMU's OVMF and SeaBIOS are already covered by CI, and VirtualBox's BIOS is one more firmware implementation, still virtual.
+These runs check the images and the procedure. They are not real-hardware results: QEMU's OVMF and SeaBIOS are already covered by CI, and VirtualBox's firmware is one more implementation, still virtual.
+
+On the Windows workstation, `ci/hardware/vbox-dry-run.sh <uefi|bios>` runs B1 to B4 in VirtualBox from WSL and reads the disk back afterwards. See [docs/local-testing.md](../../docs/local-testing.md#virtualbox-dry-runs-of-the-hardware-images). The B1 and B2 rows below cover only the plain boot: the script does not press keys.
 
 | ID | Machine (Make, Model, Firmware Version) | Boot Mode | Steps Taken | Observed Behavior & Evidence | Status |
 |---|---|---|---|---|---|
@@ -110,6 +113,8 @@ These runs check the images and the procedure. They are not real-hardware result
 | B4 | QEMU (SeaBIOS `1.16.3`) | BIOS / Legacy | Inspected `grubenv` after 1 plain boot | `VINTNER_BOOTED=2`, `VINTNER_T_2=xx`, `VINTNER_T_1=xxx`, `VINTNER_T_RA=xxx`. Proves `save_env` written via INT 13h. | PASS |
 | B3 | VirtualBox 7.2.20 (Oracle VM VirtualBox BIOS) | BIOS / Legacy | Plain boot in VirtualBox BIOS VM | GRUB booted `os-2`, screen displayed `VINTNER REAL-HARDWARE TEST BOOTED id=os-2`, auto-powered off after 30s. | PASS |
 | B4 | VirtualBox 7.2.20 (Oracle VM VirtualBox BIOS) | BIOS / Legacy | Inspected cloned medium `grubenv` | `VINTNER_BOOTED=2`, `VINTNER_T_2=xx`, `VINTNER_T_1=xxx`, `VINTNER_T_RA=xxx`. BIOS disk write verified. | PASS |
+| B1 | VirtualBox 7.2.20 (EFI firmware, `--firmware efi64`) | UEFI (SB Off) | `vbox-dry-run.sh uefi`: plain boot, headless | Serial `VINTNER-TEST-BOOTED id=os-2`; no menu, no key pressed. | PASS |
+| B2 | VirtualBox 7.2.20 (EFI firmware, `--firmware efi64`) | UEFI (SB Off) | Inspected cloned medium after 1 plain boot | `::/EFI/Linux/` lists `vintner-os-2+2-1.efi`, `vintner-os-1.efi`, `vintner-recovery-a+3.efi`, `vintner-recovery-b.efi`. VirtualBox's EFI FAT write verified. | PASS |
 
 ## Real-hardware results
 

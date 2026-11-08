@@ -109,7 +109,9 @@ ACCEL=tcg
 QEMU=(qemu-system-x86_64 -machine "q35,accel=$ACCEL" -m 512 -nodefaults -display none
 	-serial "file:$OUT/log" -no-reboot -drive "file=$IMG,format=raw,if=virtio")
 
-get_env() { mcopy -o -i "$BS" ::/grub/grubenv "$OUT/env"; }
+# -n: overwrite the host copy without asking (-o covers only names in the image);
+# with a terminal attached, mcopy would otherwise stop at a prompt.
+get_env() { mcopy -n -i "$BS" ::/grub/grubenv "$OUT/env"; }
 put_env() { mcopy -o -i "$BS" "$OUT/env" ::/grub/grubenv; }
 vars() { get_env; editenv "$OUT/env" list 2>/dev/null | grep '^VINTNER_' | LC_ALL=C sort | paste -sd ';'; }
 set_env() { editenv "$OUT/env" create; editenv "$OUT/env" set "$@"; put_env; }

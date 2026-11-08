@@ -6,3 +6,4 @@ Status: architecture baseline, no code yet.
 
 - [Architecture and implementation plan](docs/architecture.md)
 - [Architecture decision records](docs/adr/)
+- [Local testing (WSL2, QEMU, VirtualBox)](docs/local-testing.md)
