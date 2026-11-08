@@ -75,7 +75,7 @@ These checks belong to 3.2; this file is the list they implement.
 | L3 | boot storage is not FAT32 (so also: encrypted, LVM, md or blank) |
 | L4 | boot storage is under 1 GiB |
 | L5 | UEFI or both, and there is no single ESP (or `--esp-partuuid`), or it is not FAT or under 2 MiB |
-| L6 | BIOS or both, and there is no BIOS Boot Partition of at least 1 MiB |
+| L6 | BIOS or both, and there is no BIOS Boot Partition of at least 1 MiB, or the disk has 4096-byte sectors (the GRUB embedding is written in 512-byte sectors) |
 | L7 | the root is not on this disk, is the boot storage, is not ext4 on a plain partition, or is ambiguous (name it with `--root-partuuid`) |
 
 It also verifies the payload directory (`/usr/lib/vintner/payloads`, or `--payload-dir`) against its `MANIFEST`: a file that differs, is missing or is not listed, or a file a deployment needs that is absent, refuses. It reads the partition table, the FAT boot sectors and the ext4 superblock itself, so it needs no mounts. Deploying (3.2) comes next; without `--check` the command says so and exits 2.

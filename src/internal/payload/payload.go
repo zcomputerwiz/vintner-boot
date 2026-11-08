@@ -32,6 +32,7 @@ const (
 	CoreModules  = "bios/core-modules.txt"
 	RecoveryKern = "recovery/vmlinuz"
 	RecoveryInit = "recovery/initrd.img"
+	RecoveryVer  = "recovery/version"
 )
 
 // Required lists the files a payload directory must hold (the MANIFEST and
@@ -39,7 +40,7 @@ const (
 var Required = []string{
 	SystemdBoot, Stub, LoaderConf,
 	GrubDir + "/boot.img", GrubDir + "/diskboot.img", GrubDir + "/kernel.img", GrubDir + "/lzma_decompress.img", GrubDir + "/moddep.lst",
-	GrubCfg, CoreModules, RecoveryKern, RecoveryInit,
+	GrubCfg, CoreModules, RecoveryKern, RecoveryInit, RecoveryVer,
 }
 
 // Payload is a verified payload directory.

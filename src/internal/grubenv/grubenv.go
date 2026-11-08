@@ -187,3 +187,27 @@ func Write(path string, e *Env) error {
 
 	return f.Sync()
 }
+
+// Create writes a new environment block to path, which must not exist yet, the
+// way grub-editenv create does: a block of exactly 1024 bytes. Write then
+// updates it in place.
+func Create(path string, e *Env) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(bytes.Repeat([]byte{'#'}, blockSize)); err != nil {
+		f.Close()
+		os.Remove(path)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return err
+	}
+	if err := Write(path, e); err != nil {
+		os.Remove(path)
+		return err
+	}
+	return nil
+}

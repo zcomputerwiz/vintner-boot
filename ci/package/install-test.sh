@@ -197,7 +197,7 @@ else
 	record "D-install" FAIL "see d-platform.log"
 fi
 check "D-payload-files" "systemd-boot, stub, loader.conf, boot.img, modules, grub.cfg, recovery kernel and initramfs are in place" \
-	sudo bash -c "cd '$D/usr/lib/vintner/payloads' && test -s uefi/systemd-bootx64.efi && test -s uefi/linuxx64.efi.stub && test -s uefi/loader.conf && test -s bios/i386-pc/boot.img && test -s bios/i386-pc/kernel.img && test -s bios/i386-pc/moddep.lst && test -s bios/grub.cfg && test -s bios/core-modules.txt && test -s recovery/vmlinuz && test -s recovery/initrd.img && test -s VERSIONS"
+	sudo bash -c "cd '$D/usr/lib/vintner/payloads' && test -s uefi/systemd-bootx64.efi && test -s uefi/linuxx64.efi.stub && test -s uefi/loader.conf && test -s bios/i386-pc/boot.img && test -s bios/i386-pc/kernel.img && test -s bios/i386-pc/moddep.lst && test -s bios/grub.cfg && test -s bios/core-modules.txt && test -s recovery/vmlinuz && test -s recovery/initrd.img && test -s recovery/version && test -s VERSIONS"
 check "D-core-modules-present" "every module in core-modules.txt exists in the shipped i386-pc directory" \
 	sudo bash -c "cd '$D/usr/lib/vintner/payloads/bios' && for m in \$(cat core-modules.txt); do test -s i386-pc/\$m.mod || exit 1; done"
 check "D-manifest" "MANIFEST lists every payload file and sha256sum -c passes" \

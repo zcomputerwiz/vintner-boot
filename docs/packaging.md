@@ -46,7 +46,7 @@ Everything is under `/usr/lib/vintner/payloads/`. The package has **no maintaine
 | `uefi/loader.conf` | `firmware/uefi/loader.conf` | `\loader\loader.conf` |
 | `bios/i386-pc/` | `grub-pc-bin` (Build-Depends) | what `grub-mkimage -d` reads: `boot.img`, `kernel.img`, `diskboot.img`, `lzma_decompress.img`, `moddep.lst` and every module. None of GRUB's own programs is shipped, and the modules are not stripped (GRUB reads their symbol tables; `debian/vintner-platform.lintian-overrides`) |
 | `bios/grub.cfg`, `bios/core-modules.txt` | `firmware/bios/` | the static configuration and the modules `core.img` is built with |
-| `recovery/vmlinuz`, `recovery/initrd.img`, `recovery/versions.txt` | `recovery/build.sh --no-uki` | the recovery kernel and initramfs |
+| `recovery/vmlinuz`, `recovery/initrd.img`, `recovery/versions.txt`, `recovery/version` | `recovery/build.sh --no-uki` | the recovery kernel and initramfs, the package versions they came from, and the recovery version string that `vintner install` records in the manifest |
 | `VERSIONS` | | package versions of the two Debian sources and of the recovery packages |
 | `MANIFEST` | | `sha256sum` of every other file; what "deploy and verify" checks against |
 
@@ -56,7 +56,7 @@ Three things are deliberately not shipped:
 - **shim.** It belongs to WO-0010 Phase 5 (Secure Boot completion), which takes it from the pinned `shim-signed` `.deb`.
 
 ### Where the payload files come from, and what that costs
-The build needs `systemd-boot-efi` and `grub-pc-bin` installed, and takes the files from them. The recovery kernel and initramfs come from `recovery/build.sh`, which **downloads** the Debian trixie packages it unpacks from `deb.debian.org`. That is a network access during the build, which Debian's own build daemons do not allow; it is acceptable here because this is not an archive package, and the alternative, Build-Depends on a kernel, busybox, cryptsetup, lvm2 and mdadm, would install the same trixie packages from the same archive. Set `VINTNER_RECOVERY_DIR` to a directory that already holds `vmlinuz`, `initrd.img` and `versions.txt` to build offline. The recovery initramfs holds the same static `vintner` as `vintner-core`, built from the same tree.
+The build needs `systemd-boot-efi` and `grub-pc-bin` installed, and takes the files from them. The recovery kernel and initramfs come from `recovery/build.sh`, which **downloads** the Debian trixie packages it unpacks from `deb.debian.org`. That is a network access during the build, which Debian's own build daemons do not allow; it is acceptable here because this is not an archive package, and the alternative, Build-Depends on a kernel, busybox, cryptsetup, lvm2 and mdadm, would install the same trixie packages from the same archive. Set `VINTNER_RECOVERY_DIR` to a directory that already holds `vmlinuz`, `initrd.img`, `versions.txt` and `version` to build offline. The recovery initramfs holds the same static `vintner` as `vintner-core`, built from the same tree.
 
 Licences: the payloads are unmodified Debian files and keep their upstream licences (`debian/copyright`); `VERSIONS` names the source packages for the corresponding source.
 

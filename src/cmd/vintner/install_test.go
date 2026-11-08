@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -15,7 +16,9 @@ import (
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/gpt"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/gpt/gpttest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/install"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 )
 
 func installDisk(t *testing.T, withBootStorage bool) string {
@@ -113,5 +116,51 @@ func TestInstallUsage(t *testing.T) {
 	errb.Reset()
 	if rc := runInstall([]string{"--disk", "x", "--firmware", "both"}, &out, &errb); rc != 2 || !strings.Contains(errb.String(), "not implemented") {
 		t.Errorf("without --check: rc %d, stderr %q", rc, errb.String())
+	}
+}
+
+type cmdFakeUKI struct{}
+
+func (cmdFakeUKI) Build(_ context.Context, r publish.UKIRequest) error {
+	return os.WriteFile(r.OutputPath, []byte("UKI"), 0o644)
+}
+
+func TestInstallDeployOnly(t *testing.T) {
+	installTestHook = func(o *install.Options) { o.UKI = cmdFakeUKI{} }
+	defer func() { installTestHook = nil }()
+	target, esp, bs := t.TempDir(), t.TempDir(), t.TempDir()
+	os.MkdirAll(filepath.Join(target, "etc"), 0o755)
+	os.WriteFile(filepath.Join(target, "etc", "machine-id"), []byte("3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f\n"), 0o644)
+	args := []string{"--deploy-only", "--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
+		"--target", target, "--esp", esp, "--boot-storage", bs}
+
+	var out, errb bytes.Buffer
+	if rc := runInstall(args, &out, &errb); rc != 0 {
+		t.Fatalf("rc %d, stderr %q", rc, errb.String())
+	}
+	for _, p := range []string{filepath.Join(esp, "EFI/vintner/systemd-bootx64.efi"), filepath.Join(bs, "vintner/state/manifest-a"), filepath.Join(bs, "EFI/Linux/vintner-recovery-b.efi")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("missing %s", p)
+		}
+	}
+	if !strings.Contains(out.String(), "not done yet: publishing generation 1") {
+		t.Errorf("stdout %q", out.String())
+	}
+
+	// A second run finds an installed system and changes nothing more.
+	out.Reset()
+	errb.Reset()
+	if rc := runInstall(args, &out, &errb); rc != 1 || !strings.Contains(errb.String(), "installed system") {
+		t.Errorf("second run: rc %d, stderr %q", rc, errb.String())
+	}
+}
+
+func TestInstallDeployOnlyReportsAFailure(t *testing.T) {
+	target := t.TempDir() // no /etc/machine-id
+	var out, errb bytes.Buffer
+	rc := runInstall([]string{"--deploy-only", "--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
+		"--target", target, "--esp", t.TempDir(), "--boot-storage", t.TempDir()}, &out, &errb)
+	if rc != 1 || !strings.Contains(errb.String(), "machine-id") || !strings.Contains(errb.String(), "stock boot path") {
+		t.Errorf("rc %d, stderr %q", rc, errb.String())
 	}
 }
