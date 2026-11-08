@@ -23,3 +23,8 @@ override_dh_auto_clean:
 # A static Go binary: nothing for dwz or the strip step to do.
 override_dh_dwz:
 override_dh_strip:
+
+# vintner-bless.service blesses the boot that just finished; starting it from
+# the postinst would bless nothing real. It is enabled and runs at boot.
+override_dh_installsystemd:
+	dh_installsystemd --no-start --no-restart-after-upgrade

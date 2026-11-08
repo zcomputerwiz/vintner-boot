@@ -1,0 +1,166 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Installs the built vintner packages into a Debian 13 (trixie) chroot and checks
+# what WO-0010 2.1 to 2.3 promise:
+#   - vintner-core installs before and after plymouth with no dpkg prompt or error,
+#     and never changes plymouth's /etc/plymouth/plymouthd.conf;
+#   - the binary, hooks, unit, masks and /etc/kernel/install.conf are in place;
+#   - removing the package takes the masks, hooks and unit away; purging removes
+#     the conffiles;
+#   - vintner-platform cannot be installed beside a stock loader package.
+# Needs: root (sudo), debootstrap, network access to a Debian mirror.
+# Usage: ci/package/install-test.sh DIR   (DIR holds vintner-core_*.deb and vintner-platform_*.deb)
+# shellcheck disable=SC2016 # dpkg-query expands ${Status}, not the shell
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+
+DEBS=${1:?usage: $0 DIR-with-debs}
+DEBS=$(cd "$DEBS" && pwd)
+OUT=${OUT:-ci/out/package}
+MIRROR=${MIRROR:-https://deb.debian.org/debian}
+mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)
+BASE=$OUT/base
+FAILS=0
+RESULTS=$OUT/results.tsv
+printf 'check\tresult\tevidence\n' > "$RESULTS"
+
+cleanup() {
+	for d in "$OUT"/work/*; do
+		[ -d "$d" ] || continue
+		sudo umount "$d/proc" 2>/dev/null || true
+	done
+	sudo rm -rf "$OUT/work"
+}
+trap cleanup EXIT
+
+record() { # name PASS|FAIL evidence
+	printf '%s\t%s\t%s\n' "$1" "$2" "$3" | tee -a "$RESULTS"
+	[ "$2" = PASS ] || FAILS=$((FAILS + 1))
+}
+check() { # name evidence command...
+	local name=$1 ev=$2
+	shift 2
+	if "$@" >/dev/null 2>&1; then record "$name" PASS "$ev"; else record "$name" FAIL "$ev"; fi
+}
+
+# A trixie base, built once and copied per scenario.
+if [ ! -f "$BASE/.done" ]; then
+	sudo rm -rf "$BASE"
+	sudo debootstrap --variant=minbase --include=ca-certificates trixie "$BASE" "$MIRROR" >&2
+	sudo touch "$BASE/.done"
+fi
+
+scenario() { # name -> prints the chroot directory
+	local d=$OUT/work/$1
+	sudo rm -rf "$d"
+	sudo mkdir -p "$OUT/work"
+	sudo cp -a "$BASE" "$d"
+	sudo mount -t proc proc "$d/proc"
+	sudo cp "$DEBS"/vintner-*.deb "$d/root/"
+	echo "$d"
+}
+in_chroot() { # dir command...
+	local d=$1
+	shift
+	sudo chroot "$d" env DEBIAN_FRONTEND=noninteractive LC_ALL=C "$@"
+}
+apt_install() { in_chroot "$1" apt-get install -y --no-install-recommends "${@:2}" 2>&1; }
+
+cores=("$DEBS"/vintner-core_*.deb)
+platforms=("$DEBS"/vintner-platform_*.deb)
+core_deb=${cores[0]##*/}
+platform_deb=${platforms[0]##*/}
+
+check "arch" "vintner-core is Architecture: amd64" \
+	test "$(dpkg-deb -f "$DEBS/$core_deb" Architecture)" = amd64
+check "depends-ukify" "vintner-core Depends: systemd-ukify" \
+	bash -c "dpkg-deb -f '$DEBS/$core_deb' Depends | grep -q systemd-ukify"
+check "no-plymouthd-conf" "vintner-core does not ship /etc/plymouth/plymouthd.conf" \
+	bash -c "! dpkg-deb -c '$DEBS/$core_deb' | grep -q 'etc/plymouth/plymouthd.conf'"
+
+# --- A: plymouth first, then vintner-core -----------------------------------
+D=$(scenario plymouth-first)
+apt_install "$D" plymouth > "$OUT/a-plymouth.log"
+sum_before=$(in_chroot "$D" md5sum /etc/plymouth/plymouthd.conf)
+apt_install "$D" "/root/$core_deb" > "$OUT/a-core.log" || true
+if grep -qi 'Configuration file\|dpkg: error\|^E:' "$OUT/a-core.log"; then
+	record "A-plymouth-then-core" FAIL "prompt or error, see a-core.log"
+elif [ "$(in_chroot "$D" dpkg-query -W -f '${Status}' vintner-core)" != "install ok installed" ]; then
+	record "A-plymouth-then-core" FAIL "vintner-core not installed"
+else
+	record "A-plymouth-then-core" PASS "installed with no conffile prompt or error"
+fi
+check "A-plymouthd-conf-untouched" "plymouthd.conf is still plymouth's, byte for byte" \
+	test "$(in_chroot "$D" md5sum /etc/plymouth/plymouthd.conf)" = "$sum_before"
+
+# Files, masks, owner.
+check "files" "/usr/sbin/vintner, both hooks, the Plymouth hook, the unit" \
+	sudo bash -c "cd '$D' && test -x usr/sbin/vintner && test -x etc/kernel/postinst.d/zz-vintner && test -x etc/initramfs/post-update.d/zz-vintner && test -x usr/share/initramfs-tools/hooks/plymouth-vintner && test -f usr/lib/systemd/system/vintner-bless.service"
+check "install-conf" "/etc/kernel/install.conf is layout=other and owned by vintner-core" \
+	bash -c "test \"\$(sudo cat '$D/etc/kernel/install.conf')\" = layout=other && sudo chroot '$D' dpkg -S /etc/kernel/install.conf | grep -q '^vintner-core:'"
+check "mask-bless-boot" "systemd-bless-boot.service is masked (/dev/null)" \
+	test "$(sudo readlink "$D/etc/systemd/system/systemd-bless-boot.service")" = /dev/null
+check "mask-boot-update" "systemd-boot-update.service is masked (/dev/null)" \
+	test "$(sudo readlink "$D/etc/systemd/system/systemd-boot-update.service")" = /dev/null
+check "unit-enabled" "vintner-bless.service is enabled for basic.target" \
+	sudo test -L "$D/etc/systemd/system/basic.target.wants/vintner-bless.service"
+check "binary-static" "usr/sbin/vintner is a static executable" \
+	bash -c "sudo chroot '$D' sh -c 'ldd /usr/sbin/vintner 2>&1' | grep -qi 'not a dynamic'"
+
+# An administrator edit of plymouthd.conf (what vintner install does, 3.2) survives
+# a reinstall of plymouth.
+in_chroot "$D" sh -c 'printf "[Daemon]\nTheme=vintner-bgrt\nShowDelay=0\nDeviceTimeout=8\n" > /etc/plymouth/plymouthd.conf'
+in_chroot "$D" apt-get install -y --reinstall plymouth > "$OUT/a-reinstall.log" 2>&1 || true
+check "A-edit-survives-reinstall" "an edited plymouthd.conf survives a reinstall of plymouth, with no prompt" \
+	bash -c "! grep -qi 'Configuration file' '$OUT/a-reinstall.log' && grep -q 'Theme=vintner-bgrt' '$D/etc/plymouth/plymouthd.conf'"
+
+# Remove: masks, hooks, unit go; conffiles stay until purge.
+in_chroot "$D" dpkg --remove vintner-core > "$OUT/a-remove.log" 2>&1 || true
+check "remove-masks" "removing vintner-core removes both masks, the unit and the binary" \
+	bash -c "sudo test ! -L '$D/etc/systemd/system/systemd-bless-boot.service' && sudo test ! -L '$D/etc/systemd/system/systemd-boot-update.service' && sudo test ! -e '$D/usr/lib/systemd/system/vintner-bless.service' && sudo test ! -e '$D/usr/sbin/vintner'"
+check "remove-keeps-conffiles" "remove leaves the conffiles (hooks, install.conf) for purge" \
+	sudo test -f "$D/etc/kernel/install.conf"
+in_chroot "$D" dpkg --purge vintner-core > "$OUT/a-purge.log" 2>&1 || true
+check "purge-conffiles" "purge removes the hooks and install.conf" \
+	bash -c "sudo test ! -e '$D/etc/kernel/install.conf' && sudo test ! -e '$D/etc/kernel/postinst.d/zz-vintner' && sudo test ! -e '$D/etc/initramfs/post-update.d/zz-vintner'"
+check "purge-leaves-plymouth" "plymouth and its conffile are intact after the purge" \
+	bash -c "sudo test -f '$D/etc/plymouth/plymouthd.conf' && sudo chroot '$D' dpkg-query -W -f '\${Status}' plymouth | grep -q 'install ok installed'"
+sudo umount "$D/proc"
+
+# --- B: vintner-core first, then plymouth -----------------------------------
+D=$(scenario core-first)
+apt_install "$D" "/root/$core_deb" > "$OUT/b-core.log" || true
+apt_install "$D" plymouth > "$OUT/b-plymouth.log" || true
+if grep -qi 'Configuration file\|dpkg: error\|^E:' "$OUT/b-core.log" "$OUT/b-plymouth.log"; then
+	record "B-core-then-plymouth" FAIL "prompt or error, see b-core.log and b-plymouth.log"
+elif [ "$(in_chroot "$D" dpkg-query -W -f '${Status}' plymouth)" != "install ok installed" ]; then
+	record "B-core-then-plymouth" FAIL "plymouth not installed"
+else
+	record "B-core-then-plymouth" PASS "plymouth installed after vintner-core with no prompt or error"
+fi
+check "B-plymouthd-conf-is-plymouths" "plymouthd.conf is plymouth's own after installing it second" \
+	bash -c "sudo chroot '$D' dpkg -V plymouth | grep -q plymouthd.conf && exit 1 || exit 0"
+sudo umount "$D/proc"
+
+# --- C: vintner-platform conflicts with the stock loaders -------------------
+D=$(scenario platform-conflicts)
+apt_install "$D" "/root/$core_deb" "/root/$platform_deb" > "$OUT/c-platform.log" || true
+for pkg in systemd-boot grub-pc grub-efi-amd64 shim-signed; do
+	# apt resolves a Conflicts by removing the installed package, so the two
+	# cannot stay together: the simulation must remove vintner-platform.
+	in_chroot "$D" apt-get install -s "$pkg" > "$OUT/c-$pkg.log" 2>&1 || true
+	if grep -q '^Remv vintner-platform' "$OUT/c-$pkg.log"; then
+		record "C-conflicts-$pkg" PASS "installing $pkg would remove vintner-platform"
+	else
+		record "C-conflicts-$pkg" FAIL "$pkg can be installed beside vintner-platform, see c-$pkg.log"
+	fi
+done
+sudo umount "$D/proc"
+
+echo
+if [ "$FAILS" -ne 0 ]; then
+	echo "FAIL: $FAILS check(s) failed, see $RESULTS" >&2
+	exit 1
+fi
+echo "all package checks passed ($RESULTS)"
