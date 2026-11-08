@@ -1,0 +1,2 @@
+dev/null etc/systemd/system/systemd-bless-boot.service
+dev/null etc/systemd/system/systemd-boot-update.service

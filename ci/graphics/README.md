@@ -10,7 +10,7 @@ This directory implements the test harness, asset validation, and full QEMU gues
    - **S2:** Unpacks PNG binary IHDR chunk headers via Python `struct.unpack`, confirming the PNG signature and exact whole `WxH` pixel dimensions, bit depth (8-bit), and colour type (6, RGBA) for all 44 loaded theme assets against the specification table.
    - **S3:** Asserts that zero unlisted PNG files exist in `graphics/plymouth-theme/`.
    - **S4:** Executes `grub-script-check` on `firmware/bios/grub.cfg`, validating syntax and asserting video driver loading (`insmod all_video`) and graphics mode initialization (`set gfxmode=auto`) prior to `linux`.
-   - **S5:** Validates `debian/vintner-core.install` mappings for theme assets and `plymouthd.conf`, verifying that all referenced source paths exist.
+   - **S5:** Validates `debian/vintner-core.install`: theme assets and the Plymouth initramfs hook are mapped, `plymouthd.conf` is not shipped (Debian's `plymouth` owns it), and all referenced source paths exist.
    - **S6:** Validates executable bit mode `100755` in git, `#!/bin/sh` shebang, and `sh -n` shell syntax for `integration/initramfs-hooks/plymouth-vintner`.
 
 2. **Kernel Splash Defaults, Test-Only Options & Installer Ownership:**

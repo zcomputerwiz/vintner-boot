@@ -1,3 +1,8 @@
+debian/build/vintner usr/sbin/
+integration/kernel-hooks/zz-vintner etc/kernel/postinst.d/
+integration/initramfs-hooks/zz-vintner etc/initramfs/post-update.d/
+integration/initramfs-hooks/plymouth-vintner usr/share/initramfs-tools/hooks/
+integration/kernel-install/install.conf etc/kernel/
+integration/systemd-units/vintner-bless.service usr/lib/systemd/system/
 graphics/plymouth-theme/vintner-bgrt.plymouth usr/share/plymouth/themes/vintner-bgrt/
 graphics/plymouth-theme/*.png usr/share/plymouth/themes/vintner-bgrt/
-integration/plymouth/plymouthd.conf etc/plymouth/

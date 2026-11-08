@@ -2,13 +2,13 @@ Source: vintner-boot
 Section: admin
 Priority: optional
 Maintainer: zcomputerwiz <zcomputerwiz@users.noreply.github.com>
-Build-Depends: debhelper-compat (= 13)
+Build-Depends: debhelper-compat (= 13), golang-go (>= 2:1.24~)
 Standards-Version: 4.7.2
 Rules-Requires-Root: no
 
 Package: vintner-core
-Architecture: all
-Depends: sbsigntool
+Architecture: amd64
+Depends: ${misc:Depends}, sbsigntool, systemd-ukify
 Recommends: plymouth, plymouth-themes
 Description: vintner boot platform - core tools, publisher and health checks
  Common boot metadata schema, manifest validation, state model, CLI and
@@ -18,6 +18,8 @@ Description: vintner boot platform - core tools, publisher and health checks
 
 Package: vintner-platform
 Architecture: all
+Conflicts: systemd-boot, grub-pc, grub-efi-amd64, shim-signed, grub-cloud-amd64,
+ grub-efi-ia32, grub-coreboot, grub-xen, grub-ieee1275, refind
 Description: vintner boot platform - inert boot loader and recovery payloads
  Platform payloads installed under /usr/lib/vintner/payloads/: the
  systemd-boot and shim binaries, the GRUB core image and modules, and the

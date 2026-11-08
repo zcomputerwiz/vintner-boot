@@ -212,8 +212,9 @@ else:
                 check_pass("S4", "GRUB configuration check", "grub-script-check passes; video module loaded and gfxmode set before linux")
 
 # ---------------------------------------------------------------------------
-# S5: debian/vintner-core.install installs theme files and plymouthd.conf to
-#     the paths above, and every source path it names exists.
+# S5: debian/vintner-core.install installs the theme files and the Plymouth
+#     initramfs hook, does NOT install plymouthd.conf (Debian's plymouth owns
+#     it; WO-0010 2.3, D-E), and every source path it names exists.
 # ---------------------------------------------------------------------------
 install_file = Path("debian/vintner-core.install")
 if not install_file.is_file():
@@ -222,6 +223,7 @@ else:
     s5_errors = []
     has_theme_install = False
     has_plymouthd_install = False
+    has_hook_install = False
 
     for line_num, line in enumerate(install_file.read_text(encoding="utf-8").splitlines(), 1):
         line = line.strip()
@@ -234,23 +236,29 @@ else:
 
         src_pattern, dst_dir = parts[0], parts[1]
         matches = glob.glob(src_pattern)
+        if src_pattern.startswith("debian/build/"):
+            continue  # made by debian/rules during the build
         if not matches:
             s5_errors.append(f"Line {line_num}: Source pattern {src_pattern!r} matches no files")
 
         if "usr/share/plymouth/themes/vintner-bgrt" in dst_dir:
             has_theme_install = True
-        if "etc/plymouth" in dst_dir and "plymouthd.conf" in src_pattern:
+        if "etc/plymouth" in dst_dir or "plymouthd.conf" in src_pattern:
             has_plymouthd_install = True
+        if "usr/share/initramfs-tools/hooks" in dst_dir and "plymouth-vintner" in src_pattern:
+            has_hook_install = True
 
     if not has_theme_install:
         s5_errors.append("No rule installing to usr/share/plymouth/themes/vintner-bgrt/")
-    if not has_plymouthd_install:
-        s5_errors.append("No rule installing plymouthd.conf to etc/plymouth/")
+    if has_plymouthd_install:
+        s5_errors.append("A rule installs into etc/plymouth/ or ships plymouthd.conf, which Debian's plymouth owns")
+    if not has_hook_install:
+        s5_errors.append("No rule installing plymouth-vintner to usr/share/initramfs-tools/hooks/")
 
     if s5_errors:
         check_fail("S5", "Debian packaging rules", "; ".join(s5_errors))
     else:
-        check_pass("S5", "Debian packaging rules", "Theme assets and plymouthd.conf correctly mapped and all source files exist")
+        check_pass("S5", "Debian packaging rules", "Theme assets and the initramfs hook mapped, plymouthd.conf not shipped, all source files exist")
 
 # ---------------------------------------------------------------------------
 # S6: The initramfs hook is executable in git, has the right shebang, and sh -n passes.

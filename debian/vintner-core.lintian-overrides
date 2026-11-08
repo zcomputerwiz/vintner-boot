@@ -1,0 +1,10 @@
+# The vintner binary is static on purpose (ADR-0002): it runs from the recovery
+# initramfs and from a chroot with no shared libraries available.
+vintner-core: statically-linked-binary [usr/sbin/vintner]
+# The masks are symlinks to /dev/null for systemd-bless-boot.service and
+# systemd-boot-update.service: the first would remove the boot counter that
+# vintner re-arms, the second runs bootctl update (architecture §5).
+vintner-core: systemd-service-in-odd-location [etc/systemd/system/systemd-bless-boot.service]
+vintner-core: systemd-service-in-odd-location [etc/systemd/system/systemd-boot-update.service]
+# The unit belongs in basic.target: it blesses the boot once boot-complete.target is reached.
+vintner-core: systemd-service-file-refers-to-unusual-wantedby-target basic.target [usr/lib/systemd/system/vintner-bless.service]
