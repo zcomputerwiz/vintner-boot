@@ -218,6 +218,15 @@ case "$PHASE" in
 		journalctl -b -o short-monotonic | grep -i gpt-auto > "$LOGDIR/a5-journal.txt" 2>&1 || true
 		sed 's/^/generated: /' "$LOGDIR/a5-ls.txt" > /dev/ttyS0
 		sed 's/^/gpt-auto-log: /' "$LOGDIR/a5-journal.txt" > /dev/ttyS0
+		# WO-0010 1.6: name the boot storage partition and what each generated
+		# unit mounts, so the host can fail if systemd would mount boot storage.
+		bsu=$(sed -n 's/.*vintner\.bootstorage=PARTUUID=\([^ ]*\).*/\1/p' /proc/cmdline)
+		bsdev=$(readlink -f "/dev/disk/by-partuuid/$bsu" 2>/dev/null || true)
+		echo "bootstorage-identity: ${bsu:-unknown} ${bsdev:-unknown}" > /dev/ttyS0
+		while read -r unit; do
+			[ -n "$unit" ] || continue
+			echo "generated-what: $(basename "$unit") $(sed -n 's/^What=//p' "$unit" | head -n 1)" > /dev/ttyS0
+		done < "$LOGDIR/a5-ls.txt"
 
 		echo "=== CHECK A6 ===" > /dev/ttyS0
 		/usr/sbin/vintner reconcile --dry-run > "$LOGDIR/a6.txt" 2>&1
@@ -521,11 +530,22 @@ if [ "$A4_VFAT" = "/boot/efi" ] && [ "$A4_VINTNER" = 0 ]; then
 fi
 A4_EVID="vfat mounts: ${A4_VFAT:-none}; /run/vintner mounts: $A4_VINTNER"
 
-# A5 Check (OBSERVED)
-A5_STATUS="OBSERVED"
+# A5 Check: fail if any generated mount unit names the boot storage partition
+# (by PARTUUID, or by the device the guest resolved it to). The guest reports
+# its identity; without it the check cannot pass.
+A5_STATUS="FAIL"
 A5_UNITS=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^generated: //p' | xargs -r -n1 basename | paste -sd ' ')
 A5_LOG=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^gpt-auto-log: //p' | head -n 5 | paste -sd ';')
-A5_EVID="generated mount units: ${A5_UNITS:-none}; gpt-auto log: ${A5_LOG:-none}"
+A5_ID=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^bootstorage-identity: //p' | head -n 1)
+A5_UUID=${A5_ID%% *}
+A5_DEV=${A5_ID#* }
+A5_HITS=$(tr -d '\r' < "$OUT/boot1.log" | sed -n 's/^generated-what: //p' | awk -v u="$A5_UUID" -v d="$A5_DEV" '
+	{ w = $2; lw = tolower(w) }
+	(u != "unknown" && u != "" && index(lw, tolower(u))) || (d != "unknown" && d != "" && w == d) { print $1 " -> " w }' | paste -sd ';')
+if [ -n "$A5_UUID" ] && [ "$A5_UUID" != unknown ] && [ -z "$A5_HITS" ]; then
+	A5_STATUS="PASS"
+fi
+A5_EVID="boot storage ${A5_ID:-unknown}; generated mount units: ${A5_UNITS:-none}; naming boot storage: ${A5_HITS:-none}; gpt-auto log: ${A5_LOG:-none}"
 
 # A6 Check
 A6_STATUS="FAIL"
@@ -634,7 +654,7 @@ echo "=== Test Summary Table ==="
 	printf "A2\tFile name on boot storage after first boot\tvintner-os-1+3-0.efi\t%s\t%s\n" "$A2_STATUS" "$A2_EVID"
 	printf "A3\tManifest after first boot\tgeneration 1 GOOD, first_good/last_good set, seq+1\t%s\t%s\n" "$A3_STATUS" "$A3_EVID"
 	printf "A4\tBoot storage mounts visible on running system\tOnly ESP mounted; boot storage not in host namespace\t%s\t%s\n" "$A4_STATUS" "$A4_EVID"
-	printf "A5\tWhat systemd-gpt-auto-generator did\tOBSERVED (skips XBOOTLDR because /boot populated)\t%s\t%s\n" "$A5_STATUS" "$A5_EVID"
+	printf "A5\tWhat systemd-gpt-auto-generator did\tno generated mount unit names the boot storage partition\t%s\t%s\n" "$A5_STATUS" "$A5_EVID"
 	printf "A6\tsudo vintner reconcile --dry-run\tExit 0, no report lines, unmounted afterwards\t%s\t%s\n" "$A6_STATUS" "$A6_EVID"
 	printf "A7\tSecond boot with vintner-bless.service masked\tvintner-os-1+2-1.efi (boot counted, not rearmed)\t%s\t%s\n" "$A7_STATUS" "$A7_EVID"
 	printf "A8\tThird boot with unmasked bless but missing vintner.bootstorage=\tBless fails naming parameter; file +1-2; manifest unchanged\t%s\t%s\n" "$A8_STATUS" "$A8_EVID"

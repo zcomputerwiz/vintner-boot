@@ -3,6 +3,15 @@
 ACCEL="tcg"
 [ -w /dev/kvm ] && ACCEL="kvm"
 
+# run_qemu DISK SEED LOG TIMEOUT_SECS [VARS]
+#
+# RUN_QEMU_STOP_ON, an extended regex, makes the run stop early: once the
+# serial log matches it, QEMU gets three more seconds to print what follows
+# (a panic's trace, a shell prompt) and is then killed, because a guest that
+# has reached such a line has hung and will only wait for the timeout. The
+# pattern must be a line that no healthy boot prints. RUN_QEMU_STOPPED is 1
+# after such a stop and 0 otherwise.
+RUN_QEMU_STOPPED=0
 run_qemu() {
 	local disk_path="$1"
 	local seed_path="$2"
@@ -14,25 +23,35 @@ run_qemu() {
 	local disk_fmt="raw"
 	[[ "$disk_path" == *.qcow2 ]] && disk_fmt="qcow2"
 
+	local fwargs=()
 	if [ "$FIRMWARE" = "uefi" ]; then
-		timeout "$timeout_secs" qemu-system-x86_64 \
-			-machine "q35,accel=$ACCEL" \
-			-m 2048 -smp 2 -nodefaults -display none \
-			-monitor none -serial "file:$logfile" -no-reboot \
-			-drive "if=pflash,format=raw,unit=0,file=$CODE_FD,readonly=on" \
-			-drive "if=pflash,format=raw,unit=1,file=$vars_path" \
-			-drive "file=$disk_path,format=$disk_fmt,if=virtio" \
-			-drive "file=$seed_path,format=raw,if=virtio" \
-			-nic "user,model=virtio-net-pci" || true
-	else
-		timeout "$timeout_secs" qemu-system-x86_64 \
-			-machine "q35,accel=$ACCEL" \
-			-m 2048 -smp 2 -nodefaults -display none \
-			-monitor none -serial "file:$logfile" -no-reboot \
-			-drive "file=$disk_path,format=$disk_fmt,if=virtio" \
-			-drive "file=$seed_path,format=raw,if=virtio" \
-			-nic "user,model=virtio-net-pci" || true
+		fwargs=(-drive "if=pflash,format=raw,unit=0,file=$CODE_FD,readonly=on"
+			-drive "if=pflash,format=raw,unit=1,file=$vars_path")
 	fi
+
+	RUN_QEMU_STOPPED=0
+	timeout "$timeout_secs" qemu-system-x86_64 \
+		-machine "q35,accel=$ACCEL" \
+		-m 2048 -smp 2 -nodefaults -display none \
+		-monitor none -serial "file:$logfile" -no-reboot \
+		"${fwargs[@]}" \
+		-drive "file=$disk_path,format=$disk_fmt,if=virtio" \
+		-drive "file=$seed_path,format=raw,if=virtio" \
+		-nic "user,model=virtio-net-pci" &
+	local qpid=$!
+	if [ -n "${RUN_QEMU_STOP_ON:-}" ]; then
+		while kill -0 "$qpid" 2>/dev/null; do
+			if grep -aEq -- "$RUN_QEMU_STOP_ON" "$logfile"; then
+				sleep 3
+				# shellcheck disable=SC2034 # read by the sourcing script
+				RUN_QEMU_STOPPED=1
+				kill "$qpid" 2>/dev/null || true
+				break
+			fi
+			sleep 1
+		done
+	fi
+	wait "$qpid" || true
 }
 
 make_seed() {

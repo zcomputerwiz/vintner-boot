@@ -1,3 +1,31 @@
 #!/usr/bin/make -f
+# The vintner binary is static (CGO_ENABLED=0) and uses only the Go standard
+# library (ADR-0002), so the build needs no network and no module cache.
+export CGO_ENABLED=0
+export GOCACHE=$(CURDIR)/debian/.gocache
+# -buildvcs=false: a source package has no .git, and git refuses a checkout owned by another user.
+export GOFLAGS=-trimpath -mod=readonly -buildvcs=false
+
 %:
 	dh $@
+
+override_dh_auto_build:
+	mkdir -p debian/build
+	cd src && go build -ldflags "-s -w" -o ../debian/build/vintner ./cmd/vintner
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	cd src && go test ./...
+endif
+
+override_dh_auto_clean:
+	rm -rf debian/build debian/.gocache
+
+# A static Go binary: nothing for dwz or the strip step to do.
+override_dh_dwz:
+override_dh_strip:
+
+# vintner-bless.service blesses the boot that just finished; starting it from
+# the postinst would bless nothing real. It is enabled and runs at boot.
+override_dh_installsystemd:
+	dh_installsystemd --no-start --no-restart-after-upgrade

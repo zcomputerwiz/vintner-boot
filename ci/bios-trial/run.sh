@@ -77,9 +77,9 @@ done
 # boot storage partition and core.img and modules can never mismatch.
 # The early config is per machine (the fs UUID); grub.cfg stays static.
 printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' "${FS_SERIAL:0:4}" "${FS_SERIAL:4}" "\$root" > "$OUT/early.cfg"
+# shellcheck disable=SC2046
 trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$GRUBDIR" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
-	biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval \
-	loadenv keystatus serial terminal halt reboot
+	$(cat firmware/bios/core-modules.txt)
 # What grub-bios-setup does for GPT with a BIOS Boot Partition (util/setup.c,
 # GRUB 2.12), minus Reed-Solomon codes. It cannot run here: it insists on
 # opening the host's root device.
@@ -109,14 +109,16 @@ ACCEL=tcg
 QEMU=(qemu-system-x86_64 -machine "q35,accel=$ACCEL" -m 512 -nodefaults -display none
 	-serial "file:$OUT/log" -no-reboot -drive "file=$IMG,format=raw,if=virtio")
 
-get_env() { mcopy -o -i "$BS" ::/grub/grubenv "$OUT/env"; }
+# -n: overwrite the host copy without asking (-o covers only names in the image);
+# with a terminal attached, mcopy would otherwise stop at a prompt.
+get_env() { mcopy -n -i "$BS" ::/grub/grubenv "$OUT/env"; }
 put_env() { mcopy -o -i "$BS" "$OUT/env" ::/grub/grubenv; }
 vars() { get_env; editenv "$OUT/env" list 2>/dev/null | grep '^VINTNER_' | LC_ALL=C sort | paste -sd ';'; }
 set_env() { editenv "$OUT/env" create; editenv "$OUT/env" set "$@"; put_env; }
 
-SCEN="" BOOTED="" OK=1 N=0
+SCEN="" BOOTED="" OK=1 N=0 EXPECT_ERR=0
 begin() {
-	SCEN=$1 BOOTED="" OK=1 N=0
+	SCEN=$1 BOOTED="" OK=1 N=0 EXPECT_ERR=0
 	cp --sparse=always "$TEMPLATE" "$IMG"
 }
 boot() { # [qmp]: one boot, QMP commands from stdin; appends the booted test id to BOOTED
@@ -128,6 +130,15 @@ boot() { # [qmp]: one boot, QMP commands from stdin; appends the booted test id 
 		timeout 300 "${QEMU[@]}" -monitor none </dev/null >/dev/null 2>&1 || true
 	fi
 	cp "$OUT/log" "$OUT/$SCEN-boot$N.log"
+	# GRUB prints "error:" lines for failed commands, such as a missing module,
+	# after clear-screen escapes on the serial terminal. They must not appear
+	# on an otherwise silent boot (R10, WO-0010 1.3). B6, B7 and B9 break the
+	# disk on purpose and set EXPECT_ERR.
+	if [ "$EXPECT_ERR" = 0 ] && sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -aq 'error:'; then
+		OK=0
+		echo "$SCEN boot $N: GRUB error on the serial console:" >&2
+		sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/log" | grep -a 'error:' >&2
+	fi
 	BOOTED="$BOOTED $(grep -ao -m1 'VINTNER-TEST-BOOTED id=[A-Za-z0-9-]*' "$OUT/log" | sed 's/.*id=//' || echo NONE)"
 }
 expect() { # what actual expected
@@ -163,6 +174,14 @@ bless
 expect grubenv "$(vars)" "$O;VINTNER_T_1=xxx;VINTNER_T_2=xxx;VINTNER_T_RA=xxx"
 end "os-2"
 
+# WO-0010 1.4: no serial port. GRUB must leave nothing but its own "trying" line
+# on the screen. The result is a screen check (noserial.py), not a boot id.
+begin S1-no-serial-port
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+BOOTED=-
+if ! python3 ci/bios-trial/noserial.py "$IMG" >&2; then OK=0; fi
+end "-"
+
 begin B2-failing-candidate
 set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
 slot_cfg "$BS" os-2 os-2 reboot
@@ -191,14 +210,14 @@ boot
 expect "grubenv sha256" "$(get_env && sha256sum < "$OUT/env")" "$before"
 end "rb"
 
-begin B6-corrupt-grubenv
+begin B6-corrupt-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 head -c 1024 /dev/zero | tr '\0' '?' > "$OUT/env" && put_env
 before=$(get_env && sha256sum < "$OUT/env")
 boot
 expect "grubenv sha256" "$(get_env && sha256sum < "$OUT/env")" "$before"
 end "ra"
 
-begin B7-missing-kernel
+begin B7-missing-kernel; EXPECT_ERR=1 # GRUB reports the missing file
 set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
 mdel -i "$BS" ::/vintner/bios/os-2/vmlinuz
 boot
@@ -223,7 +242,7 @@ SCEN="B8-shift-menu (menu $menu)"
 end OBSERVE
 
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
-begin B9-empty-grubenv
+begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 : > "$OUT/env" && put_env
 boot
 expect "grubenv size" "$(get_env && stat -c %s "$OUT/env")" 0

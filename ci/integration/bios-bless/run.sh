@@ -152,9 +152,9 @@ mcopy -o -i "$DISK@@$BS_OFFSET" firmware/bios/grub.cfg ::/grub/grub.cfg
 printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' \
 	"${FS_SERIAL:0:4}" "${FS_SERIAL:4}" "\$root" > "$OUT/early.cfg"
 
+# shellcheck disable=SC2046
 trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$ROOT/usr/lib/grub/i386-pc" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
-	biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval \
-	loadenv keystatus serial terminal halt reboot
+	$(cat firmware/bios/core-modules.txt)
 
 # Embed core.img and MBR jump code
 python3 - "$DISK" "$EMBED_LBA" "$EMBED_ROOM" "$OUT/core.img" "$ROOT/usr/lib/grub/i386-pc/boot.img" <<'EOF'
@@ -228,13 +228,13 @@ EOF
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/os1-slot.cfg" ::/vintner/bios/os-1/slot.cfg
 
 # Create slot.cfg for recovery A and B
-RECA_CMDLINE="console=ttyS0 vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
+RECA_CMDLINE="console=ttyS0 vintner.recovery=a vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
 cat <<EOF > "$OUT/reca-slot.cfg"
 set vintner_cmdline="$RECA_CMDLINE"
 EOF
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/reca-slot.cfg" ::/vintner/bios/recovery-a/slot.cfg
 
-RECB_CMDLINE="console=ttyS0 vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
+RECB_CMDLINE="console=ttyS0 vintner.recovery=b vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
 cat <<EOF > "$OUT/recb-slot.cfg"
 set vintner_cmdline="$RECB_CMDLINE"
 EOF
@@ -697,10 +697,12 @@ C8_TRYING=$(tr -d '\r' < "$OUT/boot6.log" | sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' 
 C8_REC_LOG=$(tr -d '\r' < "$OUT/boot6.log" | sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' | grep -m1 'VINTNER-RECOVERY-TEST' || true)
 C8_OS1=$(tr -d '\r' < "$OUT/boot6.log" | grep -c 'vintner: trying os-1' || true)
 
-# C8 Check: GRUB skipped os-1, booted recovery A, counted T_RA=xx and BOOTED=RA
+# C8 Check: GRUB skipped os-1 and booted recovery A (used one try, T_RA=xx,
+# BOOTED=RA); recovery A then re-armed itself (WO-0010 1.1): T_RA=xxx, no BOOTED.
+# VINTNER-RECOVERY-REARM names the result.
 C8_STATUS="FAIL"
 if [ "$C8_OS1" = 0 ] && [ -n "$C8_TRYING" ] && echo "$C8_REC_LOG" | grep -q "root=mounted ro=yes" && \
-   has "$B6_VARS" VINTNER_BOOTED=RA && has "$B6_VARS" VINTNER_T_RA=xx; then
+   ! has "$B6_VARS" VINTNER_BOOTED=RA && has "$B6_VARS" VINTNER_T_RA=xxx; then
 	C8_STATUS="PASS"
 fi
 C8_EVID="'vintner: trying os-1' lines: $C8_OS1; ${C8_TRYING:-none}; ${C8_REC_LOG:-none}; grubenv: $B6_VARS"
@@ -727,7 +729,7 @@ echo "=== Test Summary Table ==="
 	printf "C5\tboot 1\tgrubenv file on host\texactly 1024 bytes, second 512 bytes all '#'\t%s\t%s\n" "$C5_STATUS" "$C5_EVID"
 	printf "C6\tboot 2\tgrubenv\tVINTNER_T_1=xx, VINTNER_BOOTED=1 (counted, not rearmed)\t%s\t%s\n" "$C6_STATUS" "$C6_EVID"
 	printf "C7\tboots 3 to 5\tgrubenv after each\tVINTNER_T_1 goes xx, then x, then 0; BOOTED=1\t%s\t%s\n" "$C7_STATUS" "$C7_EVID"
-	printf "C8\tboot 6\tserial log and grubenv\tSkips os-1, boots recovery A, root=mounted ro=yes; T_RA=xx, BOOTED=RA\t%s\t%s\n" "$C8_STATUS" "$C8_EVID"
+	printf "C8\tboot 6\tserial log and grubenv\tSkips os-1, boots recovery A, root=mounted ro=yes; recovery A re-arms: T_RA=xxx, no BOOTED\t%s\t%s\n" "$C8_STATUS" "$C8_EVID"
 	printf "C9\tall\troot filesystem\tRecovery boot left root partition unchanged (sha256)\t%s\t%s\n" "$C9_STATUS" "$C9_EVID"
 } > "$RESULTS"
 

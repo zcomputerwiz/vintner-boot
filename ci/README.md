@@ -1,5 +1,7 @@
 # Phase 0 Boot Baseline
 
+For setting up a machine to run every suite under `ci/`, including on Windows with WSL2 and VirtualBox, see [docs/local-testing.md](../docs/local-testing.md).
+
 This directory contains scripts to boot an unmodified Debian 13 genericcloud image under QEMU to establish a phase-0 baseline for `vintner-boot`.
 
 ## Required packages

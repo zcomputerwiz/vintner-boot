@@ -197,15 +197,9 @@ mcopy -o -i "$DISK@@$BS_OFFSET" firmware/bios/grub.cfg ::/grub/grub.cfg
 printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' \
 	"${FS_SERIAL:0:4}" "${FS_SERIAL:4}" "\$root" > "$OUT/early.cfg"
 
-GRUB_EXTRA_MODULES=""
-if [ -n "${VINTNER_EXTRA_CMDLINE:-}" ]; then
-	GRUB_EXTRA_MODULES="all_video"
-fi
-
-# shellcheck disable=SC2086
+# shellcheck disable=SC2046
 trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$ROOT/usr/lib/grub/i386-pc" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
-	biosdisk part_gpt fat search search_fs_uuid normal configfile linux echo test true regexp eval \
-	loadenv keystatus serial terminal halt reboot $GRUB_EXTRA_MODULES
+	$(cat firmware/bios/core-modules.txt)
 
 # Embed core.img and MBR jump code
 python3 - "$DISK" "$EMBED_LBA" "$EMBED_ROOM" "$OUT/core.img" "$ROOT/usr/lib/grub/i386-pc/boot.img" <<'EOF'
@@ -386,13 +380,13 @@ EOF
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/os1-slot.cfg" ::/vintner/bios/os-1/slot.cfg
 
 # BIOS recovery slots
-RECA_CMDLINE="console=ttyS0 vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
+RECA_CMDLINE="console=ttyS0 vintner.recovery=a vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
 cat <<EOF > "$OUT/reca-slot.cfg"
 set vintner_cmdline="$RECA_CMDLINE"
 EOF
 mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/reca-slot.cfg" ::/vintner/bios/recovery-a/slot.cfg
 
-RECB_CMDLINE="console=ttyS0 vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
+RECB_CMDLINE="console=ttyS0 vintner.recovery=b vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
 cat <<EOF > "$OUT/recb-slot.cfg"
 set vintner_cmdline="$RECB_CMDLINE"
 EOF

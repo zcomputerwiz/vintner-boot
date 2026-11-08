@@ -398,3 +398,22 @@ func loadExample(t *testing.T) *Manifest {
 	}
 	return &m
 }
+
+func TestValidateRejectsBadESPPartUUID(t *testing.T) {
+	raw, err := os.ReadFile("../../../schema/examples/manifest-uefi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	m.ESP = &ESP{PartUUID: "11111111-2222-4333-8444-555555555555"}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("valid ESP rejected: %v", err)
+	}
+	m.ESP = &ESP{PartUUID: "nope"}
+	if err := m.Validate(); err == nil {
+		t.Fatal("bad ESP partuuid accepted")
+	}
+}

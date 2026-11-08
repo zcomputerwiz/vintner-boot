@@ -42,3 +42,28 @@ func Mount(dev string, rw bool) (func() error, error) {
 	}
 	return func() error { return syscall.Unmount(MountPoint, 0) }, nil
 }
+
+// ESPMountPoint is where the vintner services mount the EFI System Partition,
+// read-only, inside their own mount namespace.
+const ESPMountPoint = "/run/vintner/esp"
+
+// ESPDevice returns the device of the ESP with the given GPT partition UUID.
+func ESPDevice(partuuid string) (string, error) {
+	if partuuid == "" || strings.ContainsAny(partuuid, "/ ") {
+		return "", errors.New("bootstorage: invalid ESP partuuid")
+	}
+	return "/dev/disk/by-partuuid/" + strings.ToLower(partuuid), nil
+}
+
+// MountESP mounts the ESP read-only at ESPMountPoint and returns a function
+// that unmounts it. vintner never writes the ESP through this path.
+func MountESP(dev string) (func() error, error) {
+	if err := os.MkdirAll(ESPMountPoint, 0o700); err != nil {
+		return nil, err
+	}
+	flags := uintptr(syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_RDONLY)
+	if err := syscall.Mount(dev, ESPMountPoint, "vfat", flags, "umask=0077"); err != nil {
+		return nil, fmt.Errorf("bootstorage: mount ESP %s: %w", dev, err)
+	}
+	return func() error { return syscall.Unmount(ESPMountPoint, 0) }, nil
+}

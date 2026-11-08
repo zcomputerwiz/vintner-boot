@@ -16,17 +16,49 @@ jobs:
         run: git ls-files -z '*.sh' | xargs -0 -r shellcheck
       - name: No generated output, private keys or firmware stores in git
         run: "! git ls-files | grep -E '(^|/)ci/out/|[.]key$|[.]fd$'"
+      - name: grub.cfg loads only modules that core.img contains
+        run: ci/lint/grub-modules.sh
 
   debian-package:
+    # Trixie, because the package builds with Go 1.24 (ubuntu-24.04 ships 1.22).
     runs-on: ubuntu-24.04
+    container: debian:trixie
     steps:
-      - uses: actions/checkout@v7
       - name: Install packaging tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential debhelper dpkg-dev lintian
+        run: apt-get update && apt-get install -y --no-install-recommends ca-certificates git build-essential debhelper dpkg-dev lintian golang-go
+      - uses: actions/checkout@v7
       - name: Build binary packages
         run: dpkg-buildpackage -us -uc -b
       - name: lintian
         run: lintian --fail-on error ../*.changes
+      - name: Keep the packages for the install test
+        run: mkdir -p debs && cp ../*.deb debs/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debs
+          path: debs/*.deb
+          retention-days: 3
+
+  package-install:
+    # WO-0010 2.1 to 2.3: install, remove and purge in a trixie chroot.
+    needs: debian-package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: debs
+          path: debs
+      - name: Install debootstrap
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends debootstrap debian-archive-keyring
+      - name: Install the packages into a trixie chroot
+        run: ci/package/install-test.sh debs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: package-install
+          path: ci/out/package/*.log
+          retention-days: 7
 
   go:
     runs-on: ubuntu-24.04

@@ -3,7 +3,7 @@
 # packages, independent of any installed system (architecture §4, R06):
 # recovery/out/{vmlinuz,initrd.img,vintner-recovery-a.efi,vintner-recovery-b.efi}.
 # Needs: curl, xz, dpkg-deb, cpio, kmod (depmod, modprobe), binutils (objdump),
-# python3 with pefile. No root.
+# python3 with pefile, go (for the vintner binary inside the image). No root.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -113,6 +113,10 @@ else
 			libs+=("$INITRD/usr/lib/x86_64-linux-gnu/$l")
 		done
 	done
+	# The same static binary as the host's (ADR-0002); recovery re-arms
+	# recovery A with "vintner bless --recovery a".
+	(cd src && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "../$INITRD/usr/sbin/vintner" ./cmd/vintner)
+	echo "vintner $(git rev-parse --short HEAD) ($(go version | cut -d' ' -f3))" >> "$OUT/versions.txt"
 	install -m 0755 recovery/initramfs/init "$INITRD/init"
 	echo "$VERSION" > "$INITRD/etc/vintner/version"
 	grep -v '^#' recovery/initramfs/modules.list > "$INITRD/etc/vintner/modules"
@@ -146,7 +150,7 @@ for slot in a b; do
 		"$slot" "$VERSION" "$S" "$VERSION" > "$OUT/osrel-$slot"
 	if ! uki_err=$(python3 "$ROOT/usr/lib/systemd/ukify" build --linux="$OUT/vmlinuz" --initrd="$OUT/initrd.img" \
 		--stub="$ROOT/usr/lib/systemd/boot/efi/linuxx64.efi.stub" --os-release="@$OUT/osrel-$slot" \
-		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=1" \
+		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=$slot" \
 		${sign_args[@]+"${sign_args[@]}"} \
 		--output="$OUT/vintner-recovery-$slot.efi" 2>&1 >/dev/null); then
 		echo "error: ukify build failed for slot $slot:" >&2

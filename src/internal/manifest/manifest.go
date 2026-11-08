@@ -32,6 +32,7 @@ type Manifest struct {
 	Signing        *Signing    `json:"signing,omitempty"`
 	Root           Root        `json:"root"`
 	BootStorage    BootStorage `json:"boot_storage"`
+	ESP            *ESP        `json:"esp,omitempty"`
 	Tries          int         `json:"tries"`
 	Retain         int         `json:"retain"`
 	NextGeneration int         `json:"next_generation"`
@@ -48,6 +49,12 @@ type Signing struct {
 type Root struct {
 	PartUUID string `json:"partuuid"`
 	UUID     string `json:"uuid"`
+}
+
+// ESP identifies the EFI System Partition, so that read-only checks can find it
+// without /boot/efi being mounted. Optional: BIOS-only installs have none.
+type ESP struct {
+	PartUUID string `json:"partuuid"`
 }
 
 type BootStorage struct {
@@ -332,6 +339,9 @@ func (m *Manifest) Validate() error {
 	}
 	if !uuidRe.MatchString(m.BootStorage.PartUUID) {
 		return fmt.Errorf("invalid boot_storage partuuid")
+	}
+	if m.ESP != nil && !uuidRe.MatchString(m.ESP.PartUUID) {
+		return fmt.Errorf("invalid esp partuuid")
 	}
 	if m.Tries < 1 || m.Tries > 9 {
 		return fmt.Errorf("invalid tries")
