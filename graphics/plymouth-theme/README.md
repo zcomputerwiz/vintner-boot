@@ -32,8 +32,9 @@ Target installation path on Debian systems: `/usr/share/plymouth/themes/vintner-
 
 The `vintner-core` package automatically deploys:
 1. Theme assets to `/usr/share/plymouth/themes/vintner-bgrt/` via `debian/vintner-core.install`.
-2. Daemon configuration `/etc/plymouth/plymouthd.conf` (`Theme=vintner-bgrt`, `ShowDelay=0`, `DeviceTimeout=8`) via `debian/vintner-core.install`.
-3. Early initramfs hook `/etc/initramfs-tools/hooks/plymouth-vintner` that includes theme assets and KMS DRM drivers (`simpledrm`, `bochs-drm`, `virtio-gpu`).
+2. The early initramfs hook `/usr/share/initramfs-tools/hooks/plymouth-vintner`, which includes the theme assets and the KMS DRM drivers (`simpledrm`, `bochs-drm`, `virtio-gpu`) in the initramfs.
+
+The package does not ship `/etc/plymouth/plymouthd.conf`: Debian's `plymouth` owns that conffile (see `docs/packaging.md`). `vintner install --plymouth-theme` (WO-0010 3.2) will set `Theme=vintner-bgrt`, `ShowDelay=0` and `DeviceTimeout=8` as an administrator edit; until it exists, set them by hand.
 
 To rebuild the initramfs after package installation:
 

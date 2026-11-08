@@ -270,6 +270,34 @@ func generateOSRelease(origPath, outPath string, gen int, abi string) error {
 	return os.WriteFile(outPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
 
+// ValidateImageCmdline checks that an image command line names the manifest's
+// root and carries exactly one vintner.bootstorage=PARTUUID=<boot storage
+// partuuid>. The publisher applies it to every command line it carries forward.
+func ValidateImageCmdline(cmdline string, m *manifest.Manifest) error {
+	hasRoot := false
+	bsCount := 0
+	for _, f := range strings.Fields(cmdline) {
+		if f == "root=UUID="+m.Root.UUID || f == "root=PARTUUID="+m.Root.PartUUID ||
+			strings.EqualFold(f, "root=UUID="+m.Root.UUID) || strings.EqualFold(f, "root=PARTUUID="+m.Root.PartUUID) {
+			hasRoot = true
+		}
+		if strings.HasPrefix(f, "vintner.bootstorage=") {
+			bsCount++
+			if f != "vintner.bootstorage=PARTUUID="+m.BootStorage.PartUUID &&
+				!strings.EqualFold(f, "vintner.bootstorage=PARTUUID="+m.BootStorage.PartUUID) {
+				return fmt.Errorf("invalid vintner.bootstorage in cmdline: %s", f)
+			}
+		}
+	}
+	if !hasRoot {
+		return fmt.Errorf("cmdline lacks root=UUID=%s or root=PARTUUID=%s", m.Root.UUID, m.Root.PartUUID)
+	}
+	if bsCount != 1 {
+		return fmt.Errorf("cmdline must contain exactly one vintner.bootstorage=PARTUUID=%s (found %d)", m.BootStorage.PartUUID, bsCount)
+	}
+	return nil
+}
+
 // grubQuote returns s as a GRUB script double-quoted word. Inside double
 // quotes GRUB expands "$" and treats a backslash as an escape only before
 // "$", `"`, `\` or a newline; every other byte is literal. Go's %q is not this
@@ -476,27 +504,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		return nil, errors.New("no image command line found in manifest")
 	}
 
-	baseFields := strings.Fields(baseCmdline)
-	hasRoot := false
-	bsCount := 0
-	for _, f := range baseFields {
-		if f == "root=UUID="+m.Root.UUID || f == "root=PARTUUID="+m.Root.PartUUID ||
-			strings.EqualFold(f, "root=UUID="+m.Root.UUID) || strings.EqualFold(f, "root=PARTUUID="+m.Root.PartUUID) {
-			hasRoot = true
-		}
-		if strings.HasPrefix(f, "vintner.bootstorage=") {
-			bsCount++
-			if f != "vintner.bootstorage=PARTUUID="+m.BootStorage.PartUUID &&
-				!strings.EqualFold(f, "vintner.bootstorage=PARTUUID="+m.BootStorage.PartUUID) {
-				return nil, fmt.Errorf("invalid vintner.bootstorage in cmdline: %s", f)
-			}
-		}
-	}
-	if !hasRoot {
-		return nil, fmt.Errorf("cmdline lacks root=UUID=%s or root=PARTUUID=%s", m.Root.UUID, m.Root.PartUUID)
-	}
-	if bsCount != 1 {
-		return nil, fmt.Errorf("cmdline must contain exactly one vintner.bootstorage=PARTUUID=%s (found %d)", m.BootStorage.PartUUID, bsCount)
+	if err := ValidateImageCmdline(baseCmdline, m); err != nil {
+		return nil, err
 	}
 
 	pkgName, pkgVer, err := pkgQuery.PackageAndVersion(vmlinuzPath)

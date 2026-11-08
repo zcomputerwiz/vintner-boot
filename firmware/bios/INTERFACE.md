@@ -31,7 +31,7 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 | `/vintner/bios/recovery-a/{vmlinuz,initrd.img,slot.cfg}` | recovery updater | Recovery A |
 | `/vintner/bios/recovery-b/{vmlinuz,initrd.img,slot.cfg}` | recovery updater | Recovery B |
 
-`slot.cfg` sets only `vintner_cmdline` (and optionally `vintner_title`) with `set`. The command lines of recovery A and B carry `vintner.recovery=a` and `vintner.recovery=b`: they tell the recovery image whether to re-arm `VINTNER_T_RA` (`vintner bless --recovery`). Example:
+`slot.cfg` sets only `vintner_cmdline` with `set` (`vintner_title` is reserved: nothing writes or reads it until WO-0010 item 4.1). The command lines of recovery A and B carry `vintner.recovery=a` and `vintner.recovery=b`: they tell the recovery image whether to re-arm `VINTNER_T_RA` (`vintner bless --recovery`). Example:
 
 ```
 set vintner_cmdline="root=UUID=<root fs uuid> ro quiet vintner.bootstorage=PARTUUID=<boot storage partuuid>"

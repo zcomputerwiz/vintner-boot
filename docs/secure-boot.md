@@ -1,6 +1,6 @@
 # Secure Boot design (WP-008, phase 4)
 
-Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Nothing here is implemented yet: `publish.Publish` refuses every `secure_boot_tier` except `none` (`src/internal/publish/publish.go`).
+Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Tier A is implemented (WO-0009c): `publish.Publish` signs with the machine key. Tiers B and C are not: the publisher refuses them (`src/internal/publish/publish.go`).
 
 ## 1. Scope of the first slice
 

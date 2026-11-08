@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -1224,4 +1225,29 @@ func TestPublishInheritsSplashCmdline(t *testing.T) {
 			t.Errorf("expected failure when token is partial substring, but got nil")
 		}
 	})
+}
+
+// TestExampleManifestsPassPublisherCmdlineCheck runs every image command line
+// in the schema examples through the check the publisher applies, so an
+// example the publisher would refuse cannot be committed.
+func TestExampleManifestsPassPublisherCmdlineCheck(t *testing.T) {
+	paths, err := filepath.Glob("../../../schema/examples/manifest-*.json")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no example manifests found: %v", err)
+	}
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m manifest.Manifest
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		for _, img := range m.Images {
+			if err := ValidateImageCmdline(img.Cmdline, &m); err != nil {
+				t.Errorf("%s generation %d: %v", p, img.Generation, err)
+			}
+		}
+	}
 }
