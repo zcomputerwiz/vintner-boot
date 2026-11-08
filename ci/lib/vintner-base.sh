@@ -276,8 +276,6 @@ KERNEL_ABI=$(basename "$KERNEL_IMG" | sed 's/^vmlinuz-//')
 echo "Guest kernel: $KERNEL_ABI"
 echo "guest-kernel: $KERNEL_ABI" >> "$VERSIONS"
 
-cp "$KERNEL_IMG" "$OUT/vmlinuz"
-cp "$INITRD_IMG" "$OUT/initrd.img"
 # os-1's .osrel per ADR-0003: the installed os-release with IMAGE_ID=vintner-os,
 # IMAGE_VERSION=<generation> and the ABI appended to PRETTY_NAME, so images the
 # publisher adds (generation 2 and up) sort above it.
@@ -310,6 +308,13 @@ sudo chroot "$MNT" dpkg-query -W -f='${Package} ${Version}\n' vintner-core syste
 # to publish: until then they are left off, as they were when the rows copied them in
 # by hand.
 sudo chmod a-x "$MNT/etc/kernel/postinst.d/zz-vintner" "$MNT/etc/initramfs/post-update.d/zz-vintner"
+
+# os-1 is what is in the guest now, after the package install above: installing
+# vintner-core and its dependencies runs update-initramfs, so the initramfs differs
+# from the one in the downloaded image, and a copy taken earlier would not match it.
+INITRD_IMG=$(ls "$MNT"/boot/initrd.img-"$KERNEL_ABI")
+cp "$KERNEL_IMG" "$OUT/vmlinuz"
+cp "$INITRD_IMG" "$OUT/initrd.img"
 
 # Ensure machine-id exists
 MACHINE_ID=$(cat "$MNT/etc/machine-id" 2>/dev/null || true)
