@@ -5,7 +5,7 @@
 WO-0010 1.4: grub.cfg sets up a serial terminal. On a machine without a serial
 port GRUB must not leave error lines on the screen. The guest's own output goes
 to the serial port, so the only evidence is the VGA text screen: this takes
-screenshots while the VM runs, and counts the text lines of the last one.
+screenshots while the VM runs, and counts the text lines of the last one (the cursor bar is not a line).
 Allowed: GRUB's own "vintner: trying ..." line. More lines mean an error.
 
 Usage: noserial.py DISK.img  (exit 0 if the screen has at most 1 text line)
@@ -68,8 +68,9 @@ w, h = map(int, dims.split())
 _, px = rest.split(b"\n", 1)
 lines = 0
 for y0 in range(0, h, 16):  # VGA text cells are 16 pixels high
-    rows = px[y0 * w * 3:(y0 + 16) * w * 3]
-    if any(rows[i] or rows[i + 1] or rows[i + 2] for i in range(0, len(rows), 3)):
+    # A text line has lit pixels on several pixel rows; the cursor is one thin bar.
+    lit = sum(1 for y in range(y0, min(y0 + 16, h)) if any(px[y * w * 3:(y + 1) * w * 3]))
+    if lit >= 4:
         lines += 1
 print(f"noserial: {lines} text line(s) on the screen")
 sys.exit(0 if lines <= 1 else 1)
