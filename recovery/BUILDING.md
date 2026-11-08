@@ -94,8 +94,8 @@ Measured with `linux-image-6.12.107+deb13-amd64` 6.12.107-1 and `busybox-static`
 | Artifact | Size |
 |---|---|
 | `vmlinuz` | 11.6 MiB |
-| `initrd.img` | 10.0 MiB, xz (67 modules, the storage tools and their libraries) |
-| each recovery UKI | 21.7 MiB |
+| `initrd.img` | 11.4 MiB, xz (67 modules, the storage tools and their libraries, the 4.3 MiB vintner binary) |
+| each recovery UKI | 23.1 MiB |
 
 Architecture §5 budgets 300 MiB per recovery image. `libcrypto` (6.3 MiB) is the largest addition. The initramfs is xz-compressed; with gzip it would be 14.2 MiB.
 
