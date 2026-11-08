@@ -191,14 +191,22 @@ func (d *deployer) run(ctx context.Context) error {
 	if err != nil {
 		return d.fail("check", err)
 	}
-	for _, c := range []string{"manifest-a", "manifest-b"} {
-		if _, err := os.Stat(filepath.Join(d.BootStorageDir, "vintner", "state", c)); err == nil {
-			return d.fail("check", errors.New("boot storage already holds a vintner manifest: this is an installed system"))
-		}
+	if err := d.checkNoInstallation(); err != nil {
+		return d.fail("check", err)
+	}
+	if err := checkWritable(d.BootStorageDir); err != nil {
+		return d.fail("check", fmt.Errorf("boot storage: %w", err))
+	}
+	bootImg, err := os.ReadFile(d.Payload.Path(payload.GrubDir + "/boot.img"))
+	if d.bios && (err != nil || len(bootImg) != 512) {
+		return d.fail("check", fmt.Errorf("the payload's boot.img is not a 512-byte boot sector (%v)", err))
 	}
 	if d.uefi {
 		if err := d.checkESP(); err != nil {
 			return d.fail("check", err)
+		}
+		if err := checkWritable(d.ESPDir); err != nil {
+			return d.fail("check", fmt.Errorf("the ESP: %w", err))
 		}
 	}
 	var core []byte
@@ -238,17 +246,13 @@ func (d *deployer) run(ctx context.Context) error {
 		}
 	}
 	if d.bios {
-		if d.emb, err = EmbedGRUB(d.Disk, *l.BIOSBoot, mustRead(d.Payload.Path(payload.GrubDir+"/boot.img")), core); err != nil {
+		d.rec("writing core.img to the BIOS Boot Partition (partition %d) and GRUB boot code to the boot sector", l.BIOSBoot.Number)
+		if d.emb, err = EmbedGRUB(d.Disk, *l.BIOSBoot, bootImg, core); err != nil {
 			return d.fail("BIOS boot code", err)
 		}
-		d.rec("wrote GRUB boot code to the boot sector and core.img to the BIOS Boot Partition (partition %d)", l.BIOSBoot.Number)
+		d.rec("wrote them, flushed")
 	}
 	return d.verify()
-}
-
-func mustRead(p string) []byte {
-	b, _ := os.ReadFile(p)
-	return b
 }
 
 func (d *deployer) machineID() (string, error) {
@@ -322,7 +326,16 @@ func writeFileSync(path string, data []byte) error {
 		f.Close()
 		return err
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	// The new directory entry must be durable too, or the synced data is unreachable.
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func sum(b []byte) string {
@@ -438,7 +451,11 @@ func (d *deployer) grubFiles() error {
 	}
 	env := &grubenv.Env{}
 	env.Set("VINTNER_T_RA", strings.Repeat("x", d.Tries))
-	if err := grubenv.Create(filepath.Join(d.BootStorageDir, "grub", "grubenv"), env); err != nil {
+	grubenvPath := filepath.Join(d.BootStorageDir, "grub", "grubenv")
+	if err := os.Remove(grubenvPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return d.fail("grub", err)
+	}
+	if err := grubenv.Create(grubenvPath, env); err != nil {
 		return d.fail("grub", err)
 	}
 	d.rec("wrote grub/grubenv on boot storage (recovery A has %d tries)", d.Tries)
@@ -502,8 +519,12 @@ func (d *deployer) writeManifest(machineID, recVersion string) error {
 	if err := manifest.Save(stateDir, m); err != nil {
 		return d.fail("manifest", err)
 	}
-	d.rec("wrote the manifest (installation %s) on boot storage", instID)
-	m.Seq = 1
+	saved, err := manifest.Load(stateDir)
+	if err != nil {
+		return d.fail("manifest", err)
+	}
+	d.rec("wrote the manifest (installation %s, seq %d) on boot storage", instID, saved.Seq)
+	m.Seq = saved.Seq
 	d.m = m
 	return nil
 }
@@ -537,6 +558,14 @@ func (d *deployer) deployESP() error {
 	}
 	if other {
 		fmt.Fprintln(d.Log, "  another operating system uses the ESP: the removable path EFI/BOOT/BOOTX64.EFI is left alone")
+		return nil
+	}
+	ok, err := d.removableOverwritable()
+	if err != nil {
+		return d.fail("ESP", err)
+	}
+	if !ok {
+		fmt.Fprintln(d.Log, "  EFI/BOOT/BOOTX64.EFI holds a loader that is not vintner's or Debian's: left alone")
 		return nil
 	}
 	if err := d.mkdir(d.ESPDir, "EFI/BOOT"); err != nil {
@@ -574,7 +603,7 @@ func (d *deployer) verify() error {
 	if err != nil {
 		return d.fail("verify", err)
 	}
-	if m.InstallationID != d.m.InstallationID || m.Seq != 1 {
+	if m.InstallationID != d.m.InstallationID || m.Seq != d.m.Seq {
 		return d.fail("verify", errors.New("the manifest does not read back as written"))
 	}
 	if d.bios {
@@ -590,4 +619,68 @@ func (d *deployer) verify() error {
 		}
 	}
 	return nil
+}
+
+// checkNoInstallation refuses a boot storage that holds an installed system: a
+// manifest with a published image, or one that cannot be read. A manifest that
+// publishes nothing is what an earlier deployment left, and is replaced, so
+// that a run that failed half-way can be run again.
+func (d *deployer) checkNoInstallation() error {
+	stateDir := filepath.Join(d.BootStorageDir, "vintner", "state")
+	found := false
+	for _, c := range []string{"manifest-a", "manifest-b"} {
+		if _, err := os.Stat(filepath.Join(stateDir, c)); err == nil {
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	m, err := manifest.Load(stateDir)
+	if err != nil {
+		return fmt.Errorf("boot storage holds a vintner manifest that cannot be read (%v): not replacing it", err)
+	}
+	if len(m.Images) > 0 {
+		return fmt.Errorf("boot storage already holds an installation with %d published image(s): this is an installed system", len(m.Images))
+	}
+	fmt.Fprintln(d.Log, "  an earlier deployment that published nothing is replaced")
+	return nil
+}
+
+// checkWritable proves dir accepts a new file, before anything is written.
+func checkWritable(dir string) error {
+	f, err := os.CreateTemp(dir, ".vintner-write-check-")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	f.Close()
+	return os.Remove(name)
+}
+
+// removableOverwritable says whether EFI/BOOT/BOOTX64.EFI may be replaced: it is
+// absent, it already is vintner's loader, or Debian's stock loader is installed
+// (its removable copy, which the installer removes anyway). Another loader that
+// lives only in the removable path is left alone.
+func (d *deployer) removableOverwritable() (bool, error) {
+	cur, err := os.ReadFile(filepath.Join(d.ESPDir, "EFI", "BOOT", "BOOTX64.EFI"))
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if sum(cur) == d.Payload.Files[payload.SystemdBoot] {
+		return true, nil
+	}
+	ents, err := os.ReadDir(filepath.Join(d.ESPDir, "EFI"))
+	if err != nil {
+		return false, err
+	}
+	for _, e := range ents {
+		if e.IsDir() && strings.EqualFold(e.Name(), "debian") {
+			return true, nil
+		}
+	}
+	return false, nil
 }

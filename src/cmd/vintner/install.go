@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/install"
@@ -117,7 +118,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		opts.ESPDir = filepath.Join(*target, "boot", "efi")
 	}
 	if *firmware != "uefi" {
-		opts.Disk = f
+		opts.Disk = blockDisk{f}
 	}
 	if opts.BootStorageDir == "" {
 		unmount, err := bootstorage.Mount("/dev/disk/by-partuuid/"+l.BootStorage.UUID, true)
@@ -146,10 +147,29 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "  "+c)
 			}
 		}
-		fmt.Fprintln(stderr, "vintner install: the stock boot path was not touched unless a line above says the boot sector or the ESP was written")
+		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed; the BIOS Boot Partition and the boot sector are written last, so a failure before a \"writing core.img\" line has not changed how a BIOS machine boots")
 		return 1
 	}
 	fmt.Fprintf(stdout, "deployed %d changes; installation %s\n", len(res.Changed), res.Manifest.InstallationID)
 	fmt.Fprintln(stdout, "not done yet: publishing generation 1 and removing the stock loaders")
 	return 0
+}
+
+// blockDisk is the disk opened for the BIOS boot code. DropCache asks the
+// kernel to flush and discard its cached copy of the device (BLKFLSBUF), so that
+// the read-back after the write comes from the device. A regular file, as in
+// tests, has no such cache to drop.
+type blockDisk struct{ *os.File }
+
+const blkflsbuf = 0x1261
+
+// DropCache implements the optional interface that install.VerifyEmbedded uses.
+func (b blockDisk) DropCache() error {
+	if err := b.Sync(); err != nil {
+		return err
+	}
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, b.Fd(), blkflsbuf, 0); errno != 0 && errno != syscall.ENOTTY {
+		return fmt.Errorf("flush the device cache: %w", errno)
+	}
+	return nil
 }

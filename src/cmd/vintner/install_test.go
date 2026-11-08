@@ -147,11 +147,11 @@ func TestInstallDeployOnly(t *testing.T) {
 		t.Errorf("stdout %q", out.String())
 	}
 
-	// A second run finds an installed system and changes nothing more.
+	// A second run replaces a deployment that published nothing.
 	out.Reset()
 	errb.Reset()
-	if rc := runInstall(args, &out, &errb); rc != 1 || !strings.Contains(errb.String(), "installed system") {
-		t.Errorf("second run: rc %d, stderr %q", rc, errb.String())
+	if rc := runInstall(args, &out, &errb); rc != 0 || !strings.Contains(out.String(), "earlier deployment that published nothing is replaced") {
+		t.Errorf("second run: rc %d, stdout %q, stderr %q", rc, out.String(), errb.String())
 	}
 }
 
@@ -160,7 +160,7 @@ func TestInstallDeployOnlyReportsAFailure(t *testing.T) {
 	var out, errb bytes.Buffer
 	rc := runInstall([]string{"--deploy-only", "--disk", installDisk(t, true), "--firmware", "uefi", "--payload-dir", installPayload(t),
 		"--target", target, "--esp", t.TempDir(), "--boot-storage", t.TempDir()}, &out, &errb)
-	if rc != 1 || !strings.Contains(errb.String(), "machine-id") || !strings.Contains(errb.String(), "stock boot path") {
+	if rc != 1 || !strings.Contains(errb.String(), "machine-id") || !strings.Contains(errb.String(), "everything that was changed") {
 		t.Errorf("rc %d, stderr %q", rc, errb.String())
 	}
 }

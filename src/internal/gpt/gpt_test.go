@@ -74,3 +74,16 @@ func TestReadAtRefusesWhatIsNotAPlainGPT(t *testing.T) {
 		t.Errorf("blank disk: %v, want ErrNotGPT", err)
 	}
 }
+
+func TestReadAtFindsA4096ByteSectorTable(t *testing.T) {
+	d := gpttest.ImageSS([]gpttest.Part{
+		{Type: TypeBootStorage, UUID: "2D11FDB7-C9B6-475F-8336-EBDB5B830355", FirstLBA: 256, LastLBA: 262399},
+	}, 1048576, 4096)
+	tab, err := ReadAt(d, d.Size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tab.SectorSize != 4096 || len(tab.Partitions) != 1 || tab.Partitions[0].Offset(4096) != 256*4096 {
+		t.Errorf("table %+v", tab)
+	}
+}

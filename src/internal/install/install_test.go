@@ -39,6 +39,7 @@ func (f *fakeUKI) Build(_ context.Context, r publish.UKIRequest) error {
 
 type fakeRunner struct {
 	calls [][]string
+	early string // the -c file as it was when grub-mkimage ran
 	core  []byte
 	err   error
 }
@@ -49,6 +50,10 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 		return []byte("boom"), f.err
 	}
 	for i, a := range args {
+		if a == "-c" {
+			b, _ := os.ReadFile(args[i+1])
+			f.early = string(b)
+		}
 		if a == "-o" {
 			return nil, os.WriteFile(args[i+1], f.core, 0o644)
 		}
@@ -280,7 +285,7 @@ func TestDeployWritesNothingWhenACheckFails(t *testing.T) {
 		{"already installed", "uefi", func(e *env) {
 			os.MkdirAll(filepath.Join(e.bs, "vintner/state"), 0o755)
 			os.WriteFile(filepath.Join(e.bs, "vintner/state/manifest-a"), []byte("x"), 0o644)
-		}, "installed system"},
+		}, "cannot be read"},
 		{"another loader.conf", "uefi", func(e *env) {
 			os.MkdirAll(filepath.Join(e.esp, "loader"), 0o755)
 			os.WriteFile(filepath.Join(e.esp, "loader/loader.conf"), []byte("default windows\n"), 0o644)
@@ -303,6 +308,9 @@ func TestDeployWritesNothingWhenACheckFails(t *testing.T) {
 		}
 		var se *Error
 		if !errors.As(err, &se) {
+			t.Fatalf("%s: %T is not *Error", c.name, err)
+		}
+		if false {
 			t.Errorf("%s: %T is not *Error", c.name, err)
 		}
 		if exists(filepath.Join(e.esp, "EFI")) || exists(filepath.Join(e.bs, "grub")) || exists(filepath.Join(e.bs, "EFI")) {
@@ -394,5 +402,174 @@ func TestVerifyEmbeddedNoticesADifferentDisk(t *testing.T) {
 	d.WriteAt([]byte{0xFF}, 2048*512+300)
 	if VerifyEmbedded(d, e) == nil {
 		t.Error("a changed core.img read back as written")
+	}
+}
+
+func TestTheCoreImageFindsBootStorageByItsFATSerial(t *testing.T) {
+	e := newEnv(t, "bios")
+	if _, err := Deploy(context.Background(), e.opts); err != nil {
+		t.Fatal(err)
+	}
+	if want := EarlyConfig("1234-ABCD"); e.run.early != want {
+		t.Errorf("early config %q, want %q", e.run.early, want)
+	}
+	if !strings.Contains(e.run.early, "--fs-uuid --set=root 1234-ABCD") || !strings.Contains(e.run.early, "set prefix=($root)/grub") {
+		t.Errorf("early config %q", e.run.early)
+	}
+}
+
+func TestADeploymentThatPublishedNothingIsReplaced(t *testing.T) {
+	e := newEnv(t, "both")
+	first, err := Deploy(context.Background(), e.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.run = &fakeRunner{core: bytes.Repeat([]byte{0xDD}, 1300)}
+	e.opts.Runner = e.run
+	second, err := Deploy(context.Background(), e.opts)
+	if err != nil {
+		t.Fatalf("the second run: %v", err)
+	}
+	if second.Manifest.InstallationID == first.Manifest.InstallationID || second.Manifest.Seq != 2 {
+		t.Errorf("installation %s seq %d", second.Manifest.InstallationID, second.Manifest.Seq)
+	}
+	m, err := manifest.Load(filepath.Join(e.bs, "vintner/state"))
+	if err != nil || m.InstallationID != second.Manifest.InstallationID {
+		t.Errorf("manifest %+v, %v", m, err)
+	}
+}
+
+func TestAnInstalledSystemIsNotTouched(t *testing.T) {
+	e := newEnv(t, "uefi")
+	if _, err := Deploy(context.Background(), e.opts); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(e.bs, "vintner/state")
+	m, err := manifest.Load(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Images = append(m.Images, manifest.Image{
+		Generation: 1, State: "GOOD", Kernel: manifest.Kernel{ABI: "6.12.0"}, Cmdline: "root=x",
+		UEFI:    &manifest.UEFIFile{Entry: "vintner-os-1", SHA256: strings.Repeat("a", 64), Size: 1},
+		Created: "2026-11-08T00:00:00Z",
+	})
+	m.NextGeneration = 2
+	if err := manifest.Save(stateDir, m); err != nil {
+		t.Fatal(err)
+	}
+	before := read(t, filepath.Join(e.esp, "EFI/vintner/systemd-bootx64.efi"))
+	os.WriteFile(filepath.Join(e.esp, "EFI/vintner/systemd-bootx64.efi"), []byte("signed by the owner"), 0o644)
+	_, err = Deploy(context.Background(), e.opts)
+	if err == nil || !strings.Contains(err.Error(), "installed system") {
+		t.Fatalf("error %v", err)
+	}
+	if got := read(t, filepath.Join(e.esp, "EFI/vintner/systemd-bootx64.efi")); string(got) != "signed by the owner" {
+		t.Errorf("the loader was overwritten (%d bytes, was %d)", len(got), len(before))
+	}
+}
+
+type syncFailsOnce struct {
+	*gpttest.Disk
+	fail bool
+}
+
+func (s *syncFailsOnce) Sync() error {
+	if s.fail {
+		s.fail = false
+		return errors.New("input/output error")
+	}
+	return nil
+}
+
+func TestARunThatFailedAfterTheManifestCanBeRunAgain(t *testing.T) {
+	e := newEnv(t, "both")
+	flaky := &syncFailsOnce{Disk: e.disk, fail: true}
+	e.opts.Disk = flaky
+	_, err := Deploy(context.Background(), e.opts)
+	var se *Error
+	if !errors.As(err, &se) || se.Step != "BIOS boot code" {
+		t.Fatalf("first run: %v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(e.bs, "vintner/state/manifest-a")); serr != nil {
+		t.Fatal("the manifest was not written before the BIOS boot code")
+	}
+	if len(se.Changed) == 0 || !strings.Contains(strings.Join(se.Changed, "\n"), "writing core.img to the BIOS Boot Partition") {
+		t.Errorf("the attempted takeover is not reported: %v", se.Changed)
+	}
+	if _, err := Deploy(context.Background(), e.opts); err != nil {
+		t.Fatalf("the run after the failure: %v", err)
+	}
+}
+
+func TestRemovableLoaderOfAnotherSystemIsLeftAlone(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(esp string)
+		want  string // BOOTX64.EFI afterwards; "" when it must be absent
+	}{
+		{"absent", func(string) {}, string(payloadtest.Content(payload.SystemdBoot))},
+		{"another loader only in the removable path", func(esp string) {
+			os.MkdirAll(filepath.Join(esp, "EFI/BOOT"), 0o755)
+			os.WriteFile(filepath.Join(esp, "EFI/BOOT/BOOTX64.EFI"), []byte("some other loader"), 0o644)
+		}, "some other loader"},
+		{"Debian's stock loader is installed", func(esp string) {
+			os.MkdirAll(filepath.Join(esp, "EFI/debian"), 0o755)
+			os.MkdirAll(filepath.Join(esp, "EFI/BOOT"), 0o755)
+			os.WriteFile(filepath.Join(esp, "EFI/BOOT/BOOTX64.EFI"), []byte("debian shim"), 0o644)
+		}, string(payloadtest.Content(payload.SystemdBoot))},
+	}
+	for _, c := range cases {
+		e := newEnv(t, "uefi")
+		c.setup(e.esp)
+		if _, err := Deploy(context.Background(), e.opts); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if got := string(read(t, filepath.Join(e.esp, "EFI/BOOT/BOOTX64.EFI"))); got != c.want {
+			t.Errorf("%s: BOOTX64.EFI is %q, want %q", c.name, got, c.want)
+		}
+		if !exists(filepath.Join(e.esp, "EFI/vintner/systemd-bootx64.efi")) {
+			t.Errorf("%s: vintner's own loader was not written", c.name)
+		}
+	}
+}
+
+func TestChecksBeforeAnyWrite(t *testing.T) {
+	e := newEnv(t, "uefi")
+	e.opts.ESPDir = filepath.Join(e.esp, "not-mounted")
+	if _, err := Deploy(context.Background(), e.opts); err == nil || !strings.Contains(err.Error(), "the ESP") {
+		t.Errorf("an ESP directory that does not exist: %v", err)
+	}
+	if exists(filepath.Join(e.bs, "vintner")) {
+		t.Error("boot storage was written before the ESP was found unusable")
+	}
+
+	pl := payloadtest.Write(t, map[string][]byte{"bios/i386-pc/boot.img": make([]byte, 100)})
+	p, err := payload.Open(pl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e = newEnv(t, "bios")
+	e.opts.Payload = p
+	if _, err := Deploy(context.Background(), e.opts); err == nil || !strings.Contains(err.Error(), "boot.img") {
+		t.Errorf("a short boot.img: %v", err)
+	}
+	if exists(filepath.Join(e.bs, "vintner")) {
+		t.Error("boot storage was written before boot.img was found unusable")
+	}
+}
+
+func TestEmbedGRUBRefusesADiskWithoutABootSectorSignature(t *testing.T) {
+	d := gpttest.New(1 << 24) // sector 0 is zeros: no 0x55AA
+	if _, err := EmbedGRUB(d, gpt.Partition{FirstLBA: 2048, LastLBA: 8191}, payloadtest.Content("bios/i386-pc/boot.img"), make([]byte, 600)); err == nil {
+		t.Error("boot code was written to a disk without a boot sector signature")
+	}
+}
+
+func TestEmbedGRUBRefusesABlocklistThatDoesNotFit(t *testing.T) {
+	d := gpttest.Image(nil, 8388608)
+	bp := gpt.Partition{FirstLBA: 2048, LastLBA: 2048 + 70000}
+	if _, err := EmbedGRUB(d, bp, payloadtest.Content("bios/i386-pc/boot.img"), make([]byte, 512*65538)); err == nil {
+		t.Error("a core.img of 65538 sectors was accepted")
 	}
 }

@@ -52,7 +52,7 @@ Everything is under `/usr/lib/vintner/payloads/`. The package has **no maintaine
 
 Three things are deliberately not shipped:
 - **`core.img`.** Its early configuration names the boot storage by FAT UUID, which exists only on the target, so the installer builds it from `bios/i386-pc/` and `core-modules.txt` (`grub-mkimage` is in `grub-common`).
-- **The recovery UKIs.** Tier A signs them with the owner's key, so the installer assembles them with `ukify` from `recovery/vmlinuz`, `recovery/initrd.img` and `uefi/linuxx64.efi.stub` (the command line is `console=tty0 console=ttyS0,115200 vintner.recovery=<a|b>`, as in `recovery/build.sh`). A prebuilt unsigned UKI would be thrown away in tier A and cost 23 MiB each.
+- **The recovery UKIs.** Tier A signs them with the owner's key, so the installer assembles them with `ukify` from `recovery/vmlinuz`, `recovery/initrd.img` and `uefi/linuxx64.efi.stub` (the command line is `console=tty0 console=ttyS0,115200 vintner.recovery=<a|b>`, as in `recovery/build.sh`, and `vintner install` adds `vintner.bootstorage=PARTUUID=<boot storage>`). A prebuilt unsigned UKI would be thrown away in tier A and cost 23 MiB each.
 - **shim.** It belongs to WO-0010 Phase 5 (Secure Boot completion), which takes it from the pinned `shim-signed` `.deb`.
 
 ### Where the payload files come from, and what that costs

@@ -196,3 +196,29 @@ func TestNamingAPartitionOverridesTheTypeSearch(t *testing.T) {
 		t.Errorf("boot storage %s", l.BootStorage.UUID)
 	}
 }
+
+func TestBIOSNeedsFiveHundredTwelveByteSectors(t *testing.T) {
+	// A disk with 4096-byte sectors, partitions given in 4 KiB sectors.
+	parts := []gpttest.Part{
+		part(gpt.TypeBIOSBoot, uBIOS, 256, 1023),
+		part(gpt.TypeESP, uESP, 1024, 32767),
+		part(gpt.TypeBootStorage, uBS, 32768, 32768+262144-1),
+		part(gpt.TypeLinuxRoot, uRoot, 294912, 1000000),
+	}
+	mk := func() *gpttest.Disk {
+		d := gpttest.ImageSS(parts, 1048576, 4096)
+		fat(d, 1024*4096, 253952, 1)
+		fat(d, 32768*4096, 2097152, 2)
+		ext(d, 294912*4096)
+		return d
+	}
+	if _, fs := check("uefi", mk(), nil); len(fs) != 0 {
+		t.Errorf("uefi on 4096-byte sectors: %v", fs)
+	}
+	for _, fw := range []string{"bios", "both"} {
+		_, fs := check(fw, mk(), nil)
+		if !strings.Contains(rules(fs), "L6") {
+			t.Errorf("%s on 4096-byte sectors: findings %q, want L6", fw, rules(fs))
+		}
+	}
+}

@@ -112,8 +112,11 @@ func GUIDBytes(s string) []byte {
 
 // Image builds a disk of totalLBAs 512-byte sectors holding a protective MBR
 // and a GPT with the given partitions.
-func Image(parts []Part, totalLBAs uint64) *Disk {
-	d := New(int64(totalLBAs) * 512)
+func Image(parts []Part, totalLBAs uint64) *Disk { return ImageSS(parts, totalLBAs, 512) }
+
+// ImageSS is Image for a disk with ss-byte sectors (512 or 4096).
+func ImageSS(parts []Part, totalLBAs uint64, ss int) *Disk {
+	d := New(int64(totalLBAs) * int64(ss))
 	mbr := make([]byte, 512)
 	mbr[446+4] = 0xEE
 	binary.LittleEndian.PutUint32(mbr[446+8:], 1)
@@ -134,7 +137,7 @@ func Image(parts []Part, totalLBAs uint64) *Disk {
 			binary.LittleEndian.PutUint16(e[56+2*j:], u)
 		}
 	}
-	hdr := make([]byte, 512)
+	hdr := make([]byte, ss)
 	copy(hdr[0:8], "EFI PART")
 	binary.LittleEndian.PutUint32(hdr[8:], 0x00010000)
 	binary.LittleEndian.PutUint32(hdr[12:], 92)
@@ -148,8 +151,8 @@ func Image(parts []Part, totalLBAs uint64) *Disk {
 	binary.LittleEndian.PutUint32(hdr[84:], eSize)
 	binary.LittleEndian.PutUint32(hdr[88:], crc32.ChecksumIEEE(arr))
 	binary.LittleEndian.PutUint32(hdr[16:], crc32.ChecksumIEEE(hdr[:92]))
-	d.WriteAt(hdr, 512)
-	d.WriteAt(arr, 1024)
+	d.WriteAt(hdr, int64(ss))
+	d.WriteAt(arr, int64(2*ss))
 	return d
 }
 
@@ -190,3 +193,6 @@ func (d *Disk) Save(path string) error {
 	}
 	return nil
 }
+
+// Sync implements the flush a real disk has; memory has nothing to flush.
+func (d *Disk) Sync() error { return nil }
