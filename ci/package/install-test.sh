@@ -58,6 +58,8 @@ scenario() { # name -> prints the chroot directory
 	sudo cp -a "$BASE" "$d"
 	sudo mount -t proc proc "$d/proc"
 	sudo cp "$DEBS"/vintner-*.deb "$d/root/"
+	# No pseudo-terminal in the chroot: apt would fail to write its terminal log.
+	echo 'Dpkg::Use-Pty "0";' | sudo tee "$d/etc/apt/apt.conf.d/99no-pty" >/dev/null
 	echo "$d"
 }
 in_chroot() { # dir command...
