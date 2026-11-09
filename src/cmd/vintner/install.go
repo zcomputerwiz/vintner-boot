@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/install"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/layout"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
@@ -45,6 +46,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	cmdlineFile := fs.String("cmdline-file", "", "the product's kernel options (default <target>/etc/kernel/cmdline)")
 	resume := fs.Bool("resume", false, "continue an installation that published generation 1 and failed afterwards: take booting over, remove the stock loaders, verify")
 	updateInitramfs := fs.Bool("update-initramfs", false, "when the kernel's initramfs is older than the target's initramfs-tools hooks, run update-initramfs -u -k <abi> in the target instead of refusing")
+	efivars := fs.String("efivars", efivar.DefaultDir, "the efivarfs directory for the UEFI boot entry; \"none\" writes no UEFI variable (installing from a machine whose firmware is not the target's)")
+	recA := fs.String("recovery-cmdline-a", "", "extra kernel options for recovery A, for example a serial console")
+	recB := fs.String("recovery-cmdline-b", "", "extra kernel options for recovery B")
 	sbTier := fs.String("secure-boot", "none", "Secure Boot tier: none, or A (a machine key in the firmware's db, no shim): creates the key, signs the loader and the recovery images")
 	sbDir := fs.String("secure-boot-dir", "", "where the machine key is kept (default <target>/etc/vintner/secureboot)")
 	sbEnrolled := fs.Bool("secure-boot-enrolled", false, "tier A: the machine certificate is in the firmware's db (use when the installer cannot read the firmware's variables)")
@@ -114,6 +118,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, UpdateInitramfs: *updateInitramfs, Options: install.Options{
 		Firmware: *firmware, Layout: l, Payload: pl,
 		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
+		EFIVarDir: *efivars, NoEFIVars: *efivars == "none", RecoveryExtraA: *recA, RecoveryExtraB: *recB,
 		SecureBootTier: *sbTier, SecureBootDir: *sbDir, SecureBootEnrolled: *sbEnrolled,
 		Log: stdout,
 	}}
