@@ -266,7 +266,7 @@ sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C sh -c \
 # vintner-platform conflicts with the stock loaders, so the installer takes its
 # payloads from the unpacked package (architecture section 5).
 # The installer wants the target's machine-id (the cloud image ships it empty).
-if [ "$(cat "$MNT/etc/machine-id" 2>/dev/null | wc -c)" -ne 33 ]; then
+if [ "$(wc -c < "$MNT/etc/machine-id" 2>/dev/null || echo 0)" -ne 33 ]; then
 	tr -d - < /proc/sys/kernel/random/uuid | sudo tee "$MNT/etc/machine-id" >/dev/null
 fi
 INSTALL_RC=0
