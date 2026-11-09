@@ -149,13 +149,17 @@ func (RealClock) Now() time.Time {
 }
 
 type Options struct {
-	KernelABI        string
-	BootStorageDir   string
-	StateDir         string
-	RootDir          string
-	LockFile         string
-	CmdlineFile      string
-	CmdlineContent   string
+	KernelABI      string
+	BootStorageDir string
+	StateDir       string
+	RootDir        string
+	LockFile       string
+	CmdlineFile    string
+	CmdlineContent string
+	// InitialCmdline is the command line of the first image. It is used only when
+	// the manifest has no image yet (vintner install); otherwise the newest
+	// image's command line is carried forward.
+	InitialCmdline   string
 	SecureBootDir    string
 	Verifier         secureboot.Verifier
 	PackageQuery     PackageQuery
@@ -502,6 +506,9 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			newestGoodGen = img.Generation
 			baseCmdline = img.Cmdline
 		}
+	}
+	if baseCmdline == "" && len(m.Images) == 0 {
+		baseCmdline = opts.InitialCmdline
 	}
 	if baseCmdline == "" {
 		return nil, errors.New("no image command line found in manifest")

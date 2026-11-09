@@ -19,7 +19,7 @@ import (
 )
 
 // installTestHook lets tests replace the external programs; it is nil in the binary.
-var installTestHook func(*install.Options)
+var installTestHook func(*install.FullOptions)
 
 func cmdInstall(args []string) {
 	osExit(runInstall(args, os.Stdout, os.Stderr))
@@ -41,17 +41,15 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	espUUID := fs.String("esp-partuuid", "", "PARTUUID of the EFI System Partition (default: the one partition of the ESP type)")
 	payloadDir := fs.String("payload-dir", payload.DefaultDir, "directory of the vintner-platform payloads")
 	check := fs.Bool("check", false, "only check the layout and the payloads; change nothing")
-	deployOnly := fs.Bool("deploy-only", false, "deploy the loader, recovery and manifest, then stop (publishing generation 1 and removing the stock loaders are not implemented yet)")
+	kernel := fs.String("kernel", "", "kernel ABI of generation 1 (default: the newest kernel with an initramfs in <target>/boot)")
+	cmdlineFile := fs.String("cmdline-file", "", "the product's kernel options (default <target>/etc/kernel/cmdline)")
+	resume := fs.Bool("resume", false, "continue an installation that published generation 1 and failed afterwards: take booting over, remove the stock loaders, verify")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if *disk == "" || *firmware == "" {
 		fmt.Fprintln(stderr, "vintner install: --disk and --firmware are required")
 		fs.Usage()
-		return 2
-	}
-	if !*check && !*deployOnly {
-		fmt.Fprintln(stderr, "vintner install: the full installation is not implemented yet; use --check to test a layout or --deploy-only to deploy what exists")
 		return 2
 	}
 
@@ -109,11 +107,11 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Deploy.
-	opts := install.Options{
+	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, Options: install.Options{
 		Firmware: *firmware, Layout: l, Payload: pl,
 		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
 		Log: stdout,
-	}
+	}}
 	if *firmware != "bios" && opts.ESPDir == "" {
 		opts.ESPDir = filepath.Join(*target, "boot", "efi")
 	}
@@ -136,8 +134,13 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	if installTestHook != nil {
 		installTestHook(&opts)
 	}
-	fmt.Fprintln(stdout, "deploying:")
-	res, err := install.Deploy(context.Background(), opts)
+	fmt.Fprintln(stdout, "installing:")
+	var res *install.Result
+	if *resume {
+		res, err = install.Resume(context.Background(), opts)
+	} else {
+		res, err = install.Install(context.Background(), opts)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "vintner install: %v\n", err)
 		var se *install.Error
@@ -147,11 +150,13 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "  "+c)
 			}
 		}
-		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed; the BIOS Boot Partition and the boot sector are written last, so a failure before a \"writing core.img\" line has not changed how a BIOS machine boots")
+		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed. Booting changes at the first \"wrote EFI/BOOT/BOOTX64.EFI\" or \"writing core.img\" line; both come after generation 1 is published")
+		if errors.As(err, &se) && se.Resumable {
+			fmt.Fprintln(stderr, "vintner install: generation 1 is published; run the same command again with --resume to finish")
+		}
 		return 1
 	}
-	fmt.Fprintf(stdout, "deployed %d changes; installation %s\n", len(res.Changed), res.Manifest.InstallationID)
-	fmt.Fprintln(stdout, "not done yet: publishing generation 1 and removing the stock loaders")
+	fmt.Fprintf(stdout, "installed: %d changes; installation %s; generation 1 is TRYING and is blessed GOOD by the first boot that reaches boot-complete.target\n", len(res.Changed), res.Manifest.InstallationID)
 	return 0
 }
 
