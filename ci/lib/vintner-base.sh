@@ -11,6 +11,7 @@
 # Requires: root via sudo (for loop mounts and partition operations), KVM,
 # mtools, qemu-system-x86, qemu-utils, cloud-image-utils, sfdisk, python3,
 # python3-virt-firmware, golang-go.
+# shellcheck disable=SC2024 # the logs are written by this user into OUT; sudo is for the chroot
 set -euo pipefail
 
 if [ $# -ne 2 ] || { [ "$1" != "uefi" ] && [ "$1" != "bios" ]; }; then
@@ -107,7 +108,6 @@ editenv() {
 	trixie "$ROOT/usr/bin/grub-editenv" "$@"
 }
 
-SDBOOT=$ROOT/usr/lib/systemd/boot/efi/systemd-bootx64.efi
 STUB=$ROOT/usr/lib/systemd/boot/efi/linuxx64.efi.stub
 UKIFY=""
 for u in "$ROOT/usr/lib/systemd/ukify" "$ROOT/usr/bin/ukify"; do
@@ -181,10 +181,12 @@ for p in data:
         res["bios_boot_sectors"] = p["size"]
     elif ptype == "C12A7328-F81F-11D2-BA4B-00A0C93EC93B":
         res["esp_start"] = p["start"]
+        res["esp_part"] = int(p["node"][len(p["node"].rstrip("0123456789")):])
         res["esp_sectors"] = p["size"]
         res["esp_partuuid"] = p["uuid"].lower()
     elif ptype == "BC13C2FF-59E6-4262-A352-B275FD6F7172":
         res["bs_start"] = p["start"]
+        res["bs_part"] = int(p["node"][len(p["node"].rstrip("0123456789")):])
         res["bs_sectors"] = p["size"]
         res["bs_partuuid"] = p["uuid"].lower()
 for k, v in res.items():
@@ -195,69 +197,19 @@ eval "$PART_INFO"
 
 ESP_OFFSET=$((ESP_START * 512))
 BS_OFFSET=$((BS_START * 512))
-EMBED_LBA=$BIOS_BOOT_START
-EMBED_ROOM=$((BIOS_BOOT_SECTORS * 512))
 
 echo "Root: start=$ROOT_START, sectors=$ROOT_SECTORS, partuuid=$ROOT_PARTUUID"
 echo "BIOS Boot: start=$BIOS_BOOT_START, sectors=$BIOS_BOOT_SECTORS"
 echo "ESP: start=$ESP_START, sectors=$ESP_SECTORS, partuuid=$ESP_PARTUUID"
 echo "Boot Storage: start=$BS_START, sectors=$BS_SECTORS, partuuid=$BS_PARTUUID"
 
-# --- 4. Format and populate Boot Storage, ESP, and MBR ------------------------
-echo "=== Formatting and populating Boot Storage and ESP ==="
+# --- 4. Format boot storage -----------------------------------------------------
+# The layout the installer checks (WO-0010 3.1) is the cloud image's BIOS Boot
+# Partition, ESP and root, plus the boot storage appended above. The product formats
+# boot storage (D-A); everything on it, on the ESP and in the BIOS Boot Partition is
+# written by `vintner install` in step 5.
+echo "=== Formatting boot storage ==="
 mformat -i "$DISK@@$BS_OFFSET" -F -N "$FS_SERIAL" -v BOOTSTORAGE ::
-mmd -D s -i "$DISK@@$BS_OFFSET" ::/EFI ::/EFI/Linux ::/grub ::/vintner ::/vintner/bios \
-	::/vintner/bios/os-1 ::/vintner/bios/recovery-a ::/vintner/bios/recovery-b ::/vintner/state
-
-mcopy -o -i "$DISK@@$BS_OFFSET" firmware/bios/grub.cfg ::/grub/grub.cfg
-
-# Build early config and core.img
-printf 'search --no-floppy --fs-uuid --set=root %s-%s\nset prefix=(%s)/grub\n' \
-	"${FS_SERIAL:0:4}" "${FS_SERIAL:4}" "\$root" > "$OUT/early.cfg"
-
-# shellcheck disable=SC2046
-trixie "$ROOT/usr/bin/grub-mkimage" -O i386-pc -d "$ROOT/usr/lib/grub/i386-pc" -o "$OUT/core.img" -c "$OUT/early.cfg" -p /grub \
-	$(cat firmware/bios/core-modules.txt)
-
-# Embed core.img and MBR jump code
-python3 - "$DISK" "$EMBED_LBA" "$EMBED_ROOM" "$OUT/core.img" "$ROOT/usr/lib/grub/i386-pc/boot.img" <<'EOF'
-import struct, sys
-img, lba, room = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
-core = bytearray(open(sys.argv[4], 'rb').read())
-core += bytes(-len(core) % 512)
-boot = open(sys.argv[5], 'rb').read()
-assert len(boot) == 512 and len(core) <= room
-struct.pack_into('<QH', core, 0x1f4, lba + 1, len(core) // 512 - 1)
-with open(img, 'r+b') as f:
-    mbr = bytearray(f.read(512))
-    mbr[0:3] = boot[0:3]
-    mbr[0x5a:0x1b8] = boot[0x5a:0x1b8]
-    struct.pack_into('<Q', mbr, 0x5c, lba)
-    mbr[0x66:0x68] = b'\x90\x90'
-    f.seek(0); f.write(mbr)
-    f.seek(lba * 512); f.write(core)
-EOF
-
-# Initial grubenv: VINTNER_ORDER=1, VINTNER_T_1=xxx, VINTNER_T_RA=xxx
-editenv "$OUT/env" create
-editenv "$OUT/env" set "VINTNER_ORDER=1" "VINTNER_T_1=xxx" "VINTNER_T_RA=xxx"
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/env" ::/grub/grubenv
-
-# Populate ESP
-mmd -D s -i "$DISK@@$ESP_OFFSET" ::/EFI/vintner ::/loader 2>/dev/null || true
-mcopy -o -i "$DISK@@$ESP_OFFSET" "$SDBOOT" ::/EFI/BOOT/BOOTX64.EFI
-mcopy -o -i "$DISK@@$ESP_OFFSET" "$SDBOOT" ::/EFI/vintner/systemd-bootx64.efi
-mcopy -o -i "$DISK@@$ESP_OFFSET" firmware/uefi/loader.conf ::/loader/loader.conf
-
-# Copy recovery kernel/initrd to boot storage for BIOS
-mcopy -o -i "$DISK@@$BS_OFFSET" recovery/out/vmlinuz ::/vintner/bios/recovery-a/vmlinuz
-mcopy -o -i "$DISK@@$BS_OFFSET" recovery/out/initrd.img ::/vintner/bios/recovery-a/initrd.img
-mcopy -o -i "$DISK@@$BS_OFFSET" recovery/out/vmlinuz ::/vintner/bios/recovery-b/vmlinuz
-mcopy -o -i "$DISK@@$BS_OFFSET" recovery/out/initrd.img ::/vintner/bios/recovery-b/initrd.img
-
-# Copy recovery UKIs to boot storage for UEFI
-mcopy -o -i "$DISK@@$BS_OFFSET" recovery/out/vintner-recovery-a.efi ::/EFI/Linux/vintner-recovery-a+3-0.efi
-mcopy -o -i "$DISK@@$BS_OFFSET" recovery/out/vintner-recovery-b.efi ::/EFI/Linux/vintner-recovery-b.efi
 
 # --- 5. Mount root filesystem and configure guest ---------------------------
 echo "=== Configuring guest root filesystem ==="
@@ -303,6 +255,35 @@ sudo cp --dereference /etc/resolv.conf "$MNT/etc/resolv.conf"
 PKG_RC=0
 sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C sh -c \
 	'apt-get update && apt-get install -y --no-install-recommends /root/vintner-core.deb' || PKG_RC=$?
+
+# `vintner install` (WO-0010 3.6): the same command a product runs, inside a chroot of
+# the guest root, as ci/install/run.sh does. It stages, publishes generation 1, takes
+# booting over on both firmwares, removes the stock loaders and verifies. This
+# machine's firmware does not boot the disk, so no NVRAM entry is written (--efivars
+# none); the removable path carries the UEFI boot. The row's console and test-mode
+# options reach the guest through the product's own inputs: /etc/kernel/cmdline for
+# os-1 and the recovery command-line options for the two recovery images.
+# vintner-platform conflicts with the stock loaders, so the installer takes its
+# payloads from the unpacked package (architecture section 5).
+INSTALL_RC=0
+if [ "$PKG_RC" -eq 0 ]; then
+	echo "=== vintner install ==="
+	sudo mkdir -p "$MNT/boot/efi" "$MNT/mnt/bs" "$MNT/root/vp"
+	sudo mount "${LOOP}p$ESP_PART" "$MNT/boot/efi"
+	sudo mount "${LOOP}p$BS_PART" "$MNT/mnt/bs"
+	sudo cp "$PLATFORM_DEB" "$MNT/root/vintner-platform.deb"
+	sudo chroot "$MNT" dpkg-deb -x /root/vintner-platform.deb /root/vp
+	echo "console=ttyS0,115200${VINTNER_EXTRA_CMDLINE:+ $VINTNER_EXTRA_CMDLINE}" | sudo tee "$MNT/etc/kernel/cmdline" >/dev/null
+	RECA_EXTRA="vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
+	RECB_EXTRA="$RECA_EXTRA vintner.test_slot=b"
+	sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
+		--root-partuuid "$ROOT_PARTUUID" --payload-dir /root/vp/usr/lib/vintner/payloads --efivars none \
+		--recovery-cmdline-a "$RECA_EXTRA" --recovery-cmdline-b "$RECB_EXTRA" > "$OUT/install.log" 2>&1 || INSTALL_RC=$?
+	cat "$OUT/install.log"
+	sudo rm -rf "$MNT/root/vp" "$MNT/root/vintner-platform.deb"
+	for m in boot/efi mnt/bs; do sudo umount "$MNT/$m" || sudo umount -l "$MNT/$m"; done
+	grep -q "^installed:" "$OUT/install.log" || INSTALL_RC=1
+fi
 sudo rm -f "$MNT/etc/resolv.conf"
 sudo mv "$MNT/etc/resolv.conf.ci-save" "$MNT/etc/resolv.conf"
 # Processes that package scripts left running in the chroot (agents, daemons) keep
@@ -315,6 +296,7 @@ sleep 1
 for m in dev/pts dev proc; do sudo umount "$MNT/$m" || sudo umount -l "$MNT/$m"; done
 sudo rm -f "$MNT/root/vintner-core.deb"
 [ "$PKG_RC" -eq 0 ] || { echo "installing vintner-core into the guest failed (rc=$PKG_RC)" >&2; exit 1; }
+[ "$INSTALL_RC" -eq 0 ] || { echo "vintner install failed (rc=$INSTALL_RC), see install.log" >&2; exit 1; }
 sudo chroot "$MNT" dpkg-query -W -f='${Package} ${Version}\n' vintner-core systemd-ukify sbsigntool | tee -a "$VERSIONS"
 # The hooks arrive armed. Rows install other packages (kernels, initramfs tools) in
 # the guest before the step they test, and a row arms the hooks when it wants vintner
@@ -405,230 +387,6 @@ sudo umount "$MNT"
 sudo losetup -d "$LOOP"
 LOOP=""
 
-# --- 6. Populate Boot Storage slots and UKIs --------------------------------
-echo "=== Populating ordinary image slots and UKIs ==="
-# BIOS os-1
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/vmlinuz" ::/vintner/bios/os-1/vmlinuz
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/initrd.img" ::/vintner/bios/os-1/initrd.img
-
-if [ -n "${VINTNER_EXTRA_CMDLINE:-}" ]; then
-	OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro vintner.bootstorage=PARTUUID=$BS_PARTUUID $VINTNER_EXTRA_CMDLINE console=ttyS0,115200"
-else
-	OS1_CMDLINE="root=UUID=$ROOT_FS_UUID ro console=ttyS0,115200 vintner.bootstorage=PARTUUID=$BS_PARTUUID"
-fi
-cat <<EOF > "$OUT/os1-slot.cfg"
-set vintner_cmdline="$OS1_CMDLINE"
-EOF
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/os1-slot.cfg" ::/vintner/bios/os-1/slot.cfg
-
-# BIOS recovery slots
-RECA_CMDLINE="console=ttyS0 vintner.recovery=a vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
-cat <<EOF > "$OUT/reca-slot.cfg"
-set vintner_cmdline="$RECA_CMDLINE"
-EOF
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/reca-slot.cfg" ::/vintner/bios/recovery-a/slot.cfg
-
-RECB_CMDLINE="console=ttyS0 vintner.recovery=b vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID vintner.test_slot=b"
-cat <<EOF > "$OUT/recb-slot.cfg"
-set vintner_cmdline="$RECB_CMDLINE"
-EOF
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/recb-slot.cfg" ::/vintner/bios/recovery-b/slot.cfg
-
-# UEFI UKI for os-1
-echo "Building UKI vintner-os-1+3-0.efi with ukify..."
-python3 "$UKIFY" build \
-	--linux="$OUT/vmlinuz" \
-	--initrd="$OUT/initrd.img" \
-	--stub="$STUB" \
-	--os-release="@$OUT/osrel" \
-	--cmdline="$OS1_CMDLINE" \
-	--output="$OUT/vintner-os-1+3-0.efi"
-
-mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/vintner-os-1+3-0.efi" ::/EFI/Linux/vintner-os-1+3-0.efi
-
-# --- 7. Generate Initial Manifests (firmware: both) -------------------------
-echo "=== Generating initial dual-firmware manifest ==="
-OS1_UKI_SHA=$(sha256sum "$OUT/vintner-os-1+3-0.efi" | awk '{print $1}')
-OS1_UKI_SIZE=$(stat -c %s "$OUT/vintner-os-1+3-0.efi")
-
-OS1_VMLINUZ_SHA=$(sha256sum "$OUT/vmlinuz" | awk '{print $1}')
-OS1_INITRD_SHA=$(sha256sum "$OUT/initrd.img" | awk '{print $1}')
-OS1_SLOT_SHA=$(sha256sum "$OUT/os1-slot.cfg" | awk '{print $1}')
-
-REC_VMLINUZ_SHA=$(sha256sum recovery/out/vmlinuz | awk '{print $1}')
-REC_INITRD_SHA=$(sha256sum recovery/out/initrd.img | awk '{print $1}')
-RECA_SLOT_SHA=$(sha256sum "$OUT/reca-slot.cfg" | awk '{print $1}')
-RECB_SLOT_SHA=$(sha256sum "$OUT/recb-slot.cfg" | awk '{print $1}')
-
-RECA_UKI_SHA=$(sha256sum recovery/out/vintner-recovery-a.efi | awk '{print $1}')
-RECA_UKI_SIZE=$(stat -c %s recovery/out/vintner-recovery-a.efi)
-RECB_UKI_SHA=$(sha256sum recovery/out/vintner-recovery-b.efi | awk '{print $1}')
-RECB_UKI_SIZE=$(stat -c %s recovery/out/vintner-recovery-b.efi)
-
-GEN_MANIFEST=src/gen_manifest.go
-cat <<'EOF' > "$GEN_MANIFEST"
-package main
-
-import (
-	"fmt"
-	"os"
-	"time"
-
-	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
-)
-
-func main() {
-	destDir := os.Args[1]
-	rootPartUUID := os.Args[2]
-	rootUUID := os.Args[3]
-	bootStoragePartUUID := os.Args[4]
-	machineID := os.Args[5]
-	kernelABI := os.Args[6]
-
-	os1UKISHA := os.Args[7]
-	var os1UKISize int
-	fmt.Sscanf(os.Args[8], "%d", &os1UKISize)
-	os1Cmdline := os.Args[9]
-
-	os1VmlinuzSHA := os.Args[10]
-	os1InitrdSHA := os.Args[11]
-	os1SlotCfgSHA := os.Args[12]
-
-	recVmlinuzSHA := os.Args[13]
-	recInitrdSHA := os.Args[14]
-	recASlotCfgSHA := os.Args[15]
-	recBSlotCfgSHA := os.Args[16]
-
-	recAUKISHA := os.Args[17]
-	var recAUKISize int
-	fmt.Sscanf(os.Args[18], "%d", &recAUKISize)
-
-	recBUKISHA := os.Args[19]
-	var recBUKISize int
-	fmt.Sscanf(os.Args[20], "%d", &recBUKISize)
-
-	var m manifest.Manifest
-	m.Format = 1
-	m.Seq = 1
-	m.InstallationID = "0f8e2d6c-4b1a-4c3d-9e8f-7a6b5c4d3e2f"
-	m.MachineID = machineID
-	m.Firmware = "both"
-	m.SecureBootTier = "none"
-	m.Root = manifest.Root{
-		PartUUID: rootPartUUID,
-		UUID:     rootUUID,
-	}
-	m.BootStorage = manifest.BootStorage{
-		PartUUID: bootStoragePartUUID,
-	}
-	m.Tries = 3
-	m.Retain = 3
-	m.NextGeneration = 2
-
-	now := time.Now().UTC().Format(time.RFC3339)
-	pkg := fmt.Sprintf("linux-image-%s", kernelABI)
-	ver := "1"
-
-	img := manifest.Image{
-		Generation: 1,
-		State:      "TRYING",
-		Stale:      false,
-		Kernel: manifest.Kernel{
-			ABI:     kernelABI,
-			Package: &pkg,
-			Version: &ver,
-		},
-		Cmdline: os1Cmdline,
-		UEFI: &manifest.UEFIFile{
-			Entry:  "vintner-os-1",
-			SHA256: os1UKISHA,
-			Size:   os1UKISize,
-		},
-		BIOS: &manifest.BIOSFiles{
-			Dir: "/vintner/bios/os-1",
-			Files: manifest.BIOSFilesMap{
-				Vmlinuz:   os1VmlinuzSHA,
-				InitrdImg: os1InitrdSHA,
-				SlotCfg:   os1SlotCfgSHA,
-			},
-		},
-		Created:   now,
-		FirstGood: nil,
-		LastGood:  nil,
-	}
-	m.Images = []manifest.Image{img}
-
-	recA := manifest.Recovery{
-		Slot:    "a",
-		Version: "20261015",
-		UEFI: &manifest.UEFIFile{
-			Entry:  "vintner-recovery-a",
-			SHA256: recAUKISHA,
-			Size:   recAUKISize,
-		},
-		BIOS: &manifest.BIOSFiles{
-			Dir: "/vintner/bios/recovery-a",
-			Files: manifest.BIOSFilesMap{
-				Vmlinuz:   recVmlinuzSHA,
-				InitrdImg: recInitrdSHA,
-				SlotCfg:   recASlotCfgSHA,
-			},
-		},
-	}
-	recB := manifest.Recovery{
-		Slot:    "b",
-		Version: "20261015",
-		UEFI: &manifest.UEFIFile{
-			Entry:  "vintner-recovery-b",
-			SHA256: recBUKISHA,
-			Size:   recBUKISize,
-		},
-		BIOS: &manifest.BIOSFiles{
-			Dir: "/vintner/bios/recovery-b",
-			Files: manifest.BIOSFilesMap{
-				Vmlinuz:   recVmlinuzSHA,
-				InitrdImg: recInitrdSHA,
-				SlotCfg:   recBSlotCfgSHA,
-			},
-		},
-	}
-	m.Recovery = []manifest.Recovery{recA, recB}
-
-	if err := m.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "manifest validation failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	_ = os.RemoveAll(destDir)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create destDir: %v\n", err)
-		os.Exit(1)
-	}
-
-	m.Seq = 0
-	if err := manifest.Save(destDir, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to save manifest-a: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := manifest.Save(destDir, &m); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to save manifest-b: %v\n", err)
-		os.Exit(1)
-	}
-}
-EOF
-
-(cd src && go run gen_manifest.go "../$STATE" \
-	"$ROOT_PARTUUID" "$ROOT_FS_UUID" "$BS_PARTUUID" "$MACHINE_ID" "$KERNEL_ABI" \
-	"$OS1_UKI_SHA" "$OS1_UKI_SIZE" "$OS1_CMDLINE" \
-	"$OS1_VMLINUZ_SHA" "$OS1_INITRD_SHA" "$OS1_SLOT_SHA" \
-	"$REC_VMLINUZ_SHA" "$REC_INITRD_SHA" "$RECA_SLOT_SHA" "$RECB_SLOT_SHA" \
-	"$RECA_UKI_SHA" "$RECA_UKI_SIZE" "$RECB_UKI_SHA" "$RECB_UKI_SIZE")
-rm -f "$GEN_MANIFEST"
-
-mcopy -o -i "$DISK@@$BS_OFFSET" "$STATE/manifest-a" ::/vintner/state/manifest-a
-mcopy -o -i "$DISK@@$BS_OFFSET" "$STATE/manifest-b" ::/vintner/state/manifest-b
-
 # Setup OVMF vars
 CODE_FD=""
 VARS_TEMPLATE=""
@@ -647,7 +405,14 @@ source ci/lib/vintner-qemu.sh
 
 printf 'ID\tKind\tStatus\tCommandExit\tVintnerFiles\tNVRAM\tBoot2\tEvidence\n' > "$RESULTS"
 
-# --- 10. Preparation (Operation P0) ------------------------------------------
+# --- 10. Operation P0: the installed system boots, and the loaders are gone -------
+# `vintner install` already removed the stock loaders (ESP directory first, then the
+# packages, because shim-signed's postrm would otherwise run grub-install and replace
+# FIBOOTBOOTX64.EFI: the old X0 finding). P0 now boots the installed disk and runs the
+# purge once more: nothing is left to purge, and vintner must still be what boots. The
+# X0 scenario (purge with the ESP directory kept) cannot arise on the product path any
+# more; the installer removes the directory itself, which ci/install/run.sh (I6) and the
+# install unit tests check.
 echo "=== Running Operation P0 (Preparation: purge stock bootloaders) ==="
 PURGE_SCRIPT=$(cat <<'EOF'
 BEFORE=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}=${Version}\n' 'grub*' 'shim*' 'systemd-boot*' 2>/dev/null | awk '$1=="ii"{print $2}' | paste -sd' ')
@@ -671,10 +436,6 @@ echo "REMOVED-BY-APT: $(comm -23 /tmp/pkgs-before /tmp/pkgs-after | paste -sd' '
 exit $RC
 EOF
 )
-# On an EFI-booted system, shim-signed's postrm runs grub-install when /boot/efi/EFI/debian
-# exists, with --force-extra-removable if grub2/force_efi_extra_removable is set, as on the
-# cloud image: that replaces \EFI\BOOT\BOOTX64.EFI (X0). The installer therefore removes the
-# stock loader's ESP directory before it purges the packages.
 P0_SCRIPT="rm -rf /boot/efi/EFI/debian
 echo \"ESP-DEBIAN-REMOVED: \$([ -e /boot/efi/EFI/debian ] && echo no || echo yes)\"
 $PURGE_SCRIPT"
@@ -684,11 +445,6 @@ P0_VARS=""
 [ "$FIRMWARE" = "uefi" ] && P0_VARS="$BASE_VARS"
 PRE_P0="$OUT/pre-p0.raw"
 cp --sparse=always "$DISK" "$PRE_P0"
-X0_VARS=""
-if [ "$FIRMWARE" = "uefi" ]; then
-	X0_VARS="$OUT/X0-vars.fd"
-	cp "$BASE_VARS" "$X0_VARS"
-fi
 
 echo "Booting P0 Boot 1..."
 run_qemu "$DISK" "$P0_SEED" "$OUT/P0-boot1.log" 600 "$P0_VARS"
@@ -696,18 +452,8 @@ echo "Booting P0 Boot 2..."
 run_qemu "$DISK" "$P0_SEED" "$OUT/P0-boot2.log" 120 "$P0_VARS"
 
 inspect P0 prep "$DISK" "$PRE_P0" "$P0_VARS"
+rm -f "$PRE_P0"
 
-# X0: the same removal without first removing \EFI\debian, from the disk before P0.
-echo "=== Running Operation X0 (conflicting: purge stock bootloaders, ESP directory kept) ==="
-X0_SEED=$(make_seed "X0" "$PURGE_SCRIPT")
-qemu-img create -q -f qcow2 -F raw -b pre-p0.raw "$OUT/X0.qcow2"
-run_qemu "$OUT/X0.qcow2" "$X0_SEED" "$OUT/X0-boot1.log" 600 "$X0_VARS"
-run_qemu "$OUT/X0.qcow2" "$X0_SEED" "$OUT/X0-boot2.log" 120 "$X0_VARS"
-INSPECT_TMP="$OUT/X0-inspect.raw"
-qemu-img convert -O raw "$OUT/X0.qcow2" "$INSPECT_TMP"
-inspect X0 conflicting "$INSPECT_TMP" "$PRE_P0" "$X0_VARS"
-rm -f "$INSPECT_TMP" "$OUT/X0.qcow2" "$PRE_P0"
-INSPECT_TMP=""
 if [ "$(awk -F'\t' '$1=="P0"{print $3}' "$RESULTS")" != "PASS" ]; then
 	echo "CRITICAL: P0 failed; every other operation would run on a broken base." >&2
 	exit 1
