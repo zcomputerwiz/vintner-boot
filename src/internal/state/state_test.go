@@ -299,6 +299,8 @@ func TestApplyArm(t *testing.T) {
 }
 
 func TestCheckHealth_Recovery(t *testing.T) {
+	healthyVars := t.TempDir() // never the real efivarfs of the machine running the tests
+	vintnerEntry(t, healthyVars, 0)
 	recA := manifest.Recovery{
 		Slot: "a",
 		UEFI: &manifest.UEFIFile{Entry: "vintner-recovery-a", SHA256: "sha_a"},
@@ -333,7 +335,7 @@ func TestCheckHealth_Recovery(t *testing.T) {
 		BIOSDirs:  validBIOS,
 		GrubEnv:   env(),
 	}
-	reports = CheckHealth(m, vMissingUEFI, "", "", true)
+	reports = CheckHealth(m, vMissingUEFI, healthyVars, "", true)
 	want := []string{"invalid recovery image: missing uefi file for slot a"}
 	if !reflect.DeepEqual(reports, want) {
 		t.Errorf("missing UEFI recovery: reports = %q, want %q", reports, want)
@@ -345,7 +347,7 @@ func TestCheckHealth_Recovery(t *testing.T) {
 		BIOSDirs:  validBIOS,
 		GrubEnv:   env(),
 	}
-	reports = CheckHealth(m, vMismatchUEFI, "", "", true)
+	reports = CheckHealth(m, vMismatchUEFI, healthyVars, "", true)
 	want = []string{"invalid recovery image: hash mismatch for slot a"}
 	if !reflect.DeepEqual(reports, want) {
 		t.Errorf("mismatch UEFI recovery: reports = %q, want %q", reports, want)
@@ -481,6 +483,7 @@ func TestCheckHealth(t *testing.T) {
 func TestCheckHealth_SelectionPolicy(t *testing.T) {
 	efivarsDir := t.TempDir()
 	sbDir := t.TempDir()
+	vintnerEntry(t, efivarsDir, 0)
 
 	m := &manifest.Manifest{
 		Firmware: "both",
@@ -520,6 +523,7 @@ func TestCheckHealth_SelectionPolicy(t *testing.T) {
 
 	// 2. Test foreign entries and unlisted files on boot storage
 	emptyEFIVars := t.TempDir()
+	vintnerEntry(t, emptyEFIVars, 0)
 	v := &View{
 		UEFIFiles: map[string]string{
 			"vintner-os-1+3-0.efi":   "h1",      // tracked ordinary image
@@ -621,5 +625,60 @@ func TestAddESPReportsSideLoadedFilesWithPartitionPrefix(t *testing.T) {
 	want := []string{"ESP:EFI/Linux/x.efi.extra.d/b.raw", "ESP:loader/addons/a.addon.efi", "loader/credentials/c"}
 	if !reflect.DeepEqual(v.SideLoaded, want) {
 		t.Errorf("SideLoaded = %v, want %v", v.SideLoaded, want)
+	}
+}
+
+// vintnerEntry writes vintner's Boot#### entry (number n) and a BootOrder that starts with it.
+func vintnerEntry(t *testing.T, dir string, _ uint16) {
+	t.Helper()
+	dp, err := efivar.DevicePath(efivar.PartitionRef{Number: 1, FirstLBA: 2048, Sectors: 4096, Signature: "11223344-5566-7788-99aa-bbccddeeff00"}, efivar.VintnerLoaderPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := efivar.SetFirstBootEntry(dir, efivar.VintnerDescription, dp); err != nil || !created {
+		t.Fatalf("vintner entry: created=%v err=%v", created, err)
+	}
+
+}
+
+func TestCheckHealth_BootOrder(t *testing.T) {
+	m := &manifest.Manifest{Firmware: "uefi"}
+	only := func(r []string) string {
+		for _, s := range r {
+			if strings.Contains(s, "NVRAM") || strings.Contains(s, "BootOrder") {
+				return s
+			}
+		}
+		return ""
+	}
+
+	// no efivarfs at all: nothing to report
+	if got := only(CheckHealth(m, nil, filepath.Join(t.TempDir(), "none"), "", true)); got != "" {
+		t.Errorf("without efivarfs: %q", got)
+	}
+	// BIOS installation: no NVRAM entry is expected
+	bios := &manifest.Manifest{Firmware: "bios"}
+	if got := only(CheckHealth(bios, nil, t.TempDir(), "", true)); got != "" {
+		t.Errorf("bios manifest: %q", got)
+	}
+
+	// the entry is missing
+	dir := t.TempDir()
+	if got := only(CheckHealth(m, nil, dir, "", true)); !strings.Contains(got, "NVRAM boot entry missing") {
+		t.Errorf("missing entry: %q", got)
+	}
+
+	// present and first: silent
+	vintnerEntry(t, dir, 0)
+	if got := only(CheckHealth(m, nil, dir, "", true)); got != "" {
+		t.Errorf("healthy: %q", got)
+	}
+
+	// the firmware (or another system) moved something in front of it
+	if err := efivar.Set(dir, "BootOrder", efivar.GlobalVariable, efivar.BootAttrs, []byte{7, 0, 0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if got := only(CheckHealth(m, nil, dir, "", true)); !strings.Contains(got, "BootOrder does not start with the vintner entry Boot0000") || !strings.Contains(got, "0007,0000") {
+		t.Errorf("reordered: %q", got)
 	}
 }

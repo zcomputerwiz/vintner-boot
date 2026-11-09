@@ -659,11 +659,11 @@ func (d *deployer) cutoverUEFI() error {
 }
 
 // NVRAMDescription is the description of the boot entry vintner creates.
-const NVRAMDescription = "Vintner Boot"
+const NVRAMDescription = efivar.VintnerDescription
 
 // nvramPath is the file the boot entry starts: vintner's own loader, never the
 // removable path, so the entry works whatever the removable path holds.
-const nvramPath = `\EFI\vintner\systemd-bootx64.efi`
+const nvramPath = efivar.VintnerLoaderPath
 
 // efiVarDir is the efivarfs directory to write the entry to. It is empty when
 // the running system did not start through UEFI (a BIOS-booted installer, a
@@ -695,9 +695,7 @@ func (d *deployer) cutoverNVRAM() error {
 		return d.fail("NVRAM", errors.New("the layout has no ESP"))
 	}
 	p := *l.ESP
-	dp, err := efivar.DevicePath(efivar.PartitionRef{
-		Number: uint32(p.Number), FirstLBA: p.FirstLBA, Sectors: p.LastLBA - p.FirstLBA + 1, Signature: p.UUID,
-	}, nvramPath)
+	dp, err := BootEntryDevicePath(p)
 	if err != nil {
 		return d.fail("NVRAM", err)
 	}
