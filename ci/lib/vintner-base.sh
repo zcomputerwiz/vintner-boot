@@ -277,7 +277,7 @@ if [ "$PKG_RC" -eq 0 ]; then
 	sudo mount "${LOOP}p$BS_PART" "$MNT/mnt/bs"
 	sudo cp "$PLATFORM_DEB" "$MNT/root/vintner-platform.deb"
 	sudo chroot "$MNT" dpkg-deb -x /root/vintner-platform.deb /root/vp
-	echo "console=ttyS0,115200${VINTNER_EXTRA_CMDLINE:+ $VINTNER_EXTRA_CMDLINE}" | sudo tee "$MNT/etc/kernel/cmdline" >/dev/null
+	echo "${VINTNER_EXTRA_CMDLINE:+$VINTNER_EXTRA_CMDLINE }console=ttyS0,115200" | sudo tee "$MNT/etc/kernel/cmdline" >/dev/null
 	RECA_EXTRA="vintner.recovery_test=1 vintner.root=UUID=$ROOT_FS_UUID"
 	RECB_EXTRA="$RECA_EXTRA vintner.test_slot=b"
 	sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
