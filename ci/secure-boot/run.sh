@@ -522,6 +522,8 @@ PY
 			;;
 		S7)
 			cp --sparse=always "$PREPARED_RAW" "$CASE_DISK"
+			# The installed ESP has no EFI/systemd (the old hand-made one had).
+			mmd -D s -i "$CASE_DISK@@$ESP_OFFSET" ::/EFI/systemd 2>/dev/null || true
 			mcopy -o -i "$CASE_DISK@@$ESP_OFFSET" "$UNSIGNED_LOADER" ::/EFI/systemd/systemd-bootx64.efi
 			mcopy -o -i "$CASE_DISK@@$ESP_OFFSET" "$UNSIGNED_LOADER" ::/EFI/BOOT/BOOTX64.EFI
 			mcopy -o -i "$CASE_DISK@@$ESP_OFFSET" "$UNSIGNED_LOADER" ::/EFI/vintner/systemd-bootx64.efi
