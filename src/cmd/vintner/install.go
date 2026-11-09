@@ -150,7 +150,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 				fmt.Fprintln(stderr, "  "+c)
 			}
 		}
-		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed. Booting changes at the first \"wrote EFI/BOOT/BOOTX64.EFI\" or \"writing core.img\" line; both come after generation 1 is published")
+		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed. Booting changes at the first \"created UEFI boot entry\", \"wrote EFI/BOOT/BOOTX64.EFI\" or \"writing core.img\" line; all come after generation 1 is published")
 		if errors.As(err, &se) && se.Resumable {
 			fmt.Fprintln(stderr, "vintner install: generation 1 is published; run the same command again with --resume to finish")
 		}

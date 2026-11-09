@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/layout"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -63,6 +64,7 @@ type Options struct {
 	ESPDir         string // the mounted ESP (uefi, both)
 	BootStorageDir string // the mounted boot storage
 	Disk           Disk   // the whole disk (bios, both)
+	EFIVarDir      string // efivarfs for the NVRAM boot entry (default efivar.DefaultDir)
 
 	Runner   Runner
 	UKI      publish.UKIBuilder
@@ -179,6 +181,9 @@ type deployer struct {
 	m                  *manifest.Manifest
 	emb                *Embedded
 	tookUEFI, tookBIOS bool // cutover wrote what makes the firmware start vintner
+	tookNVRAM          bool // the NVRAM entry for vintner's loader is first in BootOrder
+	nvramEntry         int
+	nvramDP            []byte
 	resumed            bool // Resume: boot storage already holds generation 1
 	core               []byte
 	bootImg            []byte
@@ -294,7 +299,7 @@ func (d *deployer) stage(ctx context.Context) error {
 
 func (d *deployer) cutover() error {
 	if d.uefi {
-		if err := d.cutoverESP(); err != nil {
+		if err := d.cutoverUEFI(); err != nil {
 			return err
 		}
 	}
@@ -644,6 +649,97 @@ func (d *deployer) cutoverESP() error {
 	return nil
 }
 
+// cutoverUEFI is the UEFI half of the takeover: the NVRAM entry first (it names
+// vintner's own file), then the removable path where that is safe.
+func (d *deployer) cutoverUEFI() error {
+	if err := d.cutoverNVRAM(); err != nil {
+		return err
+	}
+	return d.cutoverESP()
+}
+
+// NVRAMDescription is the description of the boot entry vintner creates.
+const NVRAMDescription = "Vintner Boot"
+
+// nvramPath is the file the boot entry starts: vintner's own loader, never the
+// removable path, so the entry works whatever the removable path holds.
+const nvramPath = `\EFI\vintner\systemd-bootx64.efi`
+
+// efiVarDir is the efivarfs directory to write the entry to. It is empty when
+// the running system did not start through UEFI (a BIOS-booted installer, a
+// container): there is no NVRAM to write.
+func (d *deployer) efiVarDir() string {
+	dir := d.EFIVarDir
+	if dir == "" {
+		dir = efivar.DefaultDir
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return ""
+	}
+	return dir
+}
+
+// cutoverNVRAM creates the Boot#### entry for vintner's loader and puts it first
+// in BootOrder. The entry only names a file on the ESP, so it is written even
+// when another system uses the removable path (R13). When the running system
+// has no efivarfs the entry cannot be written; that is logged, and TookOver
+// then depends on the removable path alone.
+func (d *deployer) cutoverNVRAM() error {
+	dir := d.efiVarDir()
+	if dir == "" {
+		d.rec("no UEFI variables here (the installer did not start through UEFI): no NVRAM boot entry is created; run vintner install --resume from the installed system, or rely on EFI/BOOT/BOOTX64.EFI")
+		return nil
+	}
+	l := d.Layout
+	if l.ESP == nil {
+		return d.fail("NVRAM", errors.New("the layout has no ESP"))
+	}
+	p := *l.ESP
+	dp, err := efivar.DevicePath(efivar.PartitionRef{
+		Number: uint32(p.Number), FirstLBA: p.FirstLBA, Sectors: p.LastLBA - p.FirstLBA + 1, Signature: p.UUID,
+	}, nvramPath)
+	if err != nil {
+		return d.fail("NVRAM", err)
+	}
+	num, created, err := efivar.SetFirstBootEntry(dir, NVRAMDescription, dp)
+	if err != nil {
+		return d.fail("NVRAM", err)
+	}
+	d.nvramEntry, d.nvramDP = int(num), dp
+	if created {
+		d.rec("created UEFI boot entry Boot%04X %q for %s and put it first in BootOrder", num, NVRAMDescription, nvramPath)
+	} else {
+		d.rec("UEFI boot entry Boot%04X %q is first in BootOrder", num, NVRAMDescription)
+	}
+	d.tookNVRAM = true
+	return nil
+}
+
+// verifyNVRAM reads the entry and BootOrder back.
+func (d *deployer) verifyNVRAM() error {
+	if !d.tookNVRAM {
+		return nil
+	}
+	dir := d.efiVarDir()
+	order, err := efivar.BootOrder(dir)
+	if err != nil {
+		return d.fail("verify", err)
+	}
+	if len(order) == 0 || int(order[0]) != d.nvramEntry {
+		return d.fail("verify", fmt.Errorf("BootOrder %v does not start with Boot%04X", order, d.nvramEntry))
+	}
+	entries, err := efivar.BootEntries(dir)
+	if err != nil {
+		return d.fail("verify", err)
+	}
+	for _, e := range entries {
+		if int(e.Number) == d.nvramEntry && e.Description == NVRAMDescription && bytes.Equal(e.DevicePath, d.nvramDP) {
+			return nil
+		}
+	}
+	return d.fail("verify", fmt.Errorf("Boot%04X does not read back as written", d.nvramEntry))
+}
+
 // verify reads everything back: the ESP files against the payload, boot
 // storage against the hashes written, the manifest through manifest.Load, and
 // the BIOS boot code from the disk.
@@ -672,6 +768,9 @@ func (d *deployer) verify() error {
 	}
 	if m.InstallationID != d.m.InstallationID || m.Seq < d.m.Seq { // publishing generation 1 moves the manifest on
 		return d.fail("verify", errors.New("the manifest does not read back as written"))
+	}
+	if err := d.verifyNVRAM(); err != nil {
+		return err
 	}
 	if d.bios {
 		env, err := grubenv.Read(filepath.Join(d.BootStorageDir, "grub", "grubenv"))
@@ -759,8 +858,8 @@ func (d *deployer) removableOverwritable() (bool, error) {
 // makes the firmware start vintner until the NVRAM entry of WO-0010 3.3 exists.
 func (p *Deployment) TookOver() (bool, string) {
 	d := p.d
-	if d.uefi && !d.tookUEFI {
-		return false, "the firmware does not start vintner on UEFI: EFI/BOOT/BOOTX64.EFI was left alone (another system uses the ESP or the removable path holds another loader) and no NVRAM entry is created yet"
+	if d.uefi && !d.tookUEFI && !d.tookNVRAM {
+		return false, "the firmware does not start vintner on UEFI: EFI/BOOT/BOOTX64.EFI was left alone (another system uses the ESP or the removable path holds another loader) and no NVRAM boot entry could be written (no UEFI variables here)"
 	}
 	if d.bios && !d.tookBIOS {
 		return false, "the BIOS boot code was not written"

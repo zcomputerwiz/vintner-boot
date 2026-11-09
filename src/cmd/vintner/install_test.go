@@ -148,6 +148,7 @@ func installHook(lock string) func(*install.FullOptions) {
 	return func(o *install.FullOptions) {
 		o.UKI = publishtest.UKIBuilder{}
 		o.Runner = noStock{}
+		o.EFIVarDir = filepath.Join(os.TempDir(), "vintner-no-efivarfs") // never the real NVRAM
 		o.Publish = publish.Options{
 			LockFile:         lock,
 			PackageQuery:     publishtest.PackageQuery{Pkg: "linux-image-6.12.9-amd64", Ver: "6.12.9-1"},
