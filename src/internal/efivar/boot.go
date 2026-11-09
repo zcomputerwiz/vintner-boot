@@ -224,3 +224,50 @@ func SetFirstBootEntry(dir, description string, devicePath []byte) (uint16, bool
 	}
 	return num, created, setBootOrder(dir, next)
 }
+
+const (
+	// VintnerDescription is the description of the Boot#### entry vintner creates.
+	VintnerDescription = "Vintner Boot"
+	// VintnerLoaderPath is the file that entry starts, on the ESP.
+	VintnerLoaderPath = `\EFI\vintner\systemd-bootx64.efi`
+)
+
+// FindEntry returns the first entry with this description whose device path
+// ends in the file path node of file.
+func FindEntry(entries []BootEntry, description, file string) (BootEntry, bool) {
+	want := utf16z(file)
+	for _, e := range entries {
+		if e.Description != description {
+			continue
+		}
+		if i := bytes.Index(e.DevicePath, want); i >= 4 && e.DevicePath[i-4] == 4 && e.DevicePath[i-3] == 4 {
+			return e, true
+		}
+	}
+	return BootEntry{}, false
+}
+
+// BootOrderReport says what is wrong with vintner's place in the firmware boot
+// order, or "" when the vintner entry exists and BootOrder starts with it.
+func BootOrderReport(dir string) (string, error) {
+	entries, err := BootEntries(dir)
+	if err != nil {
+		return "", err
+	}
+	e, ok := FindEntry(entries, VintnerDescription, VintnerLoaderPath)
+	if !ok {
+		return fmt.Sprintf("NVRAM boot entry missing: no Boot#### entry %q starts %s; vintner boot-entry --disk <disk> creates it", VintnerDescription, VintnerLoaderPath), nil
+	}
+	order, err := BootOrder(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(order) > 0 && order[0] == e.Number {
+		return "", nil
+	}
+	var parts []string
+	for _, n := range order {
+		parts = append(parts, fmt.Sprintf("%04X", n))
+	}
+	return fmt.Sprintf("BootOrder does not start with the vintner entry Boot%04X (BootOrder: %s); vintner boot-entry --disk <disk> puts it first", e.Number, strings.Join(parts, ",")), nil
+}

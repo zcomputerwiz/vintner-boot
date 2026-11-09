@@ -16,6 +16,8 @@ func main() {
 	switch os.Args[1] {
 	case "bless":
 		cmdBless(os.Args[2:])
+	case "boot-entry":
+		cmdBootEntry(os.Args[2:])
 	case "install":
 		cmdInstall(os.Args[2:])
 	case "manifest":

@@ -134,7 +134,7 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
 - **Mitigation:**
   - vintner never writes `\EFI\Microsoft\` or Windows' boot entries.
   - It writes `\EFI\BOOT\BOOTX64.EFI` only when no other operating system uses the ESP (R13).
-  - The health service reports when `BootOrder` no longer starts with the vintner entry, or when that entry is missing. It recreates the entry only through an explicit command.
+  - The health service (`vintner bless`) reports when `BootOrder` no longer starts with the vintner entry, or when that entry is missing (WO-0010 3.4, `docs/accepted-platforms.md`). It recreates the entry only through an explicit command, `vintner boot-entry`.
 - **Residual risk:** Firmware that resets `BootOrder` boots the other operating system until the operator acts.
 
 ### T9: physical access to the boot menu and the recovery console

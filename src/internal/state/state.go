@@ -7,8 +7,10 @@ package state
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -428,6 +430,15 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 		}
 		if _, val, err := efivar.GetString(dir, "LoaderEntryOneShot", efivar.LoaderInfo); err == nil && val != "" {
 			reports = append(reports, fmt.Sprintf("LoaderEntryOneShot is set: %s", val))
+		}
+		if uefi {
+			if r, err := efivar.BootOrderReport(dir); errors.Is(err, fs.ErrNotExist) {
+				// no efivarfs here: nothing to report
+			} else if err != nil {
+				reports = append(reports, fmt.Sprintf("cannot read the NVRAM boot entries: %v", err))
+			} else if r != "" {
+				reports = append(reports, r)
+			}
 		}
 	}
 
