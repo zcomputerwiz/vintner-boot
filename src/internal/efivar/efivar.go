@@ -23,6 +23,9 @@ const (
 	// GlobalVariable GUID (EFI_GLOBAL_VARIABLE).
 	GlobalVariable GUID = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
 
+	// ImageSecurityDatabase GUID: the variables db and dbx.
+	ImageSecurityDatabase GUID = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
+
 	// FS_IOC_GETFLAGS and FS_IOC_SETFLAGS from linux/fs.h
 	fsIocGetFlags = 0x80086601
 	fsIocSetFlags = 0x40086602

@@ -97,6 +97,10 @@ func Install(ctx context.Context, f FullOptions) (*Result, error) {
 	po.CmdlineContent = cmdline
 	po.InitialCmdline = cmdline
 	po.Stdout, po.Stderr = f.Log, f.Log
+	po.SecureBootDir = f.SecureBootDir
+	if po.Verifier == nil {
+		po.Verifier = f.Verifier
+	}
 	if po.UKIBuilder == nil {
 		po.UKIBuilder = f.UKI
 	}
@@ -131,6 +135,9 @@ func finish(ctx context.Context, f FullOptions, dep *Deployment) (*Result, error
 			return nil, se
 		}
 		return nil, &Error{Step: step, Err: err, Changed: append([]string(nil), dep.Changed()...), Resumable: true}
+	}
+	if err := dep.d.checkEnrolled(); err != nil {
+		return fail("secure boot", err)
 	}
 	if err := dep.Cutover(); err != nil {
 		return fail("takeover", err)
@@ -208,6 +215,9 @@ func Resume(ctx context.Context, f FullOptions) (*Result, error) {
 		}
 		d.espFiles["EFI/vintner/systemd-bootx64.efi"] = payload.SystemdBoot
 		d.espFiles["loader/loader.conf"] = payload.LoaderConf
+		if err := d.loadSignedLoader(ctx); err != nil {
+			return step(d.fail("check", err))
+		}
 	}
 	if d.bios {
 		if l.BIOSBoot == nil || o.Disk == nil || l.BootFS == nil {
@@ -238,6 +248,7 @@ func (o *Options) fill() {
 	if o.UKI == nil {
 		o.UKI = publish.RealUKIBuilder{}
 	}
+	o.fillSecureBoot()
 	if o.Log == nil {
 		o.Log = io.Discard
 	}
