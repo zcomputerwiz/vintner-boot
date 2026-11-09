@@ -408,7 +408,10 @@ def cmd_read(args):
             tmp_path = tmp_part.name
             with open(disk, "rb") as f_disk:
                 f_disk.seek(off)
-                remaining = 512 * 1024 * 1024
+                # The file system's own size (FAT32 boot sector: bytes per sector at 11, total sectors at 32).
+                bpb = f_disk.read(64)
+                remaining = int.from_bytes(bpb[11:13], "little") * int.from_bytes(bpb[32:36], "little")
+                f_disk.seek(off)
                 while remaining > 0:
                     chunk = f_disk.read(min(remaining, 4 * 1024 * 1024))
                     if not chunk:
