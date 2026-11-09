@@ -34,6 +34,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 )
 
 // RecoveryCmdline is the command line of both recovery images, plus the slot
@@ -66,8 +67,19 @@ type Options struct {
 	Disk           Disk   // the whole disk (bios, both)
 	EFIVarDir      string // efivarfs for the NVRAM boot entry (default efivar.DefaultDir)
 
+	// SecureBootTier is "none" (the default) or "A": the installer then creates
+	// the machine key in SecureBootDir, signs the loader and the recovery images,
+	// and records the tier in the manifest (WO-0010 5.1).
+	SecureBootTier string
+	SecureBootDir  string // default <TargetDir>/etc/vintner/secureboot
+	// SecureBootEnrolled says the certificate is in the firmware's db, without
+	// the installer being able to read it (installing from outside the machine).
+	SecureBootEnrolled bool
+
 	Runner   Runner
 	UKI      publish.UKIBuilder
+	Signer   secureboot.Signer
+	Verifier secureboot.Verifier
 	LookPath func(string) (string, error)
 	Now      func() time.Time
 	Rand     io.Reader
@@ -126,6 +138,7 @@ func Stage(ctx context.Context, o Options) (*Deployment, error) {
 	if o.LookPath == nil {
 		o.LookPath = exec.LookPath
 	}
+	o.fillSecureBoot()
 	if o.Now == nil {
 		o.Now = func() time.Time { return time.Now().UTC() }
 	}
@@ -187,6 +200,9 @@ type deployer struct {
 	resumed            bool // Resume: boot storage already holds generation 1
 	core               []byte
 	bootImg            []byte
+	instID             string // the new installation's UUID
+	certFP             string // sha256 of the machine certificate (tier A)
+	signedLoader       []byte // the loader signed with the machine key (tier A)
 
 	uefi, bios bool
 	bs         string // PARTUUID of boot storage
@@ -242,6 +258,9 @@ func (d *deployer) stage(ctx context.Context) error {
 	if err := d.checkNoInstallation(); err != nil {
 		return d.fail("check", err)
 	}
+	if err := d.checkSecureBoot(); err != nil {
+		return d.fail("check", err)
+	}
 	if err := checkWritable(d.BootStorageDir); err != nil {
 		return d.fail("check", fmt.Errorf("boot storage: %w", err))
 	}
@@ -277,6 +296,13 @@ func (d *deployer) stage(ctx context.Context) error {
 		return d.fail("check", errors.New("the payload's recovery version is empty"))
 	}
 
+	if d.instID, err = d.newInstallationID(); err != nil {
+		return d.fail("manifest", err)
+	}
+	if err := d.initSecureBoot(); err != nil {
+		return err
+	}
+
 	// Boot storage first, then the ESP's own files.
 	if err := d.bootStorage(ctx, recVersion); err != nil {
 		return err
@@ -290,7 +316,7 @@ func (d *deployer) stage(ctx context.Context) error {
 		return err
 	}
 	if d.uefi {
-		if err := d.stageESP(); err != nil {
+		if err := d.stageESP(ctx); err != nil {
 			return err
 		}
 	}
@@ -486,14 +512,21 @@ func (d *deployer) recoveryUKI(ctx context.Context, slot, cmdline, version strin
 	}
 	out := filepath.Join(tmp, "uki.efi")
 	if err := d.UKI.Build(ctx, publish.UKIRequest{
-		LinuxPath:     d.Payload.Path(payload.RecoveryKern),
-		InitrdPath:    d.Payload.Path(payload.RecoveryInit),
-		StubPath:      d.Payload.Path(payload.Stub),
-		OSReleasePath: osrel,
-		Cmdline:       cmdline,
-		OutputPath:    out,
+		LinuxPath:      d.Payload.Path(payload.RecoveryKern),
+		InitrdPath:     d.Payload.Path(payload.RecoveryInit),
+		StubPath:       d.Payload.Path(payload.Stub),
+		OSReleasePath:  osrel,
+		Cmdline:        cmdline,
+		OutputPath:     out,
+		SecureBootKey:  d.sbPath("key.pem"),
+		SecureBootCert: d.sbPath("cert.pem"),
 	}); err != nil {
 		return err
+	}
+	if d.tier() == "A" {
+		if err := d.Verifier.Verify(ctx, out, d.sbPath("cert.pem")); err != nil {
+			return fmt.Errorf("the signed recovery image %s: %w", slot, err)
+		}
 	}
 	b, err := os.ReadFile(out)
 	if err != nil {
@@ -525,21 +558,14 @@ func (d *deployer) grubFiles() error {
 }
 
 func (d *deployer) writeManifest(machineID, recVersion string) error {
-	id := make([]byte, 16)
-	if _, err := io.ReadFull(d.Rand, id); err != nil {
-		return d.fail("manifest", err)
-	}
-	id[6] = id[6]&0x0f | 0x40
-	id[8] = id[8]&0x3f | 0x80
-	hx := hex.EncodeToString(id)
-	instID := hx[0:8] + "-" + hx[8:12] + "-" + hx[12:16] + "-" + hx[16:20] + "-" + hx[20:]
+	instID := d.instID
 
 	m := &manifest.Manifest{
 		Format:         1,
 		InstallationID: instID,
 		MachineID:      machineID,
 		Firmware:       d.Firmware,
-		SecureBootTier: "none",
+		SecureBootTier: d.tier(),
 		Root:           manifest.Root{PartUUID: d.Layout.Root.UUID, UUID: d.Layout.RootUUID},
 		BootStorage:    manifest.BootStorage{PartUUID: d.bs},
 		Tries:          d.Tries,
@@ -547,6 +573,9 @@ func (d *deployer) writeManifest(machineID, recVersion string) error {
 		NextGeneration: 1,
 		Images:         []manifest.Image{},
 		Recovery:       []manifest.Recovery{},
+	}
+	if d.tier() == "A" {
+		m.Signing = &manifest.Signing{CertSHA256: d.certFP}
 	}
 	if d.Layout.ESP != nil && d.uefi {
 		m.ESP = &manifest.ESP{PartUUID: d.Layout.ESP.UUID}
@@ -596,6 +625,9 @@ func (d *deployer) copyToESP(rel, payloadRel string) error {
 	if err != nil {
 		return err
 	}
+	if payloadRel == payload.SystemdBoot && d.signedLoader != nil {
+		b = d.signedLoader
+	}
 	p := filepath.Join(d.ESPDir, filepath.FromSlash(rel))
 	if err := writeFileSync(p, b); err != nil {
 		return err
@@ -607,9 +639,12 @@ func (d *deployer) copyToESP(rel, payloadRel string) error {
 
 // stageESP writes vintner's own files. The firmware does not start them until
 // cutoverESP (or an NVRAM entry) points at them.
-func (d *deployer) stageESP() error {
+func (d *deployer) stageESP(ctx context.Context) error {
 	if err := d.mkdir(d.ESPDir, "EFI/vintner", "loader"); err != nil {
 		return d.fail("ESP", err)
+	}
+	if err := d.signLoader(ctx); err != nil {
+		return d.fail("sign loader", err)
 	}
 	if err := d.copyToESP("EFI/vintner/systemd-bootx64.efi", payload.SystemdBoot); err != nil {
 		return d.fail("ESP", err)
@@ -747,7 +782,7 @@ func (d *deployer) verify() error {
 		if err != nil {
 			return d.fail("verify", err)
 		}
-		if want := d.Payload.Files[pr]; sum(got) != want {
+		if want := d.espWant(pr); sum(got) != want {
 			return d.fail("verify", fmt.Errorf("%s on the ESP does not match the payload %s", rel, pr))
 		}
 	}
@@ -834,7 +869,7 @@ func (d *deployer) removableOverwritable() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if sum(cur) == d.Payload.Files[payload.SystemdBoot] {
+	if sum(cur) == d.espWant(payload.SystemdBoot) {
 		return true, nil
 	}
 	ents, err := os.ReadDir(filepath.Join(d.ESPDir, "EFI"))

@@ -45,6 +45,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	cmdlineFile := fs.String("cmdline-file", "", "the product's kernel options (default <target>/etc/kernel/cmdline)")
 	resume := fs.Bool("resume", false, "continue an installation that published generation 1 and failed afterwards: take booting over, remove the stock loaders, verify")
 	updateInitramfs := fs.Bool("update-initramfs", false, "when the kernel's initramfs is older than the target's initramfs-tools hooks, run update-initramfs -u -k <abi> in the target instead of refusing")
+	sbTier := fs.String("secure-boot", "none", "Secure Boot tier: none, or A (a machine key in the firmware's db, no shim): creates the key, signs the loader and the recovery images")
+	sbDir := fs.String("secure-boot-dir", "", "where the machine key is kept (default <target>/etc/vintner/secureboot)")
+	sbEnrolled := fs.Bool("secure-boot-enrolled", false, "tier A: the machine certificate is in the firmware's db (use when the installer cannot read the firmware's variables)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -111,6 +114,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, UpdateInitramfs: *updateInitramfs, Options: install.Options{
 		Firmware: *firmware, Layout: l, Payload: pl,
 		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
+		SecureBootTier: *sbTier, SecureBootDir: *sbDir, SecureBootEnrolled: *sbEnrolled,
 		Log: stdout,
 	}}
 	if *firmware != "bios" && opts.ESPDir == "" {
@@ -156,6 +160,12 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "vintner install: generation 1 is published; run the same command again with --resume to finish")
 		}
 		return 1
+	}
+	if *sbTier == "A" {
+		if *sbDir == "" {
+			*sbDir = filepath.Join(*target, "etc", "vintner", "secureboot")
+		}
+		fmt.Fprintf(stdout, "Secure Boot tier A: the machine certificate is %s; out-of-tree kernel modules cannot load with Secure Boot on (no shim, no MOK list)\n", filepath.Join(*sbDir, "cert.der"))
 	}
 	fmt.Fprintf(stdout, "installed: %d changes; installation %s; generation 1 is TRYING and is blessed GOOD by the first boot that reaches boot-complete.target\n", len(res.Changed), res.Manifest.InstallationID)
 	return 0

@@ -20,7 +20,56 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 )
+
+// Signer signs a PE/COFF binary with the machine key.
+type Signer interface {
+	Sign(ctx context.Context, in, out, keyPEMPath, certPEMPath string) error
+}
+
+// SbsignSigner implements Signer using the system sbsigntool (sbsign).
+type SbsignSigner struct{}
+
+// Sign runs sbsign --key <key> --cert <cert> --output <out> <in>.
+func (SbsignSigner) Sign(ctx context.Context, in, out, keyPEMPath, certPEMPath string) error {
+	bin, err := exec.LookPath("sbsign")
+	if err != nil {
+		return fmt.Errorf("sbsign not found: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, bin, "--key", keyPEMPath, "--cert", certPEMPath, "--output", out, in)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		msg := strings.TrimSpace(string(b))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("sbsign failed: %s", msg)
+	}
+	return nil
+}
+
+// CertEnrolled reports whether the certificate in certDERPath is in the
+// firmware's db, read from the efivarfs mounted at efivarDir. A db entry of
+// type X509 carries the certificate's DER bytes verbatim, so finding them in
+// the variable is enough. A db that does not exist counts as not enrolled.
+func CertEnrolled(efivarDir, certDERPath string) (bool, error) {
+	der, err := os.ReadFile(certDERPath)
+	if err != nil {
+		return false, err
+	}
+	if len(der) == 0 {
+		return false, fmt.Errorf("%s is empty", certDERPath)
+	}
+	_, data, err := efivar.Get(efivarDir, "db", efivar.ImageSecurityDatabase)
+	if errors.Is(err, efivar.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return bytes.Contains(data, der), nil
+}
 
 // Verifier verifies that a PE/COFF binary is signed by the certificate at certPEMPath.
 type Verifier interface {

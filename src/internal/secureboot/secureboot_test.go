@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 )
 
 func TestGenerateKeyProperties(t *testing.T) {
@@ -228,5 +230,25 @@ func TestKeyMatchesCertMismatches(t *testing.T) {
 	}
 	if err := KeyMatchesCert(ecdsaKeyPath, cert1); err == nil {
 		t.Error("expected ECDSA private key to fail RSA check")
+	}
+}
+
+func TestCertEnrolled(t *testing.T) {
+	dir := t.TempDir()
+	der := filepath.Join(dir, "cert.der")
+	os.WriteFile(der, []byte("CERT-DER-BYTES"), 0o644)
+	vars := t.TempDir()
+	name := filepath.Join(vars, "db-"+string(efivar.ImageSecurityDatabase))
+
+	if ok, err := CertEnrolled(vars, der); err != nil || ok {
+		t.Errorf("no db: %v %v", ok, err)
+	}
+	os.WriteFile(name, append([]byte{7, 0, 0, 0}, []byte("list other-cert")...), 0o644)
+	if ok, err := CertEnrolled(vars, der); err != nil || ok {
+		t.Errorf("another certificate in db: %v %v", ok, err)
+	}
+	os.WriteFile(name, append([]byte{7, 0, 0, 0}, []byte("list header CERT-DER-BYTES tail")...), 0o644)
+	if ok, err := CertEnrolled(vars, der); err != nil || !ok {
+		t.Errorf("certificate in db: %v %v", ok, err)
 	}
 }
