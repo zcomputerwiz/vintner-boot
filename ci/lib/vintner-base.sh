@@ -160,10 +160,10 @@ sudo resize2fs "${LOOP}p1"
 sudo losetup -d "$LOOP"
 LOOP=""
 
-# Append boot storage partition: type BC13C2FF-59E6-4262-A352-B275FD6F7172, 512 MiB
-echo "Appending boot storage partition (512 MiB)..."
-truncate -s +512M "$DISK"
-echo ', 512M, BC13C2FF-59E6-4262-A352-B275FD6F7172' | sfdisk --append "$DISK"
+# Append boot storage partition: type BC13C2FF-59E6-4262-A352-B275FD6F7172, 1100 MiB, as the installer needs at least 1 GiB
+echo "Appending boot storage partition (1100 MiB, as the installer needs at least 1 GiB)..."
+truncate -s +1200M "$DISK"
+echo ', 1100M, BC13C2FF-59E6-4262-A352-B275FD6F7172' | sfdisk --append "$DISK"
 
 # Read partition offsets and PARTUUIDs
 PART_INFO=$(python3 - "$DISK" <<'EOF'
