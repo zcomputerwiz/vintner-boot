@@ -311,6 +311,14 @@ signed_os2_data = open("$SIGNED_OS2", "rb").read()
 os2_sha = hashlib.sha256(signed_os2_data).hexdigest()
 os2_size = len(signed_os2_data)
 
+# This row is UEFI only: the installer ran for both firmwares (the base is shared with
+# the BIOS rows, and os1-slot.cfg comes from its BIOS side), so drop the BIOS files
+# that a UEFI manifest must not carry and that generation 2 has none of.
+mf["firmware"] = "uefi"
+for img in mf.get("images", []):
+    img.pop("bios", None)
+for rec in mf.get("recovery", []):
+    rec.pop("bios", None)
 mf["next_generation"] = 3
 gen2_entry = {
     "generation": 2,
