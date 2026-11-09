@@ -66,6 +66,11 @@ type Options struct {
 	BootStorageDir string // the mounted boot storage
 	Disk           Disk   // the whole disk (bios, both)
 	EFIVarDir      string // efivarfs for the NVRAM boot entry (default efivar.DefaultDir)
+	NoEFIVars      bool   // do not touch UEFI variables at all (installing from a machine whose firmware is not the target's)
+
+	// RecoveryExtraA and RecoveryExtraB are appended to the kernel command line
+	// of recovery A and B (a serial console, or a test mode).
+	RecoveryExtraA, RecoveryExtraB string
 
 	// SecureBootTier is "none" (the default) or "A": the installer then creates
 	// the machine key in SecureBootDir, signs the loader and the recovery images,
@@ -486,7 +491,15 @@ func (d *deployer) bootStorage(ctx context.Context, recVersion string) error {
 }
 
 func (d *deployer) recoveryCmdline(slot string) string {
-	return RecoveryCmdline + " vintner.recovery=" + slot + " vintner.bootstorage=PARTUUID=" + d.bs
+	c := RecoveryCmdline + " vintner.recovery=" + slot + " vintner.bootstorage=PARTUUID=" + d.bs
+	extra := d.RecoveryExtraA
+	if slot == "b" {
+		extra = d.RecoveryExtraB
+	}
+	if extra = strings.TrimSpace(extra); extra != "" {
+		c += " " + extra
+	}
+	return c
 }
 
 // recoveryUKIName is the file name of a recovery image on boot storage: A is
@@ -704,6 +717,9 @@ const nvramPath = efivar.VintnerLoaderPath
 // the running system did not start through UEFI (a BIOS-booted installer, a
 // container): there is no NVRAM to write.
 func (d *deployer) efiVarDir() string {
+	if d.NoEFIVars {
+		return ""
+	}
 	dir := d.EFIVarDir
 	if dir == "" {
 		dir = efivar.DefaultDir
