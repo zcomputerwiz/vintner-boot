@@ -483,3 +483,91 @@ func TestNVRAMVerifyCatchesAReorderedBootOrder(t *testing.T) {
 		t.Fatalf("a BootOrder that no longer starts with vintner passed verification: %v", err)
 	}
 }
+
+// staleHook adds an initramfs-tools hook that is newer than the initramfs.
+func staleHook(t *testing.T, target string) {
+	t.Helper()
+	hook := filepath.Join(target, "etc/initramfs-tools/hooks/product")
+	os.MkdirAll(filepath.Dir(hook), 0o755)
+	os.WriteFile(hook, []byte("#!/bin/sh\n"), 0o755)
+	old := time.Now().Add(-48 * time.Hour)
+	os.Chtimes(filepath.Join(target, "boot/initrd.img-6.12.9-amd64"), old, old)
+}
+
+func TestStaleInitramfsIsRefusedBeforeAnythingBootsDifferently(t *testing.T) {
+	e, sr, f, _ := fullEnv(t, "both")
+	sr.installed = []string{"grub-pc"}
+	staleHook(t, e.target)
+	sector0 := make([]byte, 512)
+	e.disk.ReadAt(sector0, 0)
+
+	_, err := Install(context.Background(), f)
+	var se *Error
+	if !errors.As(err, &se) || se.Step != "initramfs" || se.Resumable {
+		t.Fatalf("got %v, want a non-resumable initramfs refusal", err)
+	}
+	for _, want := range []string{"stale", "update-initramfs -u -k 6.12.9-amd64", "--update-initramfs"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the message lacks %q: %v", want, err)
+		}
+	}
+	if m, merr := manifest.Load(filepath.Join(e.bs, "vintner/state")); merr == nil && len(m.Images) > 0 {
+		t.Error("generation 1 was published from a stale initramfs")
+	}
+	if len(sr.apt) != 0 || exists(filepath.Join(e.esp, "EFI/BOOT/BOOTX64.EFI")) {
+		t.Error("booting was changed")
+	}
+	after := make([]byte, 512)
+	e.disk.ReadAt(after, 0)
+	if !bytes.Equal(sector0, after) {
+		t.Error("the boot sector was written")
+	}
+}
+
+func TestFreshInitramfsPasses(t *testing.T) {
+	e, _, f, _ := fullEnv(t, "uefi")
+	hook := filepath.Join(e.target, "etc/initramfs-tools/hooks/product")
+	os.MkdirAll(filepath.Dir(hook), 0o755)
+	os.WriteFile(hook, []byte("#!/bin/sh\n"), 0o755)
+	old := time.Now().Add(-48 * time.Hour)
+	os.Chtimes(hook, old, old) // the initramfs (just written) is newer
+	if _, err := Install(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateInitramfsRunsInTheTargetAndThenInstalls(t *testing.T) {
+	e, sr, f, log := fullEnv(t, "uefi")
+	staleHook(t, e.target)
+	var ran []string
+	f.Runner = runnerFunc(func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "chroot" && len(args) > 1 && args[1] == "update-initramfs" {
+			ran = append([]string{name}, args...)
+			p := filepath.Join(e.target, "boot/initrd.img-6.12.9-amd64")
+			return nil, os.WriteFile(p, []byte("rebuilt"), 0o644) // now newer than the hook
+		}
+		return sr.Run(ctx, name, args...)
+	})
+	f.UpdateInitramfs = true
+	if _, err := Install(context.Background(), f); err != nil {
+		t.Fatalf("%v\n%s", err, log)
+	}
+	if len(ran) != 6 || ran[1] != e.target || strings.Join(ran[3:], " ") != "-u -k 6.12.9-amd64" {
+		t.Errorf("update-initramfs ran as %v", ran)
+	}
+}
+
+func TestUpdateInitramfsThatLeavesItStaleFails(t *testing.T) {
+	e, sr, f, _ := fullEnv(t, "uefi")
+	staleHook(t, e.target)
+	f.Runner = runnerFunc(func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if name == "chroot" && len(args) > 1 && args[1] == "update-initramfs" {
+			return nil, nil // did nothing
+		}
+		return sr.Run(ctx, name, args...)
+	})
+	f.UpdateInitramfs = true
+	if _, err := Install(context.Background(), f); err == nil || !strings.Contains(err.Error(), "still stale") {
+		t.Fatalf("got %v", err)
+	}
+}

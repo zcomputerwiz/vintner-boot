@@ -44,6 +44,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	kernel := fs.String("kernel", "", "kernel ABI of generation 1 (default: the newest kernel with an initramfs in <target>/boot)")
 	cmdlineFile := fs.String("cmdline-file", "", "the product's kernel options (default <target>/etc/kernel/cmdline)")
 	resume := fs.Bool("resume", false, "continue an installation that published generation 1 and failed afterwards: take booting over, remove the stock loaders, verify")
+	updateInitramfs := fs.Bool("update-initramfs", false, "when the kernel's initramfs is older than the target's initramfs-tools hooks, run update-initramfs -u -k <abi> in the target instead of refusing")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -107,7 +108,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Deploy.
-	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, Options: install.Options{
+	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, UpdateInitramfs: *updateInitramfs, Options: install.Options{
 		Firmware: *firmware, Layout: l, Payload: pl,
 		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
 		Log: stdout,

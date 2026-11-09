@@ -36,6 +36,9 @@ type FullOptions struct {
 	Options
 	KernelABI   string // default: the newest kernel in <target>/boot
 	CmdlineFile string // default: <target>/etc/kernel/cmdline
+	// UpdateInitramfs runs update-initramfs -u -k <abi> in the target when the
+	// initramfs is older than its inputs, instead of refusing (WO-0010 3.5).
+	UpdateInitramfs bool
 	// Publish carries test doubles and overrides for the publisher; install sets
 	// the kernel, directories and command line itself.
 	Publish publish.Options
@@ -68,6 +71,9 @@ func Install(ctx context.Context, f FullOptions) (*Result, error) {
 		if abi, err = NewestKernel(f.TargetDir); err != nil {
 			return fail("kernel", err)
 		}
+	}
+	if err := checkInitramfsFresh(ctx, f, abi); err != nil {
+		return fail("initramfs", err)
 	}
 	cmdlineFile := f.CmdlineFile
 	if cmdlineFile == "" {
