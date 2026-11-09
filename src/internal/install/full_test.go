@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/gpt/gpttest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -399,4 +400,86 @@ func TestResumeRefusesWhatIsNotAHalfFinishedInstall(t *testing.T) {
 		t.Errorf("a manifest of another layout: %v", err)
 	}
 	_ = e
+}
+
+// efivarEnv gives the test an efivarfs directory, with another system's entry in it.
+func efivarEnv(t *testing.T, e *env) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := efivar.Set(dir, "Boot0000", efivar.GlobalVariable, efivar.BootAttrs, efivar.LoadOption("Windows Boot Manager", []byte{0x7f, 0xff, 4, 0})); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.Set(dir, "BootOrder", efivar.GlobalVariable, efivar.BootAttrs, []byte{0, 0}); err != nil {
+		t.Fatal(err)
+	}
+	e.opts.EFIVarDir = dir
+	return dir
+}
+
+func TestInstallCreatesTheNVRAMEntryAndPutsItFirst(t *testing.T) {
+	e, sr, f, _ := fullEnv(t, "uefi")
+	sr.installed = []string{"grub-efi-amd64"}
+	dir := efivarEnv(t, e)
+	f.Options.EFIVarDir = dir
+	if _, err := Install(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+	order, _ := efivar.BootOrder(dir)
+	if len(order) != 2 || order[0] != 1 || order[1] != 0 {
+		t.Fatalf("BootOrder %v: the new entry first, Windows after it", order)
+	}
+	entries, _ := efivar.BootEntries(dir)
+	var found bool
+	for _, en := range entries {
+		if en.Number == 1 {
+			found = true
+			want, _ := efivar.DevicePath(efivar.PartitionRef{Number: 2, FirstLBA: 0, Sectors: 1, Signature: espUUID}, `\EFI\vintner\systemd-bootx64.efi`)
+			if en.Description != NVRAMDescription || !bytes.Equal(en.DevicePath, want) {
+				t.Errorf("entry %q % x, want % x", en.Description, en.DevicePath, want)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Boot0001 was not written")
+	}
+}
+
+func TestNVRAMEntryLetsTheStockLoaderGoEvenWhenAnotherSystemOwnsTheESP(t *testing.T) {
+	// R13: BOOTX64.EFI stays alone, but the entry names vintner's own file, so
+	// the firmware does start vintner and the stock loader may be removed.
+	e, sr, f, _ := fullEnv(t, "uefi")
+	sr.installed = []string{"grub-efi-amd64"}
+	f.Options.EFIVarDir = efivarEnv(t, e)
+	os.MkdirAll(filepath.Join(e.esp, "EFI/Microsoft/Boot"), 0o755)
+	os.MkdirAll(filepath.Join(e.esp, "EFI/debian"), 0o755)
+	if _, err := Install(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(e.esp, "EFI/BOOT/BOOTX64.EFI")) {
+		t.Error("BOOTX64.EFI was written although another system uses the ESP")
+	}
+	if len(sr.apt) != 1 {
+		t.Errorf("the stock loader stayed although the NVRAM entry starts vintner (apt %v)", sr.apt)
+	}
+}
+
+func TestNVRAMVerifyCatchesAReorderedBootOrder(t *testing.T) {
+	e, _, _, _ := fullEnv(t, "uefi")
+	dir := efivarEnv(t, e)
+	d, err := Stage(context.Background(), e.opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Cutover(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Verify(); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.Set(dir, "BootOrder", efivar.GlobalVariable, efivar.BootAttrs, []byte{0, 0, 1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Verify(); err == nil || !strings.Contains(err.Error(), "BootOrder") {
+		t.Fatalf("a BootOrder that no longer starts with vintner passed verification: %v", err)
+	}
 }

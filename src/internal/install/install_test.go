@@ -100,7 +100,8 @@ func newEnv(t *testing.T, firmware string) *env {
 			BIOSBoot:    &gpt.Partition{Number: 1, UUID: "2b0f98d3-e62a-48b4-b260-dfdfda5b8b3f", FirstLBA: 2048, LastLBA: 8191},
 		},
 		Payload: p, TargetDir: e.target, ESPDir: e.esp, BootStorageDir: e.bs, Disk: e.disk,
-		Runner: e.run, UKI: e.uki,
+		EFIVarDir: filepath.Join(t.TempDir(), "no-efivarfs"), // tests never write the real NVRAM
+		Runner:    e.run, UKI: e.uki,
 		LookPath: func(s string) (string, error) { return "/usr/bin/" + s, nil },
 	}
 	return e
