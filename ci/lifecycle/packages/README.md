@@ -43,7 +43,7 @@ The guest is installed by `vintner install` (WO-0010 3.6), run inside a chroot o
 - The host compares the disk with a copy taken before P0, exactly as for the operations below, except NVRAM: there is no control run yet.
 - If P0 fails, the run halts immediately: all subsequent tests require an intact base.
 - The post-P0 disk is preserved as `base.raw`, and the post-P0 NVRAM variables as `base-vars.fd`.
-- **X0** (the purge with `EFIdebian` kept) is no longer run by this script: the installer removes the directory itself before it purges, so the case cannot arise on the product path. The X0 results below are from the earlier hand-built base. `ci/install/run.sh` (I6) and the install unit tests cover the removal order.
+- **X0** (the purge with `\EFI\debian` kept) is no longer run by this script: the installer removes the directory itself before it purges, so the case cannot arise on the product path. The X0 results below are from the earlier hand-built base. `ci/install/run.sh` (I6) and the install unit tests cover the removal order.
 
 ### 3. Operation Execution
 Each of the other 15 operations starts from a fresh overlay (`qemu-img create -f qcow2 -F raw -b base.raw <op>.qcow2`) and, for UEFI, a fresh copy of `base-vars.fd`.
