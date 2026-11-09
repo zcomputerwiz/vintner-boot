@@ -299,6 +299,8 @@ func TestApplyArm(t *testing.T) {
 }
 
 func TestCheckHealth_Recovery(t *testing.T) {
+	healthyVars := t.TempDir() // never the real efivarfs of the machine running the tests
+	vintnerEntry(t, healthyVars, 0)
 	recA := manifest.Recovery{
 		Slot: "a",
 		UEFI: &manifest.UEFIFile{Entry: "vintner-recovery-a", SHA256: "sha_a"},
@@ -333,7 +335,7 @@ func TestCheckHealth_Recovery(t *testing.T) {
 		BIOSDirs:  validBIOS,
 		GrubEnv:   env(),
 	}
-	reports = CheckHealth(m, vMissingUEFI, "", "", true)
+	reports = CheckHealth(m, vMissingUEFI, healthyVars, "", true)
 	want := []string{"invalid recovery image: missing uefi file for slot a"}
 	if !reflect.DeepEqual(reports, want) {
 		t.Errorf("missing UEFI recovery: reports = %q, want %q", reports, want)
@@ -345,7 +347,7 @@ func TestCheckHealth_Recovery(t *testing.T) {
 		BIOSDirs:  validBIOS,
 		GrubEnv:   env(),
 	}
-	reports = CheckHealth(m, vMismatchUEFI, "", "", true)
+	reports = CheckHealth(m, vMismatchUEFI, healthyVars, "", true)
 	want = []string{"invalid recovery image: hash mismatch for slot a"}
 	if !reflect.DeepEqual(reports, want) {
 		t.Errorf("mismatch UEFI recovery: reports = %q, want %q", reports, want)
