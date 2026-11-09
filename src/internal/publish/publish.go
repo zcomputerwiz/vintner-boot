@@ -114,8 +114,11 @@ func (RealUKIBuilder) Build(ctx context.Context, req UKIRequest) error {
 		"--stub=" + req.StubPath,
 		"--os-release=@" + req.OSReleasePath,
 		"--cmdline=" + req.Cmdline,
-		"--uname=" + req.Uname,
 		"--output=" + req.OutputPath,
+	}
+	// The recovery image has no kernel ABI to name: ukify reads it from the kernel.
+	if req.Uname != "" {
+		args = append(args, "--uname="+req.Uname)
 	}
 	if req.SecureBootKey != "" && req.SecureBootCert != "" {
 		args = append(args,
@@ -1071,3 +1074,7 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 		Generation: currentGen,
 	}, nil
 }
+
+// GrubQuote returns s as a GRUB script double-quoted word, for slot.cfg files
+// that other packages write the way the publisher does.
+func GrubQuote(s string) string { return grubQuote(s) }

@@ -126,6 +126,7 @@ else
 	echo "vintner $REV ($(go version | cut -d' ' -f3))" >> "$OUT/versions.txt"
 	install -m 0755 recovery/initramfs/init "$INITRD/init"
 	echo "$VERSION" > "$INITRD/etc/vintner/version"
+	echo "$VERSION" > "$OUT/version" # debian/stage-payloads.sh ships it; vintner install records it
 	grep -v '^#' recovery/initramfs/modules.list > "$INITRD/etc/vintner/modules"
 	cp "$ROOT/usr/lib/modules/$ABI"/modules.{order,builtin,builtin.modinfo} "$INITRD/lib/modules/$ABI/"
 	while read -r m; do

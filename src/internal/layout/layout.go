@@ -144,6 +144,9 @@ func Check(req Request) (*Layout, []Finding) {
 
 	// BIOS Boot Partition.
 	if req.Firmware != "uefi" {
+		if ss != 512 {
+			add("L6", "BIOS boot needs 512-byte sectors; this disk has %d-byte sectors", ss)
+		}
 		l.BIOSBoot = pick(gpt.TypeBIOSBoot, "", "BIOS Boot Partition", "L6")
 		if p := l.BIOSBoot; p != nil && p.Size(ss) < MinBIOSBoot {
 			add("L6", "the BIOS Boot Partition is %d KiB; the GRUB core image needs at least %d MiB", p.Size(ss)>>10, MinBIOSBoot>>20)

@@ -64,7 +64,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Ensure recovery kernel, initramfs, and UKIs exist
-if [ ! -f "recovery/out/vmlinuz" ] || [ ! -f "recovery/out/initrd.img" ] || \
+if [ ! -f "recovery/out/vmlinuz" ] || [ ! -f "recovery/out/initrd.img" ] || [ ! -f "recovery/out/version" ] || \
    [ ! -f "recovery/out/vintner-recovery-a.efi" ] || [ ! -f "recovery/out/vintner-recovery-b.efi" ]; then
 	echo "=== Building recovery image ==="
 	bash recovery/build.sh

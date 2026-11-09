@@ -214,3 +214,26 @@ func TestInodeStability(t *testing.T) {
 		t.Errorf("inode changed: %d -> %d", stat1.Ino, stat2.Ino)
 	}
 }
+
+func TestCreate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grubenv")
+	e := &Env{}
+	e.Set("VINTNER_T_RA", "xxx")
+	if err := Create(path, e); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Size() != 1024 {
+		t.Fatalf("size %v, %v", info, err)
+	}
+	got, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := got.Get("VINTNER_T_RA"); v != "xxx" {
+		t.Errorf("VINTNER_T_RA=%q", v)
+	}
+	if err := Create(path, e); err == nil {
+		t.Error("Create overwrote an existing file")
+	}
+}

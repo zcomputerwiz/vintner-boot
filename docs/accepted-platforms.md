@@ -75,7 +75,23 @@ These checks belong to 3.2; this file is the list they implement.
 | L3 | boot storage is not FAT32 (so also: encrypted, LVM, md or blank) |
 | L4 | boot storage is under 1 GiB |
 | L5 | UEFI or both, and there is no single ESP (or `--esp-partuuid`), or it is not FAT or under 2 MiB |
-| L6 | BIOS or both, and there is no BIOS Boot Partition of at least 1 MiB |
+| L6 | BIOS or both, and there is no BIOS Boot Partition of at least 1 MiB, or the disk has 4096-byte sectors (the GRUB embedding is written in 512-byte sectors) |
 | L7 | the root is not on this disk, is the boot storage, is not ext4 on a plain partition, or is ambiguous (name it with `--root-partuuid`) |
 
-It also verifies the payload directory (`/usr/lib/vintner/payloads`, or `--payload-dir`) against its `MANIFEST`: a file that differs, is missing or is not listed, or a file a deployment needs that is absent, refuses. It reads the partition table, the FAT boot sectors and the ext4 superblock itself, so it needs no mounts. Deploying (3.2) comes next; without `--check` the command says so and exits 2.
+It also verifies the payload directory (`/usr/lib/vintner/payloads`, or `--payload-dir`) against its `MANIFEST`: a file that differs, is missing or is not listed, or a file a deployment needs that is absent, refuses. It reads the partition table, the FAT boot sectors and the ext4 superblock itself, so it needs no mounts. Without `--check` or `--deploy-only` the command says the full installation is not implemented yet and exits 2.
+
+## `vintner install --deploy-only`
+
+Until publishing generation 1 and removing the stock loaders exist (the rest of WO-0010 3.2), `vintner install --deploy-only --disk DEV --firmware uefi|bios|both --target DIR --esp DIR --boot-storage DIR` deploys what exists. It runs `--check` first and refuses on any finding. Then, from the verified payloads of `vintner-platform`, in this order:
+
+1. **Boot storage:** the directories; the recovery images (UEFI: two UKIs built by `ukify` from `recovery/vmlinuz`, `recovery/initrd.img` and the stub, named `vintner-recovery-a+3-0.efi` and `vintner-recovery-b.efi`; BIOS: `vmlinuz`, `initrd.img` and `slot.cfg` per slot); for BIOS, `grub/grub.cfg` and a `grub/grubenv` that gives recovery A its tries.
+2. **The manifest** (`seq` 1, no images, both recovery records with their hashes, `next_generation` 1), with the target's `/etc/machine-id`, a new installation ID, and the root, boot storage and ESP PARTUUIDs.
+3. **The ESP** (UEFI): `\EFI\vintner\systemd-bootx64.efi`, `\loader\loader.conf`, and `\EFI\BOOT\BOOTX64.EFI` unless another operating system uses the ESP (a directory under `\EFI` other than `BOOT`, `vintner` and Debian's `debian`). It refuses a `loader.conf` that is not vintner's: there is one per ESP.
+4. **BIOS boot code last**: `core.img` (built by `grub-mkimage` from the payload's `i386-pc` directory with an early configuration that finds boot storage by its FAT serial) goes to the BIOS Boot Partition and GRUB's `boot.img` to the boot sector, keeping the partition table. This is the write that takes booting over from the stock loader.
+5. Everything is read back and compared (ESP files with the payload, boot storage with the hashes written, the manifest through the same loader the other commands use, the BIOS boot code from the disk).
+
+Everything that can fail without writing is checked first: `grub-mkimage` is installed (package `grub-common`; the command refuses and says so), `/etc/machine-id` exists, boot storage holds no manifest yet (it refuses an installed system), the ESP's `loader.conf`, and the core image fits. A failure later prints what was changed. It never touches the stock loader's own files: that is the last step of the full command.
+
+Failure and retry: a manifest that publishes no image is what a deployment that stopped half-way leaves, so a second run replaces it (new installation ID, the manifest `seq` continues). A manifest with a published image is an installed system and is refused, and so is one that cannot be read. Before the first write the command also checks that boot storage and the ESP accept a new file, that the payload's `boot.img` is one sector, and that the core image fits. `\EFI\BOOT\BOOTX64.EFI` is replaced only when it is absent, already vintner's loader, or Debian's stock loader is installed; a loader that lives only in the removable path is left alone. Boot code is written with `core.img` first and the boot sector after, each flushed to the device, and read back after the kernel's cached copy of the device is dropped (`BLKFLSBUF`). It refuses a disk whose boot sector has no `0x55AA` signature. The command prints "writing core.img ..." before the first BIOS write, so a failure report says whether booting has changed.
+
+What this version leaves out, and says so when it finishes: publishing generation 1, the Secure Boot tier A key and signing, the NVRAM entry (3.3) and removing the stock loaders. A disk deployed with `--deploy-only` boots recovery A under both firmwares until generation 1 is published.

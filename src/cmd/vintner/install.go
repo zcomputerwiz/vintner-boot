@@ -3,32 +3,45 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"syscall"
 
+	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/install"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/layout"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
 )
+
+// installTestHook lets tests replace the external programs; it is nil in the binary.
+var installTestHook func(*install.Options)
 
 func cmdInstall(args []string) {
 	osExit(runInstall(args, os.Stdout, os.Stderr))
 }
 
 // runInstall implements vintner install and returns its exit status: 0 when
-// everything checked out, 1 when a rule or the payload check failed, 2 for a
-// usage error.
+// everything checked out or was deployed, 1 when a rule, the payload check or a
+// step failed, 2 for a usage error.
 func runInstall(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("vintner install", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	disk := fs.String("disk", "", "the whole disk that holds the layout, for example /dev/vda (required)")
 	firmware := fs.String("firmware", "", "uefi, bios or both (required)")
+	target := fs.String("target", "/", "the root of the target system, mounted")
+	espDir := fs.String("esp", "", "the mounted ESP (default <target>/boot/efi)")
+	bsDir := fs.String("boot-storage", "", "the mounted boot storage (default: mount it by PARTUUID at "+bootstorage.MountPoint+")")
 	rootUUID := fs.String("root-partuuid", "", "PARTUUID of the root partition (default: the one partition of the x86-64 root type)")
 	bsUUID := fs.String("boot-storage-partuuid", "", "PARTUUID of boot storage (default: the one partition of the XBOOTLDR type)")
 	espUUID := fs.String("esp-partuuid", "", "PARTUUID of the EFI System Partition (default: the one partition of the ESP type)")
 	payloadDir := fs.String("payload-dir", payload.DefaultDir, "directory of the vintner-platform payloads")
 	check := fs.Bool("check", false, "only check the layout and the payloads; change nothing")
+	deployOnly := fs.Bool("deploy-only", false, "deploy the loader, recovery and manifest, then stop (publishing generation 1 and removing the stock loaders are not implemented yet)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -37,12 +50,16 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return 2
 	}
-	if !*check {
-		fmt.Fprintln(stderr, "vintner install: deploying is not implemented yet; use --check to test a layout")
+	if !*check && !*deployOnly {
+		fmt.Fprintln(stderr, "vintner install: the full installation is not implemented yet; use --check to test a layout or --deploy-only to deploy what exists")
 		return 2
 	}
 
-	f, err := os.Open(*disk)
+	flags := os.O_RDONLY
+	if !*check && *firmware != "uefi" {
+		flags = os.O_RDWR // BIOS: the boot sector and the BIOS Boot Partition
+	}
+	f, err := os.OpenFile(*disk, flags, 0)
 	if err != nil {
 		fmt.Fprintf(stderr, "vintner install: %v\n", err)
 		return 1
@@ -78,13 +95,81 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vintner install: refused: %s\n", fd)
 		ok = false
 	}
-	if _, err := payload.Open(*payloadDir); err != nil {
+	pl, err := payload.Open(*payloadDir)
+	if err != nil {
 		fmt.Fprintf(stderr, "vintner install: refused: %v\n", err)
 		ok = false
 	}
 	if !ok {
 		return 1
 	}
-	fmt.Fprintln(stdout, "layout and payloads are accepted")
+	if *check {
+		fmt.Fprintln(stdout, "layout and payloads are accepted")
+		return 0
+	}
+
+	// Deploy.
+	opts := install.Options{
+		Firmware: *firmware, Layout: l, Payload: pl,
+		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
+		Log: stdout,
+	}
+	if *firmware != "bios" && opts.ESPDir == "" {
+		opts.ESPDir = filepath.Join(*target, "boot", "efi")
+	}
+	if *firmware != "uefi" {
+		opts.Disk = blockDisk{f}
+	}
+	if opts.BootStorageDir == "" {
+		unmount, err := bootstorage.Mount("/dev/disk/by-partuuid/"+l.BootStorage.UUID, true)
+		if err != nil {
+			fmt.Fprintf(stderr, "vintner install: mount boot storage: %v\n", err)
+			return 1
+		}
+		defer func() {
+			if err := unmount(); err != nil {
+				fmt.Fprintf(stderr, "vintner install: unmount boot storage: %v\n", err)
+			}
+		}()
+		opts.BootStorageDir = bootstorage.MountPoint
+	}
+	if installTestHook != nil {
+		installTestHook(&opts)
+	}
+	fmt.Fprintln(stdout, "deploying:")
+	res, err := install.Deploy(context.Background(), opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "vintner install: %v\n", err)
+		var se *install.Error
+		if errors.As(err, &se) && len(se.Changed) > 0 {
+			fmt.Fprintln(stderr, "vintner install: changed before the failure:")
+			for _, c := range se.Changed {
+				fmt.Fprintln(stderr, "  "+c)
+			}
+		}
+		fmt.Fprintln(stderr, "vintner install: the lines above are everything that was changed; the BIOS Boot Partition and the boot sector are written last, so a failure before a \"writing core.img\" line has not changed how a BIOS machine boots")
+		return 1
+	}
+	fmt.Fprintf(stdout, "deployed %d changes; installation %s\n", len(res.Changed), res.Manifest.InstallationID)
+	fmt.Fprintln(stdout, "not done yet: publishing generation 1 and removing the stock loaders")
 	return 0
+}
+
+// blockDisk is the disk opened for the BIOS boot code. DropCache asks the
+// kernel to flush and discard its cached copy of the device (BLKFLSBUF), so that
+// the read-back after the write comes from the device. A regular file, as in
+// tests, has no such cache to drop.
+type blockDisk struct{ *os.File }
+
+const blkflsbuf = 0x1261
+
+// DropCache implements the optional interface that install.VerifyEmbedded uses.
+func (b blockDisk) DropCache() error {
+	if err := b.Sync(); err != nil {
+		return err
+	}
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, b.Fd(), blkflsbuf, 0); errno != 0 && errno != syscall.ENOTTY {
+		return fmt.Errorf("flush the device cache: %w", errno)
+	}
+	return nil
 }

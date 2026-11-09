@@ -9,7 +9,7 @@
 # as installed on the build host. The recovery kernel and initramfs come from
 # recovery/build.sh, which downloads the Debian
 # trixie packages it unpacks (see docs/packaging.md); set VINTNER_RECOVERY_DIR to
-# a directory that already holds vmlinuz, initrd.img and versions.txt to use
+# a directory that already holds vmlinuz, initrd.img, versions.txt and version to use
 # those instead.
 set -eu
 
@@ -48,7 +48,7 @@ else
 	bash recovery/build.sh --no-uki
 	R=recovery/out
 fi
-for f in vmlinuz initrd.img versions.txt; do
+for f in vmlinuz initrd.img versions.txt version; do
 	[ -f "$R/$f" ] || { echo "stage-payloads: $R/$f not found" >&2; exit 1; }
 	cp "$R/$f" "$P/recovery/"
 done
