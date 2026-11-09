@@ -391,6 +391,11 @@ sudo umount "$MNT"
 sudo losetup -d "$LOOP"
 LOOP=""
 
+# Copies of what the installer published, for the rows that rebuild or alter generation 1
+# (os-1's boot-storage files and its UKI).
+mcopy -n -i "$DISK@@$BS_OFFSET" ::/vintner/bios/os-1/slot.cfg "$OUT/os1-slot.cfg"
+mcopy -n -i "$DISK@@$BS_OFFSET" ::/EFI/Linux/vintner-os-1+3-0.efi "$OUT/vintner-os-1+3-0.efi"
+
 # Setup OVMF vars
 CODE_FD=""
 VARS_TEMPLATE=""
