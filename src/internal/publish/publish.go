@@ -238,12 +238,12 @@ func ukiInitrdSHA256(ukiPath string) (string, error) {
 	return ukiSectionSHA256(ukiPath, ".initrd")
 }
 
-// osReleaseQuote returns s as an os-release(5) double-quoted value: only quote,
+// OSReleaseQuote returns s as an os-release(5) double-quoted value: only quote,
 // backslash, dollar and backtick are escaped, and other characters, UTF-8
 // included, stay as they are. Go's %q writes non-ASCII runes as backslash-u
 // escapes, which os-release parsers do not decode, and a variant's title is the
 // product's text.
-func osReleaseQuote(s string) string {
+func OSReleaseQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
 	for _, r := range s {
@@ -257,12 +257,49 @@ func osReleaseQuote(s string) string {
 	return b.String()
 }
 
+// MenuTitle is the text of an ordinary entry in both loaders: the product's
+// name and the day the generation was published, "WineExplorer (2026-11-07)",
+// so a person picks a generation by date (WO-0010 4.1). The kernel ABI is not
+// in it: the manifest records it and the UKI carries it in .uname. An
+// os-release without PRETTY_NAME gives the date alone.
+func MenuTitle(pretty, date string) string {
+	if pretty == "" {
+		return date
+	}
+	return pretty + " (" + date + ")"
+}
+
+// VariantMenuTitle is the text of a variant's entry: its generation's title,
+// then the product's title for the variant.
+func VariantMenuTitle(generationTitle, variantTitle string) string {
+	return generationTitle + ": " + variantTitle
+}
+
+// osReleasePretty returns the unquoted PRETTY_NAME of an os-release file, or "".
+func osReleasePretty(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, l := range strings.Split(string(data), "\n") {
+		v, ok := strings.CutPrefix(strings.TrimSpace(l), "PRETTY_NAME=")
+		if !ok {
+			continue
+		}
+		if u, err := strconv.Unquote(v); err == nil {
+			return u
+		}
+		return strings.Trim(v, `"'`)
+	}
+	return ""
+}
+
 // generateOSRelease writes the .osrel of a UKI. For a variant (id not empty) the
 // name carries its title, and IMAGE_VERSION is "<gen>~<id>": systemd-boot sorts
 // versions newest first and "~" sorts before the end of the string, so the
 // variant comes directly after its generation's ordinary entry and before any
 // older generation (WO-0010 4.3).
-func generateOSRelease(origPath, outPath string, gen int, abi, id, title string) error {
+func generateOSRelease(origPath, outPath string, gen int, date, id, title string) error {
 	data, err := os.ReadFile(origPath)
 	if err != nil {
 		return err
@@ -289,20 +326,15 @@ func generateOSRelease(origPath, outPath string, gen int, abi, id, title string)
 		}
 	}
 
-	newPretty := origPretty
-	if newPretty != "" {
-		newPretty += ", " + abi
-	} else {
-		newPretty = abi
-	}
+	newPretty := MenuTitle(origPretty, date)
 	version := strconv.Itoa(gen)
 	if id != "" {
-		newPretty += " (" + title + ")"
+		newPretty = VariantMenuTitle(newPretty, title)
 		version += "~" + id
 	}
 
 	lines = append(lines,
-		"PRETTY_NAME="+osReleaseQuote(newPretty),
+		"PRETTY_NAME="+OSReleaseQuote(newPretty),
 		"IMAGE_ID=vintner-os",
 		"IMAGE_VERSION="+version,
 	)
@@ -338,12 +370,17 @@ func ValidateImageCmdline(cmdline string, m *manifest.Manifest) error {
 	return nil
 }
 
-// SlotCfg is the content of a slot's slot.cfg: the ordinary command line and,
-// for each variant, its id, title and command line (WO-0010 4.3). grub.cfg
-// sources it to boot the slot and to list its variants in the menu.
-func SlotCfg(cmdline string, vs []variants.Variant) string {
+// SlotCfg is the content of a slot's slot.cfg: the ordinary command line, the
+// title the menu shows for the slot (WO-0010 4.1; empty writes none) and, for
+// each variant, its id, menu title and command line (4.3). grub.cfg sources it
+// to boot the slot and to list its variants in the menu. A variant's menu title
+// is its slot's title, a colon and the product's title, as on UEFI.
+func SlotCfg(cmdline, title string, vs []variants.Variant) string {
 	var b strings.Builder
 	b.WriteString("set vintner_cmdline=" + grubQuote(cmdline) + "\n")
+	if title != "" {
+		b.WriteString("set vintner_title=" + grubQuote(title) + "\n")
+	}
 	if len(vs) == 0 {
 		return b.String()
 	}
@@ -353,7 +390,11 @@ func SlotCfg(cmdline string, vs []variants.Variant) string {
 	}
 	b.WriteString("set vintner_variants=" + grubQuote(strings.Join(ids, " ")) + "\n")
 	for _, v := range vs {
-		b.WriteString("set vintner_vtitle_" + v.ID + "=" + grubQuote(v.Title) + "\n")
+		vt := v.Title
+		if title != "" {
+			vt = VariantMenuTitle(title, v.Title)
+		}
+		b.WriteString("set vintner_vtitle_" + v.ID + "=" + grubQuote(vt) + "\n")
 		b.WriteString("set vintner_vcmdline_" + v.ID + "=" + grubQuote(v.Cmdline(cmdline)) + "\n")
 	}
 	return b.String()
@@ -455,6 +496,10 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if clk == nil {
 		clk = RealClock{}
 	}
+	pubTime := clk.Now()
+	// The day shown in the menu is the day of this publish, in UTC, and is also
+	// the day in the manifest's created field.
+	menuDate := pubTime.UTC().Format("2006-01-02")
 
 	rootDir := opts.RootDir
 	if rootDir == "" {
@@ -776,7 +821,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if isUEFI {
 		osReleaseOrig := filepath.Join(rootDir, "etc", "os-release")
 		osReleaseTmp := filepath.Join(buildDir, "os-release")
-		if err := generateOSRelease(osReleaseOrig, osReleaseTmp, g, abi, "", ""); err != nil {
+		if err := generateOSRelease(osReleaseOrig, osReleaseTmp, g, menuDate, "", ""); err != nil {
 			return nil, fmt.Errorf("generate os-release: %w", err)
 		}
 
@@ -836,7 +881,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		var variantBytes int
 		for _, dv := range declared {
 			vOsRelease := filepath.Join(buildDir, "os-release-"+dv.ID)
-			if err := generateOSRelease(osReleaseOrig, vOsRelease, g, abi, dv.ID, dv.Title); err != nil {
+			if err := generateOSRelease(osReleaseOrig, vOsRelease, g, menuDate, dv.ID, dv.Title); err != nil {
 				return nil, fmt.Errorf("generate os-release of variant %s: %w", dv.ID, err)
 			}
 			bv := builtVariant{v: dv, cmdline: dv.Cmdline(baseCmdline), path: filepath.Join(buildDir, bls.VariantStem(g, dv.ID)+".efi")}
@@ -872,7 +917,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	if isBIOS {
 		slotCfgBuiltPath = filepath.Join(buildDir, "slot.cfg")
-		slotCfgContent := SlotCfg(baseCmdline, declared)
+		slotCfgContent := SlotCfg(baseCmdline, MenuTitle(osReleasePretty(filepath.Join(rootDir, "etc", "os-release")), menuDate), declared)
 		if err := os.WriteFile(slotCfgBuiltPath, []byte(slotCfgContent), 0644); err != nil {
 			return nil, fmt.Errorf("write slot.cfg: %w", err)
 		}
@@ -921,7 +966,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// 9. Record STAGED.
-	nowRFC := clk.Now().Format(time.RFC3339)
+	nowRFC := pubTime.Format(time.RFC3339)
 	newImg := manifest.Image{
 		Generation: g,
 		State:      "STAGED",

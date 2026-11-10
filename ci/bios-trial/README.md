@@ -37,7 +37,8 @@ All scenarios start with `VINTNER_ORDER="2 1"` and three tries per counter unles
 | B11 variant of a trying image | as B10, `T_2=xx` | `os-2-safe`; `grubenv` unchanged (the try is not spent) |
 | B12 variant of a bad image | as B10, `T_2=0` | `os-2-safe`; `grubenv` unchanged |
 | B13 variant after a failed ordinary boot | as B10, `T_2=xx`, `VINTNER_BOOTED=2` | `os-2-safe`; `VINTNER_BOOTED=2` stays, so the next ordinary boot counts the failure |
-| B14 variant menu order | Shift held, no choice | the menu lists `vintner os 2`, `vintner os 2: Safe Mode`, `vintner os 1`, `vintner recovery A`, `vintner recovery B` in that order |
+| B14 variant menu order | Shift held, no choice | the menu lists `Test OS (2026-01-02)`, `Test OS (2026-01-02): Safe Mode`, `Test OS (2026-01-01)`, `Recovery Console`, `Recovery Console (backup)` in that order, the titles slot.cfg gives |
+| B15 menu without titles | slot.cfg files written before 4.1, Shift held | the menu lists `Generation 2`, `Generation 1`, `Recovery Console`, `Recovery Console (backup)` and no "vintner" entry |
 | B9 empty grubenv | 0-byte `grubenv`, as a power cut during `grub-editenv` can leave it | `ra`; nothing written |
 | T1 torn block | Host only: the first sector of one block with the second sector of another, with a variable straddling them | Observation only: what `grub-editenv list` (the same parser as `load_env`) reads |
 | T2 vintner variables in first sector | Host only: 10 six-digit generations, five tries each | The second sector holds only padding |
@@ -76,6 +77,6 @@ Findings:
 
 - **The algorithm works as written on GRUB 2.12.** That covers per-generation variable names through `eval`, the `x`-run counters through `regexp`, and continuing to the next slot when `linux` fails.
 - **B6 and B9:** `load_env` fails with `error: invalid environment block.` and GRUB boots recovery A without writing.
-- **B8:** Shift shows the menu with `vintner os 2`, `vintner os 1`, `vintner recovery A` and `vintner recovery B`. Enter on the first entry boots os-2 and counts it. This confirms that `menuentry` passes its extra arguments to the entry body as `$2`.
+- **B8:** Shift shows the menu with the slots' titles (the test OS of 2026-01-02 and 2026-01-01, `Recovery Console` and `Recovery Console (backup)`). Enter on the first entry boots os-2 and counts it. This confirms that `menuentry` passes its extra arguments to the entry body as `$2`.
 - **T1:** a torn block loads without error. A variable that straddles the sectors gets a mixed value, and nothing reports it. `firmware/bios/INTERFACE.md` therefore keeps every variable in the first sector.
 - **T2:** Debian's `grub-editenv` adds a 69-byte warning line after the header, which counts against the first sector.

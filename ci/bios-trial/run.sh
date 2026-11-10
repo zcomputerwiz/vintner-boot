@@ -62,8 +62,19 @@ BS_OFF=$(( $(start 1) * 512 ))
 mformat -i "$TEMPLATE@@$BS_OFF" -F -N "$FS_SERIAL" -v BOOTSTORAGE ::
 mmd -i "$TEMPLATE@@$BS_OFF" ::/grub ::/vintner ::/vintner/bios
 mcopy -i "$TEMPLATE@@$BS_OFF" firmware/bios/grub.cfg ::/grub/grub.cfg
+slot_title() { # dir: the title the publisher or the installer writes (WO-0010 4.1)
+	case "$1" in
+	os-1) echo "Test OS (2026-01-01)" ;;
+	os-2) echo "Test OS (2026-01-02)" ;;
+	recovery-a) echo "Recovery Console" ;;
+	recovery-b) echo "Recovery Console (backup)" ;;
+	esac
+}
 slot_cfg() { # image dir test-id action: writes /vintner/bios/<dir>/slot.cfg
-	printf 'set vintner_cmdline="console=ttyS0 panic=-1 vintner.test_id=%s vintner.test_action=%s"\n' "$3" "$4" > "$OUT/slot.cfg"
+	{
+		printf 'set vintner_cmdline="console=ttyS0 panic=-1 vintner.test_id=%s vintner.test_action=%s"\n' "$3" "$4"
+		printf 'set vintner_title="%s"\n' "$(slot_title "$2")"
+	} > "$OUT/slot.cfg"
 	mcopy -o -i "$1" "$OUT/slot.cfg" "::/vintner/bios/$2/slot.cfg"
 }
 for s in os-1 os-2 recovery-a recovery-b; do
@@ -237,7 +248,7 @@ keys() {
 	key shift false; sleep 1; key ret true; key ret false; sleep 60
 }
 boot qmp < <(keys)
-grep -aq 'vintner recovery B' "$OUT/B8-shift-menu-boot1.log" && menu=shown || menu="not shown"
+grep -aq 'Recovery Console (backup)' "$OUT/B8-shift-menu-boot1.log" && menu=shown || menu="not shown"
 SCEN="B8-shift-menu (menu $menu)"
 end OBSERVE
 
@@ -248,8 +259,9 @@ end OBSERVE
 slot_cfg_variant() { # image dir test-id: slot.cfg with the variant "safe"
 	{
 		printf 'set vintner_cmdline="console=ttyS0 panic=-1 vintner.test_id=%s vintner.test_action=poweroff"\n' "$3"
+		printf 'set vintner_title="%s"\n' "$(slot_title "$2")"
 		printf 'set vintner_variants="safe"\n'
-		printf 'set vintner_vtitle_safe="Safe Mode"\n'
+		printf 'set vintner_vtitle_safe="%s: Safe Mode"\n' "$(slot_title "$2")"
 		printf 'set vintner_vcmdline_safe="console=ttyS0 panic=-1 vintner.test_id=%s-safe vintner.test_action=poweroff vintner.variant=safe"\n' "$3"
 	} > "$OUT/slot.cfg"
 	mcopy -o -i "$1" "$OUT/slot.cfg" "::/vintner/bios/$2/slot.cfg"
@@ -286,9 +298,24 @@ set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
 slot_cfg_variant "$BS" os-2 os-2
 boot qmp < <(variant_keys)
 menu=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/B14-variant-menu-order-boot1.log" | tr -d '\r')
-order=$(printf '%s\n' "$menu" | grep -aoE 'vintner os 2: Safe Mode|vintner os [12]|vintner recovery [AB]' | awk '!seen[$0]++' | paste -sd ',')
-expect "menu order" "$order" "vintner os 2,vintner os 2: Safe Mode,vintner os 1,vintner recovery A,vintner recovery B"
+order=$(printf '%s\n' "$menu" | grep -aoE 'Test OS \(2026-01-0[12]\)(: Safe Mode)?|Recovery Console( \(backup\))?' | awk '!seen[$0]++' | paste -sd ',')
+expect "menu order" "$order" "Test OS (2026-01-02),Test OS (2026-01-02): Safe Mode,Test OS (2026-01-01),Recovery Console,Recovery Console (backup)"
 end "NONE" # the menu waits for a choice that never comes
+
+# WO-0010 4.1: no visible menu text says "vintner" unless the product chose it,
+# and a slot written before titles existed gets a plain default, not a vintner name.
+begin B15-menu-without-titles
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+for s in os-1 os-2 recovery-a recovery-b; do
+	printf 'set vintner_cmdline="console=ttyS0 panic=-1 vintner.test_id=%s vintner.test_action=poweroff"\n' "${s/recovery-/r}" > "$OUT/slot.cfg"
+	mcopy -o -i "$BS" "$OUT/slot.cfg" "::/vintner/bios/$s/slot.cfg"
+done
+boot qmp < <(variant_keys)
+menu=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/B15-menu-without-titles-boot1.log" | tr -d '\r')
+order=$(printf '%s\n' "$menu" | grep -aoE 'Generation [12]|Recovery Console( \(backup\))?|vintner (os|recovery)' | awk '!seen[$0]++' | paste -sd ',')
+expect "menu order" "$order" "Generation 2,Generation 1,Recovery Console,Recovery Console (backup)"
+end "NONE"
+for s in os-1 os-2 recovery-a recovery-b; do slot_cfg "$BS" "$s" "${s/recovery-/r}" poweroff; done
 
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
 begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block

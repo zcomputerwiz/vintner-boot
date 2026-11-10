@@ -73,7 +73,7 @@ func ValidateTokens(tokens string) error {
 	return nil
 }
 
-func validateTitle(title string) error {
+func ValidateTitle(title string) error {
 	if title == "" {
 		return errors.New("no title")
 	}
@@ -118,7 +118,7 @@ func Parse(id string, data []byte) (Variant, error) {
 			return Variant{}, fmt.Errorf("line %d: unknown key %q", n+1, key)
 		}
 	}
-	if err := validateTitle(v.Title); err != nil {
+	if err := ValidateTitle(v.Title); err != nil {
 		return Variant{}, err
 	}
 	if err := ValidateTokens(v.Tokens); err != nil {
