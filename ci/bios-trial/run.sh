@@ -241,6 +241,55 @@ grep -aq 'vintner recovery B' "$OUT/B8-shift-menu-boot1.log" && menu=shown || me
 SCEN="B8-shift-menu (menu $menu)"
 end OBSERVE
 
+# WO-0010 4.3: variants. os-2's slot.cfg lists one variant, "safe", as the publisher
+# writes it (src/internal/publish SlotCfg). The Shift menu shows it directly after
+# its generation; a variant entry counts nothing and writes nothing (D-D), so the
+# grubenv is byte-identical after the boot, whatever the image's state.
+slot_cfg_variant() { # image dir test-id: slot.cfg with the variant "safe"
+	{
+		printf 'set vintner_cmdline="console=ttyS0 panic=-1 vintner.test_id=%s vintner.test_action=poweroff"\n' "$3"
+		printf 'set vintner_variants="safe"\n'
+		printf 'set vintner_vtitle_safe="Safe Mode"\n'
+		printf 'set vintner_vcmdline_safe="console=ttyS0 panic=-1 vintner.test_id=%s-safe vintner.test_action=poweroff vintner.variant=safe"\n' "$3"
+	} > "$OUT/slot.cfg"
+	mcopy -o -i "$1" "$OUT/slot.cfg" "::/vintner/bios/$2/slot.cfg"
+}
+# Shift held through the first 20 s, released, then the given keys (qcodes) one after the other.
+variant_keys() {
+	echo '{"execute":"qmp_capabilities"}'
+	for _ in $(seq 100); do key shift true; sleep 0.2; done
+	key shift false; sleep 1
+	for k in "$@"; do key "$k" true; key "$k" false; sleep 0.5; done
+	sleep 60
+}
+variant_scenario() { # name grubenv-vars...: boots the variant of os-2 from the menu, grubenv unchanged
+	begin "$1"
+	shift
+	set_env "VINTNER_ORDER=2 1" "$@" VINTNER_T_1=xxx VINTNER_T_RA=xxx
+	slot_cfg_variant "$BS" os-2 os-2
+	before=$(get_env && sha256sum < "$OUT/env")
+	boot qmp < <(variant_keys down ret)
+	expect "grubenv sha256 after a variant boot" "$(get_env && sha256sum < "$OUT/env")" "$before"
+	end "os-2-safe"
+}
+variant_scenario B10-variant-of-good-image VINTNER_T_2=xxx
+variant_scenario B11-variant-of-trying-image VINTNER_T_2=xx
+variant_scenario B12-variant-of-bad-image VINTNER_T_2=0
+# A failed ordinary boot just before: VINTNER_BOOTED stays, so that the next
+# ordinary boot counts the failure.
+variant_scenario B13-variant-after-failed-boot VINTNER_T_2=xx VINTNER_BOOTED=2
+
+# The menu lists the variant directly after its generation, and the entry's title
+# is the one slot.cfg gives.
+begin B14-variant-menu-order
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+slot_cfg_variant "$BS" os-2 os-2
+boot qmp < <(variant_keys)
+menu=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/B14-variant-menu-order-boot1.log" | tr -d '\r')
+order=$(printf '%s\n' "$menu" | grep -aoE 'vintner os 2: Safe Mode|vintner os [12]|vintner recovery [AB]' | awk '!seen[$0]++' | paste -sd ',')
+expect "menu order" "$order" "vintner os 2,vintner os 2: Safe Mode,vintner os 1,vintner recovery A,vintner recovery B"
+end "NONE" # the menu waits for a choice that never comes
+
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
 begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 : > "$OUT/env" && put_env

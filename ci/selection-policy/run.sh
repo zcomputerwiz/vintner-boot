@@ -73,6 +73,17 @@ uki os-2-fail os-2 reboot vintner-os 2
 uki ra ra poweroff vintner-recovery-a 20261015
 uki rb rb poweroff vintner-recovery-b 20261015
 uki foreign foreign poweroff "" ""
+# WO-0010 4.3: variants. No counter; the sort key is the ordinary IMAGE_ID and the
+# version is <gen>~<id>, so a variant sorts directly after its generation.
+uki var-os-2 os-2-safe poweroff vintner-os "2~safe"
+uki var-os-1 os-1-safe poweroff vintner-os "1~safe"
+uki menu-os-2 os-2 poweroff vintner-os 2
+uki menu-var-2-safe os-2-safe poweroff vintner-os "2~safe"
+uki menu-var-2-netw os-2-netw poweroff vintner-os "2~netw"
+uki menu-os-1 os-1 poweroff vintner-os 1
+uki menu-var-1-safe os-1-safe poweroff vintner-os "1~safe"
+uki menu-ra ra poweroff vintner-recovery-a 20261015
+uki menu-rb rb poweroff vintner-recovery-b 20261015
 
 # --- disk: GPT with ESP (loader) and XBOOTLDR (UKIs) -----------------------
 IMG=$OUT/disk.img
@@ -174,6 +185,42 @@ SCEN=S13-key-shows-menu
 got=$(QMP=1 boot 1 < <(keys))
 grep -aq 'os-1' "$OUT/$SCEN-boot1.log" && menu=shown || menu="not shown"
 printf '%s (menu %s)\t%s\t%s\tOBSERVED\n' "$SCEN" "$menu" "$got" "$(listing)" | tee -a "$SUMMARY"
+
+# WO-0010 4.3 (D-C): a variant has no counter and a name outside "default vintner-*",
+# so the default never selects it, and with every ordinary image bad recovery A
+# still boots without input. An uncounted variant of a broken kernel would
+# otherwise boot for ever.
+V=(var-os-2:vintner_variant-os-2-safe.efi var-os-1:vintner_variant-os-1-safe.efi)
+new_disk "${S1[@]}" "${V[@]}"; new_vars
+scenario S14-variants-are-never-the-default "os-2"
+new_disk os-2:vintner-os-2+0-3.efi os-1:vintner-os-1+0-3.efi ra:vintner-recovery-a+3.efi rb:vintner-recovery-b.efi "${V[@]}"; new_vars
+scenario S15-variants-of-bad-images-do-not-beat-recovery "ra"
+new_disk os-2:vintner-os-2+0-3.efi os-1:vintner-os-1+0-3.efi ra:vintner-recovery-a+0-3.efi rb:vintner-recovery-b.efi "${V[@]}"; new_vars
+scenario S16-variants-and-no-recovery-a "rb"
+
+# Booting a variant (here chosen with LoaderEntryOneShot, as 4.4's next-boot variant will)
+# renames nothing: every file name, counter included, is the same afterwards (D-D).
+new_disk "${S1[@]}" "${V[@]}"; new_vars LoaderEntryOneShot vintner_variant-os-2-safe.efi
+before=$(listing)
+scenario S18-variant-boot-renames-nothing "os-2-safe"
+if [ "$(listing)" != "$before" ]; then
+	echo "S18: the variant boot changed the file names: '$before' became '$(listing)'" >&2
+	printf 'S18-variant-boot-renames-nothing\t-\t%s\tFAIL\n' "$(listing)" | tee -a "$SUMMARY"
+	fail=1
+fi
+
+# The menu lists each variant directly after its generation (version "<gen>~<id>"),
+# the variants of one generation among themselves in descending order, and every
+# older generation after them. Space pressed through the first 15 s shows the menu.
+new_disk menu-os-2:vintner-os-2+3.efi menu-var-2-safe:vintner_variant-os-2-safe.efi menu-var-2-netw:vintner_variant-os-2-netw.efi \
+	menu-os-1:vintner-os-1.efi menu-var-1-safe:vintner_variant-os-1-safe.efi menu-ra:vintner-recovery-a+3.efi menu-rb:vintner-recovery-b.efi
+new_vars
+SCEN=S17-variant-menu-order
+QMP=1 boot 1 < <(keys) > /dev/null
+order=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/$SCEN-boot1.log" | tr -d '\r' | grep -ao 'menu-[a-z0-9-]*' | awk '!seen[$0]++' | paste -sd ',')
+want="menu-os-2,menu-var-2-safe,menu-var-2-netw,menu-os-1,menu-var-1-safe,menu-ra,menu-rb"
+result=PASS; [ "$order" = "$want" ] || { result=FAIL; fail=1; echo "$SCEN: menu order '$order', expected '$want'" >&2; }
+printf '%s\t%s\t%s\t%s\n' "$SCEN" "$order" "$(listing)" "$result" | tee -a "$SUMMARY"
 
 # --- Secure Boot: a listed entry that fails LoadImage (ADR-0003 finding 5) ---
 # Throwaway test key, made per run: one self-signed certificate is PK, KEK and
