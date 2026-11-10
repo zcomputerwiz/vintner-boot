@@ -82,6 +82,10 @@ The last try still boots: a counter of `x` becomes `0` and the image boots once 
 
 The menu is hidden, with no delay. Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, titled by the slot's `vintner_title`, each followed by an entry for each of its variants (titled by `vintner_vtitle_<id>`: the slot's title, `: ` and the variant's title), plus recovery A and recovery B (titled by their `vintner_title`). The text matches the UEFI menu, and no entry says "vintner". A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing. A variant entry counts nothing and writes nothing either: no counter, no `VINTNER_BOOTED` (D-D). It boots the slot's `vmlinuz` and `initrd.img` with the variant's command line from `slot.cfg`.
 
+## Image token
+
+`grub.cfg` adds `vintner.image=<dir>` to the command line of every image it boots: `os-<gen>`, `recovery-a` or `recovery-b`, and a variant boot adds it after the variant's own command line (WO-0010 4.5). It is not in `slot.cfg` and not in the manifest. The kernel then tells which image booted after the bless service has cleared `VINTNER_BOOTED`, for `vintner status` ([`docs/status.md`](../../docs/status.md)). `ci/bios-trial` rows B23 to B25 show it on the guest's `/proc/cmdline`.
+
 ## One-shot request
 
 `vintner next-boot` ([`docs/next-boot.md`](../../docs/next-boot.md)) sets `VINTNER_NEXT`. `grub.cfg` reads it right after `load_env` and unsets it, and then:

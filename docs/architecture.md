@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 1.9 (November 2026)** — WO-0010 4.5:
+
+- §3 P1 "common status/reporting commands": `vintner status [--json]` reports each generation (state, date, ABI, variants, tries left), the booted image and its failed attempts (not counting this boot), newest and previous GOOD, health, tier, firmware and whether out-of-tree modules can load. Read-only, no lock, readable early in boot. On BIOS `grub.cfg` adds `vintner.image=<dir>` to every image it boots, so the booted image is known after bless ([`status.md`](status.md)).
+
 **Revision 1.8 (November 2026)** — WO-0010 4.9:
 
 - §3 P1: `/etc/vintner/product.conf` (`name=`) replaces the installed `PRETTY_NAME` in the title of every ordinary and variant entry on both firmwares; `/etc/os-release` is untouched. Read at every publish, no file means `PRETTY_NAME` ([`product.md`](product.md)).

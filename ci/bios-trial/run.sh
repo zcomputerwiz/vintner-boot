@@ -45,7 +45,7 @@ cat > "$OUT/initrd/init" <<'EOF'
 /bin/busybox mount -t proc proc /proc
 /bin/busybox mount -t devtmpfs dev /dev
 arg() { /bin/busybox sed -n "s/.*vintner.$1=\([^ ]*\).*/\1/p" /proc/cmdline; }
-echo "VINTNER-TEST-BOOTED id=$(arg test_id)" > /dev/ttyS0
+echo "VINTNER-TEST-BOOTED id=$(arg test_id) image=$(arg image)" > /dev/ttyS0
 if [ "$(arg test_action)" = reboot ]; then /bin/busybox reboot -f; fi
 /bin/busybox poweroff -f
 EOF
@@ -365,6 +365,28 @@ grep -aq 'Recovery Console (backup)' "$OUT/B22-next-menu-boot2.log" && menu=show
 expect "menu on the second boot" "$menu" "not shown"
 end "os-2 os-2"
 
+# WO-0010 4.5: every image GRUB boots gets "vintner.image=<dir>" on its command line, so
+# "vintner status" can tell which image booted after the bless service has cleared
+# VINTNER_BOOTED. The test initramfs prints the token it saw.
+image_of() { grep -ao -m1 "VINTNER-TEST-BOOTED id=[A-Za-z0-9-]* image=[A-Za-z0-9-]*" "$1" | sed 's/.*image=//'; }
+begin B23-image-token-generation
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+boot
+expect "image token" "$(image_of "$OUT/B23-image-token-generation-boot1.log")" os-2
+end "os-2"
+begin B24-image-token-recovery
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=0 VINTNER_T_1=0 VINTNER_T_RA=xxx
+boot
+expect "image token" "$(image_of "$OUT/B24-image-token-recovery-boot1.log")" recovery-a
+end "ra"
+# A variant's command line also carries it (and its own vintner.variant token).
+begin B25-image-token-variant
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+slot_cfg_variant "$BS" os-2 os-2
+boot qmp < <(variant_keys down ret)
+expect "image token" "$(image_of "$OUT/B25-image-token-variant-boot1.log")" os-2
+end "os-2-safe"
+slot_cfg "$BS" os-2 os-2 poweroff
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
 begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 : > "$OUT/env" && put_env
