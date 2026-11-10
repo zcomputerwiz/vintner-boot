@@ -12,8 +12,8 @@ CI runs it as `secure-boot-uefi` in `.github/workflows/qemu-tests.yml`.
 
 1. **Base disk and artifacts:**
    - The base disk is prepared by `ci/lib/vintner-base.sh` with dual-firmware partitioning (`firmware: uefi` boot storage and ESP).
-   - In Step 2, the test platform key (`pk.key` / `pk.crt`), machine key (`machine.key` / `machine.crt`, initialized via `vintner secureboot init`), and an unenrolled foreign key (`foreign.key` / `foreign.crt`) are generated per run with RSA 2048, SHA-256, and 10-year validity. Keys are generated exclusively under `ci/out/secure-boot/uefi/keys/` and never committed or logged.
-   - The systemd-boot loader (`/usr/lib/systemd/boot/efi/systemd-bootx64.efi`), recovery UKIs (`vintner-recovery-a.efi`, `vintner-recovery-b.efi`), and os-1 UKI (`vintner-os-1+3-0.efi`) are signed with `sbsign` using the machine key.
+   - In Step 2, the test platform key (`pk.key` / `pk.crt`), machine key (`machine.key` / `machine.crt`, the one `vintner install --secure-boot A` made in the guest, exported by the base), and an unenrolled foreign key (`foreign.key` / `foreign.crt`) are generated per run with RSA 2048, SHA-256, and 10-year validity. Keys are generated exclusively under `ci/out/secure-boot/uefi/keys/` and never committed or logged.
+   - The systemd-boot loader (`/usr/lib/systemd/boot/efi/systemd-bootx64.efi`), recovery UKIs (`vintner-recovery-a.efi`, `vintner-recovery-b.efi`), and os-1 UKI (`vintner-os-1+3-0.efi`) are signed by `vintner install --secure-boot A` with the machine key, and the row reads them back from the installed disk (it does not sign them itself).
    - The signed loader is installed to `/EFI/systemd/systemd-bootx64.efi`, `/EFI/BOOT/BOOTX64.EFI`, and `/EFI/vintner/systemd-bootx64.efi`.
    - The installation manifest is updated with `firmware: "uefi"`, `secure_boot_tier: "A"`, and the signed image hashes and sizes.
    - Candidate generation 2 is built via `systemd-ukify` with identical command line and ABI, signed with the machine key, and staged on `prepared-gen2.raw` with 1 try allowed (`vintner-os-2+1-0.efi`).

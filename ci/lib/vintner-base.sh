@@ -11,7 +11,7 @@
 # Requires: root via sudo (for loop mounts and partition operations), KVM,
 # mtools, qemu-system-x86, qemu-utils, cloud-image-utils, sfdisk, python3,
 # python3-virt-firmware, golang-go.
-# shellcheck disable=SC2024 # the logs are written by this user into OUT; sudo is for the chroot
+# shellcheck disable=SC2024,SC2086 # the logs are written by this user into OUT; sudo is for the chroot
 set -euo pipefail
 
 if [ $# -ne 2 ] || { [ "$1" != "uefi" ] && [ "$1" != "bios" ]; }; then
@@ -269,6 +269,9 @@ sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C sh -c \
 if [ "$(wc -c < "$MNT/etc/machine-id" 2>/dev/null || echo 0)" -ne 33 ]; then
 	tr -d - < /proc/sys/kernel/random/uuid | sudo tee "$MNT/etc/machine-id" >/dev/null
 fi
+# VINTNER_INSTALL_ARGS: extra `vintner install` options a row needs, for example
+# "--secure-boot A --secure-boot-enrolled"; word-split on purpose.
+VINTNER_INSTALL_ARGS="${VINTNER_INSTALL_ARGS:-}"
 INSTALL_RC=0
 if [ "$PKG_RC" -eq 0 ]; then
 	echo "=== vintner install ==="
@@ -282,11 +285,19 @@ if [ "$PKG_RC" -eq 0 ]; then
 	RECB_EXTRA="$RECA_EXTRA vintner.test_slot=b"
 	sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
 		--root-partuuid "$ROOT_PARTUUID" --payload-dir /root/vp/usr/lib/vintner/payloads --efivars none \
-		--recovery-cmdline-a "$RECA_EXTRA" --recovery-cmdline-b "$RECB_EXTRA" > "$OUT/install.log" 2>&1 || INSTALL_RC=$?
+		--recovery-cmdline-a "$RECA_EXTRA" --recovery-cmdline-b "$RECB_EXTRA" $VINTNER_INSTALL_ARGS > "$OUT/install.log" 2>&1 || INSTALL_RC=$?
 	cat "$OUT/install.log"
 	sudo rm -rf "$MNT/root/vp" "$MNT/root/vintner-platform.deb"
 	for m in boot/efi mnt/bs; do sudo umount "$MNT/$m" || sudo umount -l "$MNT/$m"; done
 	grep -q "^installed:" "$OUT/install.log" || INSTALL_RC=1
+	# Tier A (--secure-boot A in VINTNER_INSTALL_ARGS): the machine key the installer
+	# made, for the row that enrolls its certificate and signs more images with it.
+	if sudo test -f "$MNT/etc/vintner/secureboot/key.pem"; then
+		rm -rf "$OUT/machine-sb" && mkdir -p "$OUT/machine-sb"
+		for f in key.pem cert.pem cert.der; do
+			sudo cat "$MNT/etc/vintner/secureboot/$f" > "$OUT/machine-sb/$f"
+		done
+	fi
 fi
 sudo rm -f "$MNT/etc/resolv.conf"
 sudo mv "$MNT/etc/resolv.conf.ci-save" "$MNT/etc/resolv.conf"
