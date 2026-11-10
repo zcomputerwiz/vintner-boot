@@ -55,7 +55,7 @@
       "additionalProperties": false,
       "required": ["entry", "sha256", "size"],
       "properties": {
-        "entry": {"type": "string", "pattern": "^vintner-(os-[1-9][0-9]*|recovery-[ab])$"},
+        "entry": {"type": "string", "pattern": "^(vintner-(os-[1-9][0-9]*|recovery-[ab])|vintner_variant-os-[1-9][0-9]*-[a-z][a-z0-9_]{0,23})$"},
         "sha256": {"$ref": "#/$defs/sha256"},
         "size": {"type": "integer", "minimum": 1},
         "signed": {"type": "boolean"}
@@ -115,6 +115,20 @@
         "cmdline": {"type": "string"},
         "uefi": {"$ref": "#/$defs/uefi_file"},
         "bios": {"$ref": "#/$defs/bios_files"},
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title", "cmdline"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,23}$"},
+              "title": {"type": "string", "minLength": 1},
+              "cmdline": {"type": "string", "minLength": 1},
+              "uefi": {"$ref": "#/$defs/uefi_file"}
+            }
+          }
+        },
         "created": {"$ref": "#/$defs/time"},
         "first_good": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/time"}]},
         "last_good": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/time"}]}

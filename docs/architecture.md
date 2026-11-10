@@ -106,6 +106,7 @@ systemd-boot has no project-private entry directory: it always scans the shared 
 - Upstream orders entries that have reached zero tries ("bad") after all non-bad entries. Entry IDs and the UKI `.osrel` fields (ID, version, sort key) are chosen so that every non-bad ordinary entry sorts above recovery A, and recovery A above recovery B, while all of them match `default`. When every ordinary entry is bad, recovery is the first match and boots without user input. Upstream does not document the all-bad case. The systemd 257 source defines it: bad entries sort last and `default` takes the first match ([ADR-0003](adr/0003-uefi-entry-naming-and-boot-counting.md)). It remains a CI acceptance test (§10), not an assumption. The exact names and field values are in ADR-0003.
 - A choice made with the menu's default key is persisted in the `LoaderEntryDefault` EFI variable and overrides `loader.conf`. The health service reports a set `LoaderEntryDefault` and any foreign entry in the shared directories; it does not delete foreign files.
 - One-shot recovery (`set_recovery_next_boot`) uses `LoaderEntryOneShot`.
+- Product variants (extra entries with extra command-line tokens, for example Safe Mode) have no boot counter and a file name that does not match `default vintner-*`, so they are never selected on their own; a boot of one changes no boot state ([`variants.md`](variants.md), ADR-0003).
 
 ## 5. Installer and disk ownership
 
@@ -383,6 +384,10 @@ The project's first release should be judged on unattended installation, autonom
 | D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 1.6 (November 2026)** — WO-0010 4.3:
+
+- §4.1 and ADR-0003 record the product variants: no counter, a name outside `default vintner-*`, a sort position directly after their generation, and no boot-state change when one boots.
 
 **Revision 1.5 (October 16, 2026)** — from a review of LiberNT, a ReactOS fork:
 
