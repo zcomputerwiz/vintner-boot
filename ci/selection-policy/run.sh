@@ -211,13 +211,13 @@ fi
 
 # The menu lists each variant directly after its generation (version "<gen>~<id>"),
 # the variants of one generation among themselves in descending order, and every
-# older generation after them. Space pressed through the first 15 s shows the menu.
+# older generation after them. LoaderConfigTimeoutOneShot shows the menu without a key (a key press during a fast boot is a matter of luck).
 new_disk menu-os-2:vintner-os-2+3.efi menu-var-2-safe:vintner_variant-os-2-safe.efi menu-var-2-netw:vintner_variant-os-2-netw.efi \
 	menu-os-1:vintner-os-1.efi menu-var-1-safe:vintner_variant-os-1-safe.efi menu-ra:vintner-recovery-a+3.efi menu-rb:vintner-recovery-b.efi
-new_vars
+new_vars LoaderConfigTimeoutOneShot 30 # the menu for 30 s, with no key to catch
 SCEN=S17-variant-menu-order
-QMP=1 boot 1 < <(keys) > /dev/null
-order=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/$SCEN-boot1.log" | tr -d '\r' | grep -ao 'menu-[a-z0-9-]*' | awk '!seen[$0]++' | paste -sd ',')
+QMP=1 boot 1 < <(echo "{\"execute\":\"qmp_capabilities\"}"; sleep 10; key ret; sleep 120) > /dev/null
+order=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/$SCEN-boot1.log" | tr -d '\r' | { grep -ao 'menu-[a-z0-9-]*' || true; } | awk '!seen[$0]++' | paste -sd ',')
 want="menu-os-2,menu-var-2-safe,menu-var-2-netw,menu-os-1,menu-var-1-safe,menu-ra,menu-rb"
 result=PASS; [ "$order" = "$want" ] || { result=FAIL; fail=1; echo "$SCEN: menu order '$order', expected '$want'" >&2; }
 printf '%s\t%s\t%s\t%s\n' "$SCEN" "$order" "$(listing)" "$result" | tee -a "$SUMMARY"
