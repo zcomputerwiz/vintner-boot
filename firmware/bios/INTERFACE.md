@@ -31,7 +31,7 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 | `/vintner/bios/recovery-a/{vmlinuz,initrd.img,slot.cfg}` | recovery updater | Recovery A |
 | `/vintner/bios/recovery-b/{vmlinuz,initrd.img,slot.cfg}` | recovery updater | Recovery B |
 
-`slot.cfg` sets only `vintner_cmdline` with `set` (`vintner_title` is reserved: nothing writes or reads it until WO-0010 item 4.1). The command lines of recovery A and B carry `vintner.recovery=a` and `vintner.recovery=b`: they tell the recovery image whether to re-arm `VINTNER_T_RA` (`vintner bless --recovery`). Example:
+`slot.cfg` sets `vintner_cmdline` and `vintner_title` with `set`. `vintner_title` is the text of the slot's menu entry (WO-0010 4.1): the publisher writes the installed `PRETTY_NAME` and the publish date, for example `WineExplorer (2026-11-07)`, the installer writes `Recovery Console` and `Recovery Console (backup)` or the product's `--recovery-title`. A slot without it (published before 4.1) is shown as `Generation <gen>`, recovery as `Recovery Console` and `Recovery Console (backup)`. The command lines of recovery A and B carry `vintner.recovery=a` and `vintner.recovery=b`: they tell the recovery image whether to re-arm `VINTNER_T_RA` (`vintner bless --recovery`). Example:
 
 ```
 set vintner_cmdline="root=UUID=<root fs uuid> ro quiet vintner.bootstorage=PARTUUID=<boot storage partuuid>"
@@ -79,7 +79,7 @@ The last try still boots: a counter of `x` becomes `0` and the image boots once 
 
 ## Menu
 
-The menu is hidden, with no delay. Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, each followed by an entry for each of its variants (`vintner os <gen>: <title>`), plus recovery A and recovery B. A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing. A variant entry counts nothing and writes nothing either: no counter, no `VINTNER_BOOTED` (D-D). It boots the slot's `vmlinuz` and `initrd.img` with the variant's command line from `slot.cfg`.
+The menu is hidden, with no delay. Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, titled by the slot's `vintner_title`, each followed by an entry for each of its variants (titled by `vintner_vtitle_<id>`: the slot's title, `: ` and the variant's title), plus recovery A and recovery B (titled by their `vintner_title`). The text matches the UEFI menu, and no entry says "vintner". A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing. A variant entry counts nothing and writes nothing either: no counter, no `VINTNER_BOOTED` (D-D). It boots the slot's `vmlinuz` and `initrd.img` with the variant's command line from `slot.cfg`.
 
 ## Re-arm (bless)
 

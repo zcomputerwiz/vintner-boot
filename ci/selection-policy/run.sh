@@ -55,10 +55,10 @@ chmod +x "$OUT/initrd/init"
 (cd "$OUT/initrd" && find . | cpio -o -H newc --owner=0:0 --quiet | gzip -9) > "$OUT/initrd.img"
 
 # --- UKIs, with .osrel per ADR-0003 ----------------------------------------
-uki() { # name test_id action image_id image_version
+uki() { # name test_id action image_id image_version [menu title, default: the name]
 	local osrel=$OUT/osrel-$1
 	if [ -n "$4" ]; then
-		printf 'ID=debian\nIMAGE_ID=%s\nIMAGE_VERSION=%s\nPRETTY_NAME="%s"\n' "$4" "$5" "$1" > "$osrel"
+		printf 'ID=debian\nIMAGE_ID=%s\nIMAGE_VERSION=%s\nPRETTY_NAME="%s"\n' "$4" "$5" "${6:-$1}" > "$osrel"
 	else
 		printf 'ID=debian\nVERSION_ID=13\nPRETTY_NAME="Foreign Debian"\n' > "$osrel"
 	fi
@@ -77,13 +77,14 @@ uki foreign foreign poweroff "" ""
 # version is <gen>~<id>, so a variant sorts directly after its generation.
 uki var-os-2 os-2-safe poweroff vintner-os "2~safe"
 uki var-os-1 os-1-safe poweroff vintner-os "1~safe"
-uki menu-os-2 os-2 poweroff vintner-os 2
-uki menu-var-2-safe os-2-safe poweroff vintner-os "2~safe"
-uki menu-var-2-netw os-2-netw poweroff vintner-os "2~netw"
-uki menu-os-1 os-1 poweroff vintner-os 1
-uki menu-var-1-safe os-1-safe poweroff vintner-os "1~safe"
-uki menu-ra ra poweroff vintner-recovery-a 20261015
-uki menu-rb rb poweroff vintner-recovery-b 20261015
+# WO-0010 4.1: the titles the publisher and the installer write.
+uki menu-os-2 os-2 poweroff vintner-os 2 "Test OS (2026-01-02)"
+uki menu-var-2-safe os-2-safe poweroff vintner-os "2~safe" "Test OS (2026-01-02): Safe Mode"
+uki menu-var-2-netw os-2-netw poweroff vintner-os "2~netw" "Test OS (2026-01-02): Safe Mode with Networking"
+uki menu-os-1 os-1 poweroff vintner-os 1 "Test OS (2026-01-01)"
+uki menu-var-1-safe os-1-safe poweroff vintner-os "1~safe" "Test OS (2026-01-01): Safe Mode"
+uki menu-ra ra poweroff vintner-recovery-a 20261015 "Recovery Console"
+uki menu-rb rb poweroff vintner-recovery-b 20261015 "Recovery Console (backup)"
 
 # --- disk: GPT with ESP (loader) and XBOOTLDR (UKIs) -----------------------
 IMG=$OUT/disk.img
@@ -217,8 +218,8 @@ new_disk menu-os-2:vintner-os-2+3.efi menu-var-2-safe:vintner_variant-os-2-safe.
 new_vars LoaderConfigTimeoutOneShot 30 # the menu for 30 s, with no key to catch
 SCEN=S17-variant-menu-order
 QMP=1 boot 1 < <(echo "{\"execute\":\"qmp_capabilities\"}"; sleep 10; key ret; sleep 120) > /dev/null
-order=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/$SCEN-boot1.log" | tr -d '\r' | { grep -ao 'menu-[a-z0-9-]*' || true; } | awk '!seen[$0]++' | paste -sd ',')
-want="menu-os-2,menu-var-2-safe,menu-var-2-netw,menu-os-1,menu-var-1-safe,menu-ra,menu-rb"
+order=$(sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/$SCEN-boot1.log" | tr -d '\r' | { grep -aoE 'Test OS \(2026-01-0[12]\)(: Safe Mode( with Networking)?)?|Recovery Console( \(backup\))?' || true; } | awk '!seen[$0]++' | paste -sd ',')
+want="Test OS (2026-01-02),Test OS (2026-01-02): Safe Mode,Test OS (2026-01-02): Safe Mode with Networking,Test OS (2026-01-01),Test OS (2026-01-01): Safe Mode,Recovery Console,Recovery Console (backup)"
 result=PASS; [ "$order" = "$want" ] || { result=FAIL; fail=1; echo "$SCEN: menu order '$order', expected '$want'" >&2; }
 printf '%s\t%s\t%s\t%s\n' "$SCEN" "$order" "$(listing)" "$result" | tee -a "$SUMMARY"
 

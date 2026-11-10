@@ -30,10 +30,18 @@ const (
 	espUUID   = "b558256e-e822-4787-9bd2-c4c47dfb54d9"
 )
 
-type fakeUKI struct{ reqs []publish.UKIRequest }
+type fakeUKI struct {
+	reqs   []publish.UKIRequest
+	osrels []string // the .osrel of each request, read while it exists
+}
 
 func (f *fakeUKI) Build(_ context.Context, r publish.UKIRequest) error {
 	f.reqs = append(f.reqs, r)
+	if b, err := os.ReadFile(r.OSReleasePath); err == nil {
+		f.osrels = append(f.osrels, string(b))
+	} else {
+		f.osrels = append(f.osrels, "")
+	}
 	return os.WriteFile(r.OutputPath, []byte("UKI "+r.Cmdline), 0o644)
 }
 

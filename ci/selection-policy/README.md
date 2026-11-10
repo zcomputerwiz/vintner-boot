@@ -33,7 +33,7 @@ Debian packages: `systemd-boot-efi 257.13-1~deb13u1`, `systemd-ukify 257.13-1~de
 | S14 variants never the default (WO-0010 4.3) | S1 plus `vintner_variant-os-2-safe.efi` and `vintner_variant-os-1-safe.efi` (no counter, version `<gen>~safe`) | os-2 | os-2+2-1, variants unchanged | PASS |
 | S15 variants of bad images | os-2+0-3, os-1+0-3, recovery-a+3, recovery-b, the two variants | recovery A | recovery-a+2-1, variants unchanged | PASS |
 | S16 variants, recovery A bad too | as S15, recovery-a+0-3 | recovery B | unchanged | PASS |
-| S17 variant menu order | os-2+3, its variants `safe` and `netw`, os-1 and its variant `safe`, recovery A and B; space pressed during boot | the menu lists os-2, os-2 safe, os-2 netw, os-1, os-1 safe, recovery A, recovery B | unchanged | PASS |
+| S17 variant menu order | os-2+3, its variants `safe` and `netw`, os-1 and its variant `safe`, recovery A and B, titled as the publisher and installer title them (WO-0010 4.1); the menu shown with `LoaderConfigTimeoutOneShot` | the menu lists `Test OS (2026-01-02)`, its `Safe Mode` and `Safe Mode with Networking`, `Test OS (2026-01-01)`, its `Safe Mode`, `Recovery Console`, `Recovery Console (backup)` | unchanged | PASS |
 | S18 variant boot renames nothing | S14 with `LoaderEntryOneShot=vintner_variant-os-2-safe.efi` | os-2 safe | every name unchanged, os-2 keeps `+3` | PASS |
 
 **Observations:**

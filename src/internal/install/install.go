@@ -35,6 +35,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/variants"
 )
 
 // RecoveryCmdline is the command line of both recovery images, plus the slot
@@ -71,6 +72,11 @@ type Options struct {
 	// RecoveryExtraA and RecoveryExtraB are appended to the kernel command line
 	// of recovery A and B (a serial console, or a test mode).
 	RecoveryExtraA, RecoveryExtraB string
+
+	// RecoveryTitle is the product's name for the recovery image in the boot
+	// menus (WO-0010 4.1). Recovery A shows it and recovery B shows it followed
+	// by " (backup)". Empty means "Recovery Console".
+	RecoveryTitle string
 
 	// SecureBootTier is "none" (the default) or "A": the installer then creates
 	// the machine key in SecureBootDir, signs the loader and the recovery images,
@@ -142,6 +148,11 @@ func Stage(ctx context.Context, o Options) (*Deployment, error) {
 	}
 	if o.LookPath == nil {
 		o.LookPath = exec.LookPath
+	}
+	if o.RecoveryTitle != "" {
+		if err := variants.ValidateTitle(o.RecoveryTitle); err != nil {
+			return nil, fmt.Errorf("--recovery-title: %w", err)
+		}
 	}
 	o.fillSecureBoot()
 	if o.Now == nil {
@@ -470,7 +481,8 @@ func (d *deployer) bootStorage(ctx context.Context, recVersion string) error {
 		cmdline := d.recoveryCmdline(slot)
 		if d.bios {
 			dir := "vintner/bios/recovery-" + slot
-			slotCfg := "set vintner_cmdline=" + publish.GrubQuote(cmdline) + "\n"
+			slotCfg := "set vintner_cmdline=" + publish.GrubQuote(cmdline) + "\n" +
+				"set vintner_title=" + publish.GrubQuote(d.recoveryTitle(slot)) + "\n"
 			if err := d.putBS(dir+"/vmlinuz", kern); err != nil {
 				return d.fail("recovery", err)
 			}
@@ -518,8 +530,8 @@ func (d *deployer) recoveryUKI(ctx context.Context, slot, cmdline, version strin
 	}
 	defer os.RemoveAll(tmp)
 	osrel := filepath.Join(tmp, "osrel")
-	content := fmt.Sprintf("ID=debian\nIMAGE_ID=vintner-recovery-%s\nIMAGE_VERSION=%s\nPRETTY_NAME=\"vintner recovery %s (%s)\"\n",
-		slot, version, strings.ToUpper(slot), version)
+	content := fmt.Sprintf("ID=debian\nIMAGE_ID=vintner-recovery-%s\nIMAGE_VERSION=%s\nPRETTY_NAME=%s\n",
+		slot, version, publish.OSReleaseQuote(d.recoveryTitle(slot)))
 	if err := os.WriteFile(osrel, []byte(content), 0o600); err != nil {
 		return err
 	}
@@ -914,4 +926,17 @@ func (p *Deployment) TookOver() (bool, string) {
 		return false, "the BIOS boot code was not written"
 	}
 	return true, ""
+}
+
+// recoveryTitle is the text of a recovery entry in both loaders: the product's
+// title, or "Recovery Console", and for B " (backup)" (WO-0010 4.1).
+func (d *deployer) recoveryTitle(slot string) string {
+	t := strings.TrimSpace(d.RecoveryTitle)
+	if t == "" {
+		t = "Recovery Console"
+	}
+	if slot == "b" {
+		t += " (backup)"
+	}
+	return t
 }

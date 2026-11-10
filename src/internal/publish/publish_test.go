@@ -1193,8 +1193,7 @@ func TestPublishInheritsSplashCmdline(t *testing.T) {
 				if !strings.HasPrefix(content, prefix) {
 					t.Fatalf("BIOS slot.cfg does not start with %q: %q", prefix, content)
 				}
-				inner := strings.TrimPrefix(content, prefix)
-				inner = strings.TrimSuffix(inner, "\n")
+				inner, _, _ := strings.Cut(strings.TrimPrefix(content, prefix), "\n") // the first line; the title follows
 				inner = strings.TrimSuffix(inner, "\"")
 				if err := verifyCmdlineTokens(inner, expectedTokens); err != nil {
 					t.Errorf("BIOS slot.cfg failed token order check: %v (content=%q)", err, content)

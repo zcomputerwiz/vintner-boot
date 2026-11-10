@@ -5,6 +5,7 @@ package publish
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,8 +64,49 @@ func TestVariantTitleInOSRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	// uki.Read returns the value as written, quotes and escapes included.
-	want := "\"Debian GNU/Linux 13 (trixie), abi-2 (Mode sécurisé \\\"\\$x\\\")\""
+	want := "\"Debian GNU/Linux 13 (trixie) (2026-11-07): Mode sécurisé \\\"\\$x\\\"\""
 	if got := info.OSRelease["PRETTY_NAME"]; got != want {
 		t.Errorf("PRETTY_NAME %q, want %q", got, want)
+	}
+}
+
+// The ordinary entry is the product's name and the publish date, in both
+// loaders' text: no kernel ABI, no "vintner" (WO-0010 4.1).
+func TestMenuTitles(t *testing.T) {
+	if got, want := MenuTitle("WineExplorer", "2026-11-07"), "WineExplorer (2026-11-07)"; got != want {
+		t.Errorf("MenuTitle %q, want %q", got, want)
+	}
+	if got := MenuTitle("", "2026-11-07"); got != "2026-11-07" {
+		t.Errorf("MenuTitle without a name: %q", got)
+	}
+	if got, want := VariantMenuTitle("WineExplorer (2026-11-07)", "Safe Mode"), "WineExplorer (2026-11-07): Safe Mode"; got != want {
+		t.Errorf("VariantMenuTitle %q, want %q", got, want)
+	}
+	for _, fw := range []string{"uefi", "bios"} {
+		t.Run(fw, func(t *testing.T) {
+			rootDir, bs, m := setupTestEnv(t, fw)
+			setupKernelFiles(t, rootDir, "abi-2")
+			if _, err := Publish(context.Background(), variantOpts(rootDir, bs, m, "abi-2", 100<<20, &bytes.Buffer{})); err != nil {
+				t.Fatal(err)
+			}
+			const title = "Debian GNU/Linux 13 (trixie) (2026-11-07)"
+			if fw == "uefi" {
+				info, err := uki.Read(filepath.Join(bs, "EFI", "Linux", "vintner-os-2+3-0.efi"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := info.OSRelease["PRETTY_NAME"]; got != `"`+title+`"` && got != title {
+					t.Errorf("PRETTY_NAME %q, want %q", got, title)
+				}
+				return
+			}
+			cfg, err := os.ReadFile(filepath.Join(bs, "vintner", "bios", "os-2", "slot.cfg"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(cfg), `set vintner_title="`+title+`"`+"\n") {
+				t.Errorf("slot.cfg lacks the title:\n%s", cfg)
+			}
+		})
 	}
 }

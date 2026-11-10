@@ -36,12 +36,14 @@ All vintner UKIs live in `/EFI/Linux/` on the boot storage (XBOOTLDR) partition.
 
 | Image | File name | `IMAGE_ID` (sort key) | `IMAGE_VERSION` | `PRETTY_NAME` |
 |---|---|---|---|---|
-| Ordinary | `vintner-os-<gen>+<left>-<done>.efi` | `vintner-os` | `<gen>` | Debian `PRETTY_NAME` plus `, <ABI>` |
-| Recovery A | `vintner-recovery-a+<left>-<done>.efi` | `vintner-recovery-a` | recovery build version | `vintner recovery A (<version>)` |
-| Recovery B | `vintner-recovery-b.efi` (no counter) | `vintner-recovery-b` | recovery build version | `vintner recovery B (<version>)` |
-| Variant of an ordinary image (WO-0010 4.3) | `vintner_variant-os-<gen>-<id>.efi` (no counter) | `vintner-os` | `<gen>~<id>` | ordinary name plus ` (<title>)` |
+| Ordinary | `vintner-os-<gen>+<left>-<done>.efi` | `vintner-os` | `<gen>` | the installed `PRETTY_NAME` and the publish date, `WineExplorer (2026-11-07)` (WO-0010 4.1) |
+| Recovery A | `vintner-recovery-a+<left>-<done>.efi` | `vintner-recovery-a` | recovery build version | the product's recovery title, default `Recovery Console` (4.1) |
+| Recovery B | `vintner-recovery-b.efi` (no counter) | `vintner-recovery-b` | recovery build version | the same title and ` (backup)`, default `Recovery Console (backup)` |
+| Variant of an ordinary image (WO-0010 4.3) | `vintner_variant-os-<gen>-<id>.efi` (no counter) | `vintner-os` | `<gen>~<id>` | the ordinary name, `: ` and the variant's title: `WineExplorer (2026-11-07): Safe Mode` |
 
-- **`<gen>` is a publish generation:** a decimal integer, strictly increasing per installation and never reused. The kernel ABI is not used in names or versions for two reasons. Debian ABIs contain `+` (for example `6.12.43+deb13-amd64`), and systemd-boot reads the last `+` in a file name as the start of the boot counter. ABI order is also not publish order: a reinstalled older kernel, or an initramfs rebuild for the same ABI, must still sort as the newest image. The ABI and the module-tree identity (§6.1) are recorded in the manifest and shown in `PRETTY_NAME`.
+No menu text contains "vintner" unless the product chooses it (4.1). The date is the day of the publish in UTC, the `created` day of the manifest's image. Two generations of one day have the same title and systemd-boot then adds the version (the generation number) to tell them apart. The kernel ABI is no longer in the title: the manifest records it, and the UKI carries it in `.uname`. The BIOS menu shows the same strings, from `vintner_title` and `vintner_vtitle_<id>` in `slot.cfg`. The installer's `--recovery-title` sets the recovery title. Without it, and in a slot written before 4.1, GRUB shows "Generation <gen>" and "Recovery Console".
+
+- **`<gen>` is a publish generation:** a decimal integer, strictly increasing per installation and never reused. The kernel ABI is not used in names or versions for two reasons. Debian ABIs contain `+` (for example `6.12.43+deb13-amd64`), and systemd-boot reads the last `+` in a file name as the start of the boot counter. ABI order is also not publish order: a reinstalled older kernel, or an initramfs rebuild for the same ABI, must still sort as the newest image. The ABI and the module-tree identity (§6.1) are recorded in the manifest.
 - **All other `.osrel` fields** are copied from the installed system's `/etc/os-release`.
 - **Resulting order:** all non-bad ordinary images come first, newest generation first, because `vintner-os` sorts below `vintner-recovery-a` in byte order and versions sort descending. Recovery A comes next, then recovery B, then every bad entry. CI asserts this invariant on every loader payload update. It does not rely only on the string comparison above.
 - **Recovery B never carries a counter,** so it never becomes bad and is always the last automatic choice. Recovery A is counted (see option B below), so a recovery A that fails to load or start is skipped after the configured number of tries.

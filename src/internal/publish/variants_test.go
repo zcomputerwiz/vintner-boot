@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -40,6 +41,7 @@ func variantOpts(rootDir, bootStorageDir string, m *manifest.Manifest, abi strin
 		DiskSpaceChecker: mockDiskChecker{free: free},
 		Stdout:           &bytes.Buffer{},
 		Stderr:           stderr,
+		Clock:            mockClock{t: time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)},
 	}
 }
 
@@ -98,7 +100,7 @@ func TestPublishVariants(t *testing.T) {
 					if info.OSRelease["IMAGE_ID"] != "vintner-os" {
 						t.Errorf("%s IMAGE_ID %q", name, info.OSRelease["IMAGE_ID"])
 					}
-					if !strings.Contains(info.OSRelease["PRETTY_NAME"], "("+v.Title+")") {
+					if !strings.HasSuffix(strings.TrimSuffix(info.OSRelease["PRETTY_NAME"], "\""), ": "+v.Title) {
 						t.Errorf("%s PRETTY_NAME %q lacks the title", name, info.OSRelease["PRETTY_NAME"])
 					}
 				}
@@ -114,7 +116,8 @@ func TestPublishVariants(t *testing.T) {
 				}
 				for _, want := range []string{
 					`set vintner_variants="netw safe"`,
-					`set vintner_vtitle_safe="Safe Mode"`,
+					`set vintner_title="Debian GNU/Linux 13 (trixie) (2026-11-07)"`,
+					`set vintner_vtitle_safe="Debian GNU/Linux 13 (trixie) (2026-11-07): Safe Mode"`,
 					`set vintner_vcmdline_safe="` + wantCmdline + `"`,
 				} {
 					if !strings.Contains(string(cfg), want) {

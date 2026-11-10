@@ -154,9 +154,12 @@ fi
 
 for slot in a b; do
 	[ "$NO_UKI" = 1 ] && break
-	S=${slot^^}
-	printf 'ID=debian\nIMAGE_ID=vintner-recovery-%s\nIMAGE_VERSION=%s\nPRETTY_NAME="vintner recovery %s (%s)"\n' \
-		"$slot" "$VERSION" "$S" "$VERSION" > "$OUT/osrel-$slot"
+	# The menus show the product's recovery title, "Recovery Console" until the
+	# installer sets one (WO-0010 4.1); the build version stays in IMAGE_VERSION.
+	title="Recovery Console"
+	[ "$slot" = b ] && title="Recovery Console (backup)"
+	printf 'ID=debian\nIMAGE_ID=vintner-recovery-%s\nIMAGE_VERSION=%s\nPRETTY_NAME="%s"\n' \
+		"$slot" "$VERSION" "$title" > "$OUT/osrel-$slot"
 	if ! uki_err=$(python3 "$ROOT/usr/lib/systemd/ukify" build --linux="$OUT/vmlinuz" --initrd="$OUT/initrd.img" \
 		--stub="$ROOT/usr/lib/systemd/boot/efi/linuxx64.efi.stub" --os-release="@$OUT/osrel-$slot" \
 		--cmdline="console=tty0 console=ttyS0,115200 vintner.recovery=$slot" \
