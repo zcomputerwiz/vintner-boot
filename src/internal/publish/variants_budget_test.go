@@ -110,3 +110,79 @@ func TestMenuTitles(t *testing.T) {
 		})
 	}
 }
+
+// writeProduct declares the product in the test root's product.conf.
+func writeProduct(t *testing.T, rootDir, body string) {
+	t.Helper()
+	dir := filepath.Join(rootDir, "etc", "vintner")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "product.conf"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// product.conf's name replaces the installed PRETTY_NAME in every entry, on both
+// firmwares, and /etc/os-release itself stays as it is (WO-0010 4.9).
+func TestProductNameInTitles(t *testing.T) {
+	for _, fw := range []string{"uefi", "bios"} {
+		t.Run(fw, func(t *testing.T) {
+			rootDir, bs, m := setupTestEnv(t, fw)
+			setupKernelFiles(t, rootDir, "abi-2")
+			writeProduct(t, rootDir, "# the menu name\nname=WineExplorer\n")
+			writeVariant(t, rootDir, "safe", "title=Advanced Options\ntokens=wexmode=safe\n")
+			osrel := filepath.Join(rootDir, "etc", "os-release")
+			before, err := os.ReadFile(osrel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Publish(context.Background(), variantOpts(rootDir, bs, m, "abi-2", 100<<20, &bytes.Buffer{})); err != nil {
+				t.Fatal(err)
+			}
+			const title = "WineExplorer (2026-11-07)"
+			if fw == "uefi" {
+				for file, want := range map[string]string{
+					"vintner-os-2+3-0.efi":          title,
+					"vintner_variant-os-2-safe.efi": title + ": Advanced Options",
+				} {
+					info, err := uki.Read(filepath.Join(bs, "EFI", "Linux", file))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := info.OSRelease["PRETTY_NAME"]; got != `"`+want+`"` && got != want {
+						t.Errorf("%s PRETTY_NAME %q, want %q", file, got, want)
+					}
+				}
+			} else {
+				cfg, err := os.ReadFile(filepath.Join(bs, "vintner", "bios", "os-2", "slot.cfg"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, want := range []string{
+					`set vintner_title="` + title + `"` + "\n",
+					`set vintner_vtitle_safe="` + title + `: Advanced Options"` + "\n",
+				} {
+					if !strings.Contains(string(cfg), want) {
+						t.Errorf("slot.cfg lacks %s:\n%s", want, cfg)
+					}
+				}
+			}
+			after, _ := os.ReadFile(osrel)
+			if !bytes.Equal(before, after) {
+				t.Errorf("/etc/os-release changed")
+			}
+		})
+	}
+}
+
+// A product.conf that does not validate refuses the publish and names the file.
+func TestProductFileRefused(t *testing.T) {
+	rootDir, bs, m := setupTestEnv(t, "uefi")
+	setupKernelFiles(t, rootDir, "abi-2")
+	writeProduct(t, rootDir, "name=\n")
+	_, err := Publish(context.Background(), variantOpts(rootDir, bs, m, "abi-2", 100<<20, &bytes.Buffer{}))
+	if err == nil || !strings.Contains(err.Error(), "product.conf") {
+		t.Fatalf("want a refusal naming product.conf, got %v", err)
+	}
+}
