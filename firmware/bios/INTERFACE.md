@@ -57,6 +57,7 @@ IDs are lower case letters, digits and `_` (they are part of GRUB variable names
 | `VINTNER_T_<gen>` | publisher, GRUB, bless service | Tries left for that ordinary image: a run of `x` characters (`xxx` is 3), because GRUB script has no arithmetic. `0` means bad |
 | `VINTNER_T_RA` | recovery updater, GRUB, recovery image | The same for recovery A. Recovery B has no counter |
 | `VINTNER_BOOTED` | GRUB, bless service | The image GRUB chose on this boot: `<gen>`, or `RA` for recovery A |
+| `VINTNER_NEXT` | `vintner next-boot`, GRUB | A request for the next boot only (WO-0010 4.4): `recovery`, `<gen>`, `<gen>:<id>` (a variant) or `menu:<seconds>`. GRUB removes it |
 
 A counter that is unset or not made of `x` characters counts as bad. A generation in `VINTNER_ORDER` that is not a decimal integer is skipped.
 
@@ -80,6 +81,18 @@ The last try still boots: a counter of `x` becomes `0` and the image boots once 
 ## Menu
 
 The menu is hidden, with no delay. Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, titled by the slot's `vintner_title`, each followed by an entry for each of its variants (titled by `vintner_vtitle_<id>`: the slot's title, `: ` and the variant's title), plus recovery A and recovery B (titled by their `vintner_title`). The text matches the UEFI menu, and no entry says "vintner". A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing. A variant entry counts nothing and writes nothing either: no counter, no `VINTNER_BOOTED` (D-D). It boots the slot's `vmlinuz` and `initrd.img` with the variant's command line from `slot.cfg`.
+
+## One-shot request
+
+`vintner next-boot` ([`docs/next-boot.md`](../../docs/next-boot.md)) sets `VINTNER_NEXT`. `grub.cfg` reads it right after `load_env` and unsets it, and then:
+
+- `recovery`: counts and boots recovery A while it is not bad (`VINTNER_BOOTED=RA`), else recovery B.
+- `<gen>`: counts and boots that generation. A generation that is already bad boots anyway, as a menu choice does, and `VINTNER_BOOTED` is still set.
+- `<gen>:<id>`: boots that variant of the generation, counting nothing and setting no `VINTNER_BOOTED` (D-D).
+- `menu:<seconds>`: shows the menu as Shift does, but boots its first entry after that many seconds.
+- Any other value is dropped.
+
+The variable leaves the grubenv in the same `save_env` as the counter write, so one power cut cannot leave a counted boot with its request still set. Where GRUB writes no counter (variant, recovery B, menu, a value it drops) it saves the cleared variable first. If `save_env` fails, GRUB does not honour the request: one that cannot be cleared would repeat on every boot. A target that cannot be loaded returns to the automatic order of the same boot, with the request already gone. Holding Shift shows the menu as usual and also uses up a pending request.
 
 ## Re-arm (bless)
 

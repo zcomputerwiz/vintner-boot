@@ -199,6 +199,14 @@ scenario S15-variants-of-bad-images-do-not-beat-recovery "ra"
 new_disk os-2:vintner-os-2+0-3.efi os-1:vintner-os-1+0-3.efi ra:vintner-recovery-a+0-3.efi rb:vintner-recovery-b.efi "${V[@]}"; new_vars
 scenario S16-variants-and-no-recovery-a "rb"
 
+# WO-0010 4.4: "vintner next-boot generation <n>" sets LoaderEntryOneShot to "vintner-os-<n>.efi".
+# It selects that generation over a newer one, and a bad one too (finding 4: the first match
+# wins, whatever its state). The next boot is the default order again.
+new_disk os-2:vintner-os-2+3.efi os-1:vintner-os-1+3.efi ra:vintner-recovery-a+3.efi rb:vintner-recovery-b.efi; new_vars LoaderEntryOneShot vintner-os-1.efi
+scenario S19-one-shot-generation "os-1 os-2"
+new_disk os-2:vintner-os-2+3.efi os-1:vintner-os-1+0-3.efi ra:vintner-recovery-a+3.efi rb:vintner-recovery-b.efi; new_vars LoaderEntryOneShot vintner-os-1.efi
+scenario S20-one-shot-bad-generation "os-1 os-2"
+
 # Booting a variant (here chosen with LoaderEntryOneShot, as 4.4's next-boot variant will)
 # renames nothing: every file name, counter included, is the same afterwards (D-D).
 new_disk "${S1[@]}" "${V[@]}"; new_vars LoaderEntryOneShot vintner_variant-os-2-safe.efi

@@ -21,6 +21,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/nextboot"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 )
 
@@ -450,13 +451,14 @@ func Keep(m *manifest.Manifest) (keep, remove []int, overBudget bool) {
 }
 
 // CheckHealth performs health checks for vintner bless (the health service):
-// - Verifies Secure Boot firmware state if the manifest specifies Tier A and running on UEFI.
-// - Reports when LoaderEntryDefault, LoaderConfigTimeout, or LoaderEntryOneShot is set in efivars.
-// - Verifies the machine certificate on disk against manifest.signing.cert_sha256 if configured.
-// - Verifies that recovery images on boot storage exist and match the manifest.
-// - Reports foreign entries in /EFI/Linux/ and /loader/entries/.
-// - Reports unlisted vintner-* files on boot storage.
-// - Reports side-loaded files in /loader/addons/, /loader/credentials/ or *.extra.d directories.
+//   - Verifies Secure Boot firmware state if the manifest specifies Tier A and running on UEFI.
+//   - Reports when LoaderEntryDefault, LoaderConfigTimeout, or LoaderEntryOneShot is set in efivars.
+//     A LoaderEntryOneShot that vintner next-boot made (WO-0010 4.4) is not reported.
+//   - Verifies the machine certificate on disk against manifest.signing.cert_sha256 if configured.
+//   - Verifies that recovery images on boot storage exist and match the manifest.
+//   - Reports foreign entries in /EFI/Linux/ and /loader/entries/.
+//   - Reports unlisted vintner-* files on boot storage.
+//   - Reports side-loaded files in /loader/addons/, /loader/credentials/ or *.extra.d directories.
 func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string, isUEFI bool) []string {
 	var reports []string
 
@@ -479,7 +481,7 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 		if _, val, err := efivar.GetString(dir, "LoaderConfigTimeout", efivar.LoaderInfo); err == nil && val != "" {
 			reports = append(reports, fmt.Sprintf("LoaderConfigTimeout is set: %s", val))
 		}
-		if _, val, err := efivar.GetString(dir, "LoaderEntryOneShot", efivar.LoaderInfo); err == nil && val != "" {
+		if _, val, err := efivar.GetString(dir, "LoaderEntryOneShot", efivar.LoaderInfo); err == nil && val != "" && !nextboot.Ours(val) {
 			reports = append(reports, fmt.Sprintf("LoaderEntryOneShot is set: %s", val))
 		}
 		if uefi {
