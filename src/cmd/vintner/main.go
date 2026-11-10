@@ -28,6 +28,8 @@ func main() {
 		cmdPublish(os.Args[2:])
 	case "reconcile":
 		cmdReconcile(os.Args[2:])
+	case "status":
+		cmdStatus(os.Args[2:])
 	case "secureboot":
 		cmdSecureBoot(os.Args[2:])
 	case "help", "-h", "--help":
@@ -41,5 +43,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless      Bless the current boot\n  install    Check a layout and install vintner onto it\n  manifest   Manage the installation manifest\n  next-boot  Choose what the next boot does, once\n  publish    Publish kernel and initramfs boot image\n  reconcile  Reconcile boot state\n  secureboot Initialize machine Secure Boot keys")
+	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless      Bless the current boot\n  install    Check a layout and install vintner onto it\n  manifest   Manage the installation manifest\n  next-boot  Choose what the next boot does, once\n  publish    Publish kernel and initramfs boot image\n  reconcile  Reconcile boot state\n  secureboot Initialize machine Secure Boot keys\n  status     Report the installation and the boot as JSON")
 }
