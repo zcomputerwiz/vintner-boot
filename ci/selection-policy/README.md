@@ -30,6 +30,11 @@ Debian packages: `systemd-boot-efi 257.13-1~deb13u1`, `systemd-ukify 257.13-1~de
 | S11 Secure Boot, all signed | os-2+3, os-1 | os-2 | os-2+2-1 | PASS |
 | S12 Secure Boot, os-2 unsigned | os-2+3 (unsigned), os-1 | nothing, then os-1 | os-2+0-3 | PASS |
 | S13 key pressed during boot (`timeout 0`) | S1 | menu, then os-2 on Enter | os-2+2-1 | OBSERVED |
+| S14 variants never the default (WO-0010 4.3) | S1 plus `vintner_variant-os-2-safe.efi` and `vintner_variant-os-1-safe.efi` (no counter, version `<gen>~safe`) | os-2 | os-2+2-1, variants unchanged | PASS |
+| S15 variants of bad images | os-2+0-3, os-1+0-3, recovery-a+3, recovery-b, the two variants | recovery A | recovery-a+2-1, variants unchanged | PASS |
+| S16 variants, recovery A bad too | as S15, recovery-a+0-3 | recovery B | unchanged | PASS |
+| S17 variant menu order | os-2+3, its variants `safe` and `netw`, os-1 and its variant `safe`, recovery A and B; space pressed during boot | the menu lists os-2, os-2 safe, os-2 netw, os-1, os-1 safe, recovery A, recovery B | unchanged | PASS |
+| S18 variant boot renames nothing | S14 with `LoaderEntryOneShot=vintner_variant-os-2-safe.efi` | os-2 safe | every name unchanged, os-2 keeps `+3` | PASS |
 
 **Observations:**
 
@@ -40,3 +45,4 @@ Debian packages: `systemd-boot-efi 257.13-1~deb13u1`, `systemd-ukify 257.13-1~de
 - **S11 and S12** use `OVMF_CODE_4M.secboot.fd` with a throwaway key made per run as PK, KEK and db. systemd-boot and the UKIs that should load are signed with `sbsign`.
 - **S12 confirms finding 5, with a twist.** On the first power-on, systemd-boot counts os-2 (`+2-1`), `LoadImage` fails with `Access denied`, and systemd-boot returns to the firmware. OVMF then runs its platform-recovery fallback, `\EFI\BOOT\BOOTX64.EFI`, which is systemd-boot again. That run takes a second try (`+1-2`) and fails the same way. The firmware then stops at `BdsDxe: No bootable option or device was found. Press any key to enter the Boot Manager Menu.` and waits. The second power-on takes the last try (`+0-3`); the fallback run then sorts os-2 last and boots os-1. A rejected image therefore holds the machine at the firmware prompt until it is reset, once per power-on until its tries are used up. How many tries a power-on takes depends on how many boot options lead to systemd-boot.
 - **S13:** the space key, held through the first 15 seconds by QMP key events, brings up the menu despite `timeout 0`. The menu lists `os-2`, `os-1`, `ra`, `rb` and `Reboot Into Firmware Interface`, the last because `auto-firmware` is on by default. Enter boots the default entry and counts it.
+- **S14 to S18 (variants, D-C and D-D):** a variant has no boot counter and a name that does not start with `vintner-`, so `default vintner-*` never selects it. With every ordinary image bad and variants present, recovery A still boots without input (S15), and recovery B when recovery A is bad too (S16). The variant's `.osrel` has the ordinary `IMAGE_ID` and the version `<gen>~<id>`; systemd-boot lists it directly after its generation, the variants of one generation in descending order of their IDs, and every older generation after them (S17). A variant chosen with `LoaderEntryOneShot` boots and renames nothing, so a try of the ordinary image is not spent (S18).

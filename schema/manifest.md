@@ -64,6 +64,7 @@ An ordinary image record:
 | `cmdline` | Kernel command line embedded in the UKI or written to the BIOS `slot.cfg` |
 | `uefi` | Present when `firmware` is `uefi` or `both`. `entry` is the file name stem `vintner-os-<generation>`, without counter or `.efi`; the counter changes on every boot, so the file is found by stem. `sha256` and `size` describe the UKI. `signed` is a boolean (true in tier `A`, forbidden in tier `none`) |
 | `bios` | Present when `firmware` is `bios` or `both`. `dir` is `/vintner/bios/os-<generation>`; `files` maps `vmlinuz`, `initrd.img` and `slot.cfg` to their SHA-256 |
+| `variants` | Optional. The extra boot entries published with the image ([`docs/variants.md`](../docs/variants.md), WO-0010 4.3), each with `id`, `title`, `cmdline` (the image's command line, the product's tokens and `vintner.variant=<id>`) and, when `firmware` is `uefi` or `both`, `uefi` for its UKI: `entry` is the stem `vintner_variant-os-<generation>-<id>`, which has no counter. On BIOS the command line is in the image's `slot.cfg`, whose hash `bios` records |
 | `created` | When the image was staged (RFC 3339, UTC) |
 | `first_good`, `last_good` | When the bless service first and last marked it good; `null` until then |
 

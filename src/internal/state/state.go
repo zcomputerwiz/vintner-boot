@@ -146,8 +146,8 @@ func StagingNames(g int) []string {
 // or directory (rule 2), or finishing the BIOS arming of an image whose files
 // are in place (rule 1b).
 type Action struct {
-	Type       string // "remove_staging" or "arm_bios"
-	Name       string // remove_staging: name in /vintner/staging/
+	Type       string // "remove_staging", "remove_efi" or "arm_bios"
+	Name       string // remove_staging: name in /vintner/staging/; remove_efi: name in /EFI/Linux/
 	Generation int    // arm_bios: the generation to arm
 	Tries      int    // arm_bios: counter length, the manifest's tries
 }
@@ -166,6 +166,10 @@ func Apply(bootStorage string, a Action) error {
 	switch a.Type {
 	case "remove_staging":
 		return os.RemoveAll(filepath.Join(bootStorage, "vintner", "staging", a.Name))
+	case "remove_efi":
+		// A variant's UKI that outlived its image: published before the ordinary
+		// UKI, so a power cut between the two leaves it alone (WO-0010 4.3).
+		return os.Remove(filepath.Join(bootStorage, "EFI", "Linux", a.Name))
 	case "arm_bios":
 		path := filepath.Join(bootStorage, "grub", "grubenv")
 		env, err := grubenv.Read(path)
@@ -201,6 +205,9 @@ func (v *View) inPlace(img manifest.Image, uefi, bios bool) (anyPresent, allPres
 		anyPresent = anyPresent || ok
 		allPresent = allPresent && ok
 		verifies = verifies && ok && img.UEFI != nil && v.UEFIFiles[f] == img.UEFI.SHA256
+		varsPresent, varsVerify := v.variantFiles(img)
+		allPresent = allPresent && varsPresent
+		verifies = verifies && varsVerify
 	}
 	if bios {
 		files, ok := v.BIOSDirs["os-"+strconv.Itoa(img.Generation)]
@@ -224,7 +231,23 @@ func (v *View) uefiVerifies(img manifest.Image, uefi bool) bool {
 		return true
 	}
 	_, f, ok := v.uefiFile("vintner-os-" + strconv.Itoa(img.Generation))
-	return ok && img.UEFI != nil && v.UEFIFiles[f] == img.UEFI.SHA256
+	_, varsVerify := v.variantFiles(img)
+	return ok && img.UEFI != nil && v.UEFIFiles[f] == img.UEFI.SHA256 && varsVerify
+}
+
+// variantFiles reports whether all of img's variant UKIs are on boot storage
+// and whether they all match their records (true with no variants).
+func (v *View) variantFiles(img manifest.Image) (present, verify bool) {
+	present, verify = true, true
+	for _, vr := range img.Variants {
+		if vr.UEFI == nil {
+			continue
+		}
+		_, f, ok := v.uefiFile(bls.VariantStem(img.Generation, vr.ID))
+		present = present && ok
+		verify = verify && ok && v.UEFIFiles[f] == vr.UEFI.SHA256
+	}
+	return present, verify
 }
 
 // FilesVerify reports whether all of img's final files are on boot storage and
@@ -277,6 +300,9 @@ func Reconcile(m *manifest.Manifest, v *View) (actions []Action, reports []strin
 				if g, ok := bls.IsVintnerOrdinary(e.Stem); ok && !known[g] {
 					reports = append(reports, "untracked uefi file "+f)
 				}
+				if g, id, ok := bls.IsVintnerVariant(e.Stem); ok && !hasVariant(m, g, id) {
+					reports = append(reports, "untracked uefi file "+f)
+				}
 			}
 		}
 	}
@@ -313,6 +339,16 @@ func Reconcile(m *manifest.Manifest, v *View) (actions []Action, reports []strin
 					actions = append(actions, Action{Type: "remove_staging", Name: s})
 				}
 			}
+			for _, vr := range img.Variants {
+				if s := bls.VariantStem(g, vr.ID) + ".efi"; staging[s] {
+					actions = append(actions, Action{Type: "remove_staging", Name: s})
+				}
+				if uefi {
+					if _, f, ok := v.uefiFile(bls.VariantStem(g, vr.ID)); ok {
+						actions = append(actions, Action{Type: "remove_efi", Name: f})
+					}
+				}
+			}
 			continue
 		case img.State == "STAGED":
 			reports = append(reports, fmt.Sprintf("generation %d is STAGED and in place but does not verify", g))
@@ -336,6 +372,21 @@ func Reconcile(m *manifest.Manifest, v *View) (actions []Action, reports []strin
 	}
 	m.Images = images
 	return actions, reports
+}
+
+// hasVariant reports whether the manifest records variant id of generation g.
+func hasVariant(m *manifest.Manifest, g int, id string) bool {
+	for _, img := range m.Images {
+		if img.Generation != g {
+			continue
+		}
+		for _, vr := range img.Variants {
+			if vr.ID == id {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -497,6 +548,13 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 		// Foreign and unlisted entries in /EFI/Linux/ (Threat Model T5, Architecture §4.1)
 		if uefi {
 			for _, f := range sortedKeys(v.UEFIFiles) {
+				if parsed, ok := bls.Parse(f); ok && !parsed.Counted {
+					if _, _, isVar := bls.IsVintnerVariant(parsed.Stem); isVar {
+						// An unrecorded variant file is reported by Reconcile
+						// ("untracked uefi file"), as an unrecorded ordinary image is.
+						continue
+					}
+				}
 				if !strings.HasPrefix(f, "vintner-") {
 					reports = append(reports, fmt.Sprintf("foreign entry in /EFI/Linux: %s", f))
 					continue

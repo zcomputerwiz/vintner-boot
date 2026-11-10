@@ -33,6 +33,11 @@ All scenarios start with `VINTNER_ORDER="2 1"` and three tries per counter unles
 | B6 corrupt grubenv | The 1024-byte block is overwritten with `?` | `ra`; `grubenv` unchanged byte for byte |
 | B7 missing kernel | `os-2/vmlinuz` deleted | `os-1` in the same boot; `T_2=xx`, `T_1=xx`, `BOOTED=1` |
 | B8 Shift menu | Shift held down through QMP for 20 s, then Enter | Observation only: whether the menu appears and what Enter on the first entry boots |
+| B10 variant of a good image (WO-0010 4.3) | os-2's `slot.cfg` lists the variant `safe`; Shift held, then Down and Enter | the variant's command line boots (`os-2-safe`); `grubenv` unchanged byte for byte |
+| B11 variant of a trying image | as B10, `T_2=xx` | `os-2-safe`; `grubenv` unchanged (the try is not spent) |
+| B12 variant of a bad image | as B10, `T_2=0` | `os-2-safe`; `grubenv` unchanged |
+| B13 variant after a failed ordinary boot | as B10, `T_2=xx`, `VINTNER_BOOTED=2` | `os-2-safe`; `VINTNER_BOOTED=2` stays, so the next ordinary boot counts the failure |
+| B14 variant menu order | Shift held, no choice | the menu lists `vintner os 2`, `vintner os 2: Safe Mode`, `vintner os 1`, `vintner recovery A`, `vintner recovery B` in that order |
 | B9 empty grubenv | 0-byte `grubenv`, as a power cut during `grub-editenv` can leave it | `ra`; nothing written |
 | T1 torn block | Host only: the first sector of one block with the second sector of another, with a variable straddling them | Observation only: what `grub-editenv list` (the same parser as `load_env`) reads |
 | T2 vintner variables in first sector | Host only: 10 six-digit generations, five tries each | The second sector holds only padding |

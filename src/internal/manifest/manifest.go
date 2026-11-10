@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/testpoint"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/variants"
 )
 
 var (
@@ -70,9 +71,21 @@ type Image struct {
 	Cmdline    string      `json:"cmdline"`
 	UEFI       *UEFIFile   `json:"uefi,omitempty"`
 	BIOS       *BIOSFiles  `json:"bios,omitempty"`
-	Created    string      `json:"created"`
-	FirstGood  *string     `json:"first_good"`
-	LastGood   *string     `json:"last_good"`
+	// Variants are the extra boot entries published with the image (WO-0010 4.3).
+	Variants  []Variant `json:"variants,omitempty"`
+	Created   string    `json:"created"`
+	FirstGood *string   `json:"first_good"`
+	LastGood  *string   `json:"last_good"`
+}
+
+// Variant is one extra boot entry of an image: its command line, and on UEFI
+// its own UKI (no boot counter). On BIOS the command line is in slot.cfg, whose
+// hash the image records.
+type Variant struct {
+	ID      string    `json:"id"`
+	Title   string    `json:"title"`
+	Cmdline string    `json:"cmdline"`
+	UEFI    *UEFIFile `json:"uefi,omitempty"`
 }
 
 type Kernel struct {
@@ -434,6 +447,36 @@ func (m *Manifest) Validate() error {
 			}
 			if img.UEFI.Size < 1 {
 				return fmt.Errorf("invalid uefi size in image %d", i)
+			}
+		}
+		varSeen := make(map[string]bool)
+		for _, v := range img.Variants {
+			if !variants.ValidID(v.ID) {
+				return fmt.Errorf("invalid variant id %q in image %d", v.ID, i)
+			}
+			if varSeen[v.ID] {
+				return fmt.Errorf("duplicate variant %s in image %d", v.ID, i)
+			}
+			varSeen[v.ID] = true
+			if v.Title == "" || !strings.Contains(" "+v.Cmdline+" ", " "+variants.Token+v.ID+" ") {
+				return fmt.Errorf("variant %s of image %d needs a title and vintner.variant=%s in its cmdline", v.ID, i, v.ID)
+			}
+			if (m.Firmware == "uefi" || m.Firmware == "both") != (v.UEFI != nil) {
+				return fmt.Errorf("variant %s of image %d: uefi file must be present exactly when the firmware has UEFI", v.ID, i)
+			}
+			if v.UEFI != nil {
+				if want := fmt.Sprintf("vintner_variant-os-%d-%s", img.Generation, v.ID); v.UEFI.Entry != want {
+					return fmt.Errorf("invalid uefi entry in variant %s of image %d: expected %s", v.ID, i, want)
+				}
+				if !sha256Re.MatchString(v.UEFI.SHA256) || v.UEFI.Size < 1 {
+					return fmt.Errorf("invalid uefi sha256 or size in variant %s of image %d", v.ID, i)
+				}
+				if m.SecureBootTier == "A" && !v.UEFI.Signed {
+					return fmt.Errorf("tier A requires uefi.signed to be true in variant %s of image %d", v.ID, i)
+				}
+				if m.SecureBootTier == "none" && v.UEFI.Signed {
+					return fmt.Errorf("tier none must not have uefi.signed in variant %s of image %d", v.ID, i)
+				}
 			}
 		}
 		if img.BIOS != nil {

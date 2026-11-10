@@ -32,7 +32,8 @@ The publisher and the health service compare the manifest with boot storage befo
 
 - **A `STAGED` record whose file is in its final place and verifies** becomes `TRYING`.
 - **A `STAGED` BIOS record whose slot files are in place and match the record, with the generation neither in `VINTNER_ORDER` nor holding a counter** was interrupted between the rename and the `grubenv` write. Reconciliation finishes the transition: one `grubenv` write sets `VINTNER_T_<g>` and prepends `g` to `VINTNER_ORDER`; then the record becomes `TRYING`. With firmware `both`, the UKI must also be in place and match.
-- **A `STAGED` record whose file is not in its final place** has its staging file and record removed.
+- **A `STAGED` record whose file is not in its final place** has its staging file and record removed. So are the variant files of the record (`vintner_variant-os-<g>-<id>.efi`, WO-0010 4.3): the publisher puts the variants in place before the ordinary UKI, so a power cut between the two leaves only variant files.
+- **A variant file in `/EFI/Linux/` that no record lists** is reported and left alone, like an unrecorded `vintner-os-*` file. An image whose variant files are missing or do not verify does not verify; garbage collection removes a generation's variant files with its UKI.
 - **A file in `/EFI/Linux/` or `/vintner/bios/` that matches `vintner-os-*` but has no record** is reported and left alone (threat model T5).
 - **A record whose file is missing** is reported. It is removed from the manifest only by garbage collection or an operator command.
 - **A counter at zero on a `TRYING` or `GOOD` record** sets the record to `FAILED`.

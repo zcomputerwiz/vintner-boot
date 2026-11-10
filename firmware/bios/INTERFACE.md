@@ -37,6 +37,16 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 set vintner_cmdline="root=UUID=<root fs uuid> ro quiet vintner.bootstorage=PARTUUID=<boot storage partuuid>"
 ```
 
+With variants (WO-0010 4.3, [`docs/variants.md`](../../docs/variants.md)) an ordinary slot's `slot.cfg` also lists them. `vintner_variants` holds their IDs separated by spaces, and each ID has a title and a full command line:
+
+```
+set vintner_variants="safe"
+set vintner_vtitle_safe="Safe Mode"
+set vintner_vcmdline_safe="root=UUID=<root fs uuid> ro quiet vintner.bootstorage=PARTUUID=<boot storage partuuid> wexmode=safe vintner.variant=safe"
+```
+
+IDs are lower case letters, digits and `_` (they are part of GRUB variable names). Recovery slots have no variants.
+
 `<gen>` is the publish generation from ADR-0003: a decimal integer, strictly increasing per installation and never reused.
 
 ## grubenv variables
@@ -69,7 +79,7 @@ The last try still boots: a counter of `x` becomes `0` and the image boots once 
 
 ## Menu
 
-The menu is hidden, with no delay. Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, plus recovery A and recovery B. A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing.
+The menu is hidden, with no delay. Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, each followed by an entry for each of its variants (`vintner os <gen>: <title>`), plus recovery A and recovery B. A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing. A variant entry counts nothing and writes nothing either: no counter, no `VINTNER_BOOTED` (D-D). It boots the slot's `vmlinuz` and `initrd.img` with the variant's command line from `slot.cfg`.
 
 ## Re-arm (bless)
 

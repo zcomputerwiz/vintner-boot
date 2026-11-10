@@ -19,6 +19,7 @@ func cmdPublish(args []string) {
 	rootDir := fs.String("root-dir", "/", "root filesystem directory")
 	lockFile := fs.String("lock-file", "", "lock file path (default /run/vintner/publish.lock)")
 	cmdlineFile := fs.String("cmdline-file", "", "kernel cmdline file (default /proc/cmdline)")
+	variantsDir := fs.String("variants-dir", "", "the product's variant declarations (default <root-dir>/etc/vintner/variants.d)")
 
 	fs.Parse(args)
 
@@ -36,6 +37,7 @@ func cmdPublish(args []string) {
 		RootDir:        *rootDir,
 		LockFile:       *lockFile,
 		CmdlineFile:    *cmdlineFile,
+		VariantsDir:    *variantsDir,
 		Stdout:         os.Stdout,
 		Stderr:         os.Stderr,
 	}

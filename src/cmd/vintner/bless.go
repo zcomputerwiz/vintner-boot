@@ -20,6 +20,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/variants"
 )
 
 func cmdBless(args []string) {
@@ -31,7 +32,23 @@ func cmdBless(args []string) {
 	espDir := fs.String("esp", "", "ESP directory to scan for side-loaded files (default: mount the manifest's esp.partuuid read-only on demand)")
 	recoverySlot := fs.String("recovery", "", "run from the recovery image of slot a or b: re-arm recovery A (WO-0010 1.1), touch nothing else")
 
+	cmdlineFile := fs.String("cmdline", "/proc/cmdline", "the running kernel's command line")
+
 	fs.Parse(args)
+
+	// A variant boot changes no boot state (WO-0010 D-D, 4.3): no rename, no
+	// grubenv write, no manifest change, no reconciliation. That includes a
+	// VINTNER_BOOTED that a failed ordinary boot left just before (BIOS): it stays,
+	// so that the next ordinary boot counts the failure.
+	if data, err := os.ReadFile(*cmdlineFile); err == nil {
+		for _, f := range strings.Fields(string(data)) {
+			if strings.HasPrefix(f, variants.Token) {
+				fmt.Printf("vintner bless: booted variant %s: nothing changed\n", strings.TrimPrefix(f, variants.Token))
+				osExit(0)
+				return
+			}
+		}
+	}
 
 	lockPath := publish.DefaultLockPath(*bootStorage)
 	lock, err := publish.AcquireLock(lockPath)

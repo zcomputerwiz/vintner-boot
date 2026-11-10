@@ -202,3 +202,31 @@ func SetBad(dir, stem string) error {
 
 	return RenameSync(filepath.Join(dir, match), filepath.Join(dir, newName))
 }
+
+// VariantPrefix starts the stem of a variant's UKI (WO-0010 4.3). It must not
+// start with "vintner-": loader.conf's "default vintner-*" would select a
+// variant, which has no counter and so never becomes bad (D-C), and with every
+// ordinary image bad it would boot for ever instead of recovery.
+const VariantPrefix = "vintner_variant-os-"
+
+// VariantStem is the stem of variant id of generation gen: no boot counter.
+func VariantStem(gen int, id string) string {
+	return fmt.Sprintf("%s%d-%s", VariantPrefix, gen, id)
+}
+
+// IsVintnerVariant parses a stem made by VariantStem.
+func IsVintnerVariant(stem string) (gen int, id string, ok bool) {
+	rest, found := strings.CutPrefix(stem, VariantPrefix)
+	if !found {
+		return 0, "", false
+	}
+	digits, id, found := strings.Cut(rest, "-")
+	if !found || id == "" {
+		return 0, "", false
+	}
+	val, err := strconv.ParseUint(digits, 10, 31)
+	if err != nil || strconv.FormatUint(val, 10) != digits {
+		return 0, "", false
+	}
+	return int(val), id, true
+}

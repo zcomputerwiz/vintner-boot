@@ -27,6 +27,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/testpoint"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/uki"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/variants"
 )
 
 type PackageQuery interface {
@@ -156,6 +157,9 @@ type Options struct {
 	LockFile       string
 	CmdlineFile    string
 	CmdlineContent string
+	// VariantsDir holds the product's variant declarations (WO-0010 4.3);
+	// default <RootDir>/etc/vintner/variants.d.
+	VariantsDir string
 	// InitialCmdline is the command line of the first image. It is used only when
 	// the manifest has no image yet (vintner install); otherwise the newest
 	// image's command line is carried forward.
@@ -234,7 +238,31 @@ func ukiInitrdSHA256(ukiPath string) (string, error) {
 	return ukiSectionSHA256(ukiPath, ".initrd")
 }
 
-func generateOSRelease(origPath, outPath string, gen int, abi string) error {
+// osReleaseQuote returns s as an os-release(5) double-quoted value: only quote,
+// backslash, dollar and backtick are escaped, and other characters, UTF-8
+// included, stay as they are. Go's %q writes non-ASCII runes as backslash-u
+// escapes, which os-release parsers do not decode, and a variant's title is the
+// product's text.
+func osReleaseQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"', '\\', '$', '`':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// generateOSRelease writes the .osrel of a UKI. For a variant (id not empty) the
+// name carries its title, and IMAGE_VERSION is "<gen>~<id>": systemd-boot sorts
+// versions newest first and "~" sorts before the end of the string, so the
+// variant comes directly after its generation's ordinary entry and before any
+// older generation (WO-0010 4.3).
+func generateOSRelease(origPath, outPath string, gen int, abi, id, title string) error {
 	data, err := os.ReadFile(origPath)
 	if err != nil {
 		return err
@@ -267,11 +295,16 @@ func generateOSRelease(origPath, outPath string, gen int, abi string) error {
 	} else {
 		newPretty = abi
 	}
+	version := strconv.Itoa(gen)
+	if id != "" {
+		newPretty += " (" + title + ")"
+		version += "~" + id
+	}
 
 	lines = append(lines,
-		fmt.Sprintf("PRETTY_NAME=%q", newPretty),
+		"PRETTY_NAME="+osReleaseQuote(newPretty),
 		"IMAGE_ID=vintner-os",
-		fmt.Sprintf("IMAGE_VERSION=%d", gen),
+		"IMAGE_VERSION="+version,
 	)
 
 	return os.WriteFile(outPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
@@ -305,6 +338,27 @@ func ValidateImageCmdline(cmdline string, m *manifest.Manifest) error {
 	return nil
 }
 
+// SlotCfg is the content of a slot's slot.cfg: the ordinary command line and,
+// for each variant, its id, title and command line (WO-0010 4.3). grub.cfg
+// sources it to boot the slot and to list its variants in the menu.
+func SlotCfg(cmdline string, vs []variants.Variant) string {
+	var b strings.Builder
+	b.WriteString("set vintner_cmdline=" + grubQuote(cmdline) + "\n")
+	if len(vs) == 0 {
+		return b.String()
+	}
+	ids := make([]string, 0, len(vs))
+	for _, v := range vs {
+		ids = append(ids, v.ID)
+	}
+	b.WriteString("set vintner_variants=" + grubQuote(strings.Join(ids, " ")) + "\n")
+	for _, v := range vs {
+		b.WriteString("set vintner_vtitle_" + v.ID + "=" + grubQuote(v.Title) + "\n")
+		b.WriteString("set vintner_vcmdline_" + v.ID + "=" + grubQuote(v.Cmdline(cmdline)) + "\n")
+	}
+	return b.String()
+}
+
 // grubQuote returns s as a GRUB script double-quoted word. Inside double
 // quotes GRUB expands "$" and treats a backslash as an escape only before
 // "$", `"`, `\` or a newline; every other byte is literal. Go's %q is not this
@@ -324,6 +378,46 @@ func grubQuote(s string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
+}
+
+// builtVariant is a variant's UKI, built and not yet staged.
+type builtVariant struct {
+	v       variants.Variant
+	cmdline string
+	path    string
+	sha     string
+	size    int
+}
+
+// sameVariants reports whether the recorded variants are the declared ones
+// (id, title and command line); the files are checked by FilesVerify.
+func sameVariants(have, want []manifest.Variant) bool {
+	if len(have) != len(want) {
+		return false
+	}
+	for i := range have {
+		if have[i].ID != want[i].ID || have[i].Title != want[i].Title || have[i].Cmdline != want[i].Cmdline {
+			return false
+		}
+	}
+	return true
+}
+
+// variantUKISlack is what a variant UKI may exceed the ordinary one by: its
+// longer command line and .osrel.
+const variantUKISlack = 4096
+
+// variantsDidNotFit reports whether img was published without the declared
+// variants because they did not fit (Publish says so and skips them): the
+// space left now, after the ordinary image, is less than the variants need. It
+// is then not a change that they are missing, or every publish would make a
+// new generation.
+func variantsDidNotFit(img *manifest.Image, want []manifest.Variant, d DiskSpaceChecker, bootStorageDir string) bool {
+	if len(img.Variants) != 0 || len(want) == 0 || img.UEFI == nil {
+		return false
+	}
+	free, err := d.FreeBytes(bootStorageDir)
+	return err == nil && uint64(len(want))*uint64(img.UEFI.Size+variantUKISlack) > free
 }
 
 func Publish(ctx context.Context, opts Options) (*Result, error) {
@@ -518,6 +612,22 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	// The product's variants (WO-0010 4.3). A declaration that does not validate
+	// refuses the publish: the images already published stay bootable, and a
+	// quiet drop would hide the product's mistake.
+	variantsDir := opts.VariantsDir
+	if variantsDir == "" {
+		variantsDir = filepath.Join(rootDir, "etc", "vintner", "variants.d")
+	}
+	declared, err := variants.Load(variantsDir)
+	if err != nil {
+		return nil, fmt.Errorf("variants: %w", err)
+	}
+	wantVariants := make([]manifest.Variant, 0, len(declared))
+	for _, dv := range declared {
+		wantVariants = append(wantVariants, manifest.Variant{ID: dv.ID, Title: dv.Title, Cmdline: dv.Cmdline(baseCmdline)})
+	}
+
 	pkgName, pkgVer, err := pkgQuery.PackageAndVersion(vmlinuzPath)
 	if err != nil {
 		return nil, fmt.Errorf("package lookup for %s: %w", vmlinuzPath, err)
@@ -563,7 +673,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			}
 		}
 
-		if err == nil && expectedKernelSHA != "" && expectedKernelSHA == currentKernelSHA && newestSameABI.Cmdline == baseCmdline {
+		if err == nil && expectedKernelSHA != "" && expectedKernelSHA == currentKernelSHA && newestSameABI.Cmdline == baseCmdline &&
+			(sameVariants(newestSameABI.Variants, wantVariants) || variantsDidNotFit(newestSameABI, wantVariants, diskChecker, bootStorageDir)) {
 			currentInitrdSHA, err := fileSHA256(initrdPath)
 			if err == nil {
 				initrdMatch := false
@@ -660,11 +771,12 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	var ukiBuiltPath string
 	var ukiSHA string
 	var ukiSize int
+	var builtVariants []builtVariant
 
 	if isUEFI {
 		osReleaseOrig := filepath.Join(rootDir, "etc", "os-release")
 		osReleaseTmp := filepath.Join(buildDir, "os-release")
-		if err := generateOSRelease(osReleaseOrig, osReleaseTmp, g, abi); err != nil {
+		if err := generateOSRelease(osReleaseOrig, osReleaseTmp, g, abi, "", ""); err != nil {
 			return nil, fmt.Errorf("generate os-release: %w", err)
 		}
 
@@ -698,6 +810,60 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("hash built UKI: %w", err)
 		}
+
+		// The image budget counts the variants (§5). Decide before building them,
+		// since each is a full UKI: when they do not fit, publish the ordinary image
+		// without them and say so; never make room by dropping a GOOD image or
+		// recovery.
+		if len(declared) > 0 {
+			ordinary := uint64(ukiSize)
+			if isBIOS {
+				for _, p := range []string{srcVmlinuz, srcInitrd} {
+					if fi, err := os.Stat(p); err == nil {
+						ordinary += uint64(fi.Size())
+					}
+				}
+			}
+			need := uint64(len(declared)) * uint64(ukiSize+variantUKISlack)
+			if free, err := diskChecker.FreeBytes(bootStorageDir); err == nil && ordinary <= free && ordinary+need > free {
+				fmt.Fprintf(stderr, "vintner publish: variants skipped: they need about %d bytes and %d are left after the image\n", need, free-ordinary)
+				builtVariants, wantVariants, declared = nil, nil, nil
+			}
+		}
+
+		// One more UKI per variant: the same kernel and initramfs, the variant's
+		// command line, no boot counter.
+		var variantBytes int
+		for _, dv := range declared {
+			vOsRelease := filepath.Join(buildDir, "os-release-"+dv.ID)
+			if err := generateOSRelease(osReleaseOrig, vOsRelease, g, abi, dv.ID, dv.Title); err != nil {
+				return nil, fmt.Errorf("generate os-release of variant %s: %w", dv.ID, err)
+			}
+			bv := builtVariant{v: dv, cmdline: dv.Cmdline(baseCmdline), path: filepath.Join(buildDir, bls.VariantStem(g, dv.ID)+".efi")}
+			if err := ukiBuilder.Build(ctx, UKIRequest{
+				LinuxPath:      srcVmlinuz,
+				InitrdPath:     srcInitrd,
+				StubPath:       stubPath,
+				OSReleasePath:  vOsRelease,
+				Cmdline:        bv.cmdline,
+				Uname:          abi,
+				OutputPath:     bv.path,
+				SecureBootKey:  sbKeyPath,
+				SecureBootCert: sbCertPath,
+			}); err != nil {
+				return nil, fmt.Errorf("build UKI of variant %s: %w", dv.ID, err)
+			}
+			vfi, err := os.Stat(bv.path)
+			if err != nil {
+				return nil, fmt.Errorf("stat built UKI of variant %s: %w", dv.ID, err)
+			}
+			bv.size = int(vfi.Size())
+			if bv.sha, err = fileSHA256(bv.path); err != nil {
+				return nil, fmt.Errorf("hash built UKI of variant %s: %w", dv.ID, err)
+			}
+			variantBytes += bv.size
+			builtVariants = append(builtVariants, bv)
+		}
 	}
 
 	var slotCfgBuiltPath string
@@ -706,7 +872,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	if isBIOS {
 		slotCfgBuiltPath = filepath.Join(buildDir, "slot.cfg")
-		slotCfgContent := "set vintner_cmdline=" + grubQuote(baseCmdline) + "\n"
+		slotCfgContent := SlotCfg(baseCmdline, declared)
 		if err := os.WriteFile(slotCfgBuiltPath, []byte(slotCfgContent), 0644); err != nil {
 			return nil, fmt.Errorf("write slot.cfg: %w", err)
 		}
@@ -742,6 +908,9 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	var totalRequired uint64
 	if isUEFI {
 		totalRequired += uint64(ukiSize)
+		for _, bv := range builtVariants {
+			totalRequired += uint64(bv.size)
+		}
 	}
 	if isBIOS {
 		totalRequired += uint64(biosSize)
@@ -775,6 +944,17 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			Size:   ukiSize,
 			Signed: m.SecureBootTier == "A",
 		}
+	}
+	for _, wv := range wantVariants {
+		rec := wv
+		if isUEFI {
+			for _, bv := range builtVariants {
+				if bv.v.ID == wv.ID {
+					rec.UEFI = &manifest.UEFIFile{Entry: bls.VariantStem(g, wv.ID), SHA256: bv.sha, Size: bv.size, Signed: m.SecureBootTier == "A"}
+				}
+			}
+		}
+		newImg.Variants = append(newImg.Variants, rec)
 	}
 	if isBIOS {
 		newImg.BIOS = &manifest.BIOSFiles{
@@ -811,10 +991,14 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	var stagedUKI string
 	var stagedSlotDir string
+	var stagedVariants []string
 
 	cleanupStagingAndRefuse := func(reason error) error {
 		if stagedUKI != "" {
 			_ = os.Remove(stagedUKI)
+		}
+		for _, sv := range stagedVariants {
+			_ = os.Remove(sv)
 		}
 		if stagedSlotDir != "" {
 			_ = os.RemoveAll(stagedSlotDir)
@@ -839,6 +1023,13 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		stagedUKI = filepath.Join(stagingDir, fmt.Sprintf("vintner-os-%d.efi", g))
 		if err := copyFile(ukiBuiltPath, stagedUKI); err != nil {
 			return nil, cleanupStagingAndRefuse(err)
+		}
+		for _, bv := range builtVariants {
+			sv := filepath.Join(stagingDir, bls.VariantStem(g, bv.v.ID)+".efi")
+			stagedVariants = append(stagedVariants, sv)
+			if err := copyFile(bv.path, sv); err != nil {
+				return nil, cleanupStagingAndRefuse(err)
+			}
 		}
 	}
 
@@ -889,6 +1080,20 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		if string(uInfo.Cmdline) != baseCmdline {
 			return nil, cleanupStagingAndRefuse(fmt.Errorf(".cmdline mismatch: got %q, want %q", string(uInfo.Cmdline), baseCmdline))
 		}
+		for i, bv := range builtVariants {
+			sv := stagedVariants[i]
+			if readSHA, err := fileSHA256(sv); err != nil || readSHA != bv.sha {
+				return nil, cleanupStagingAndRefuse(fmt.Errorf("readback UKI sha256 mismatch of variant %s", bv.v.ID))
+			}
+			vInfo, err := uki.Read(sv)
+			if err != nil {
+				return nil, cleanupStagingAndRefuse(fmt.Errorf("uki.Read of variant %s failed: %w", bv.v.ID, err))
+			}
+			if vInfo.OSRelease["IMAGE_ID"] != "vintner-os" || vInfo.OSRelease["IMAGE_VERSION"] != fmt.Sprintf("%d~%s", g, bv.v.ID) ||
+				string(vInfo.Uname) != abi || string(vInfo.Cmdline) != bv.cmdline {
+				return nil, cleanupStagingAndRefuse(fmt.Errorf("variant %s: .osrel, .uname or .cmdline do not match what was built", bv.v.ID))
+			}
+		}
 	}
 
 	if isBIOS {
@@ -904,6 +1109,11 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		if err := verifier.Verify(ctx, stagedUKI, sbCertPath); err != nil {
 			return nil, cleanupStagingAndRefuse(fmt.Errorf("signature check failed: %w", err))
 		}
+		for _, sv := range stagedVariants {
+			if err := verifier.Verify(ctx, sv, sbCertPath); err != nil {
+				return nil, cleanupStagingAndRefuse(fmt.Errorf("signature check of a variant failed: %w", err))
+			}
+		}
 	}
 
 	testpoint.Hit("staging-verified")
@@ -917,6 +1127,13 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		efiDir := filepath.Join(bootStorageDir, "EFI", "Linux")
 		if err := os.MkdirAll(efiDir, 0755); err != nil {
 			return nil, fmt.Errorf("create EFI/Linux dir: %w", err)
+		}
+		// Variants first: until the ordinary UKI is in place the image is not, and
+		// reconciliation removes variant files of an image that never got there.
+		for i, bv := range builtVariants {
+			if err := bls.RenameSync(stagedVariants[i], filepath.Join(efiDir, bls.VariantStem(g, bv.v.ID)+".efi")); err != nil {
+				return nil, fmt.Errorf("publish rename UKI of variant %s: %w", bv.v.ID, err)
+			}
 		}
 		finalUKI := filepath.Join(efiDir, fmt.Sprintf("vintner-os-%d+%d-0.efi", g, m.Tries))
 		if err := bls.RenameSync(stagedUKI, finalUKI); err != nil {
@@ -1042,6 +1259,19 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 			if ukiFile, err := bls.Find(efiDir, stem); err == nil {
 				if err := os.Remove(filepath.Join(efiDir, ukiFile)); err != nil {
 					return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, ukiFile, err)
+				}
+			}
+			// Its variants go with it, found by name rather than by record: a
+			// record interrupted before it listed them must not leave files.
+			if dirEntries, err := os.ReadDir(efiDir); err == nil {
+				for _, de := range dirEntries {
+					if pe, ok := bls.Parse(de.Name()); ok && !pe.Counted {
+						if vg, _, isVar := bls.IsVintnerVariant(pe.Stem); isVar && vg == remGen {
+							if err := os.Remove(filepath.Join(efiDir, de.Name())); err != nil {
+								return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, de.Name(), err)
+							}
+						}
+					}
 				}
 			}
 		}
