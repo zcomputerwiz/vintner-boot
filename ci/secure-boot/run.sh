@@ -159,7 +159,7 @@ OS_PRETTY=$(sed -n 's/^PRETTY_NAME=//p' "$OUT/osrel" | tr -d '"')
 } > "$OUT/osrel2"
 
 # Same cmdline as os-1
-OS2_CMDLINE=$(sed 's/^set vintner_cmdline="//;s/"$//' "$OUT/os1-slot.cfg")
+OS2_CMDLINE=$(sed -n '1s/^set vintner_cmdline="//;1s/"$//p' "$OUT/os1-slot.cfg") # slot.cfg's first line; the title follows (WO-0010 4.1)
 
 UNSIGNED_OS2="$OUT/vintner-os-2+1-0.efi"
 python3 "$UKIFY" build \
