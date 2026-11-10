@@ -21,6 +21,8 @@ func cmdPublish(args []string) {
 	cmdlineFile := fs.String("cmdline-file", "", "kernel cmdline file (default /proc/cmdline)")
 	variantsDir := fs.String("variants-dir", "", "the product's variant declarations (default <root-dir>/etc/vintner/variants.d)")
 
+	productFile := fs.String("product-file", "", "the product's name for the menu (default <root-dir>/etc/vintner/product.conf)")
+
 	fs.Parse(args)
 
 	if *kernelABI == "" {
@@ -38,6 +40,7 @@ func cmdPublish(args []string) {
 		LockFile:       *lockFile,
 		CmdlineFile:    *cmdlineFile,
 		VariantsDir:    *variantsDir,
+		ProductFile:    *productFile,
 		Stdout:         os.Stdout,
 		Stderr:         os.Stderr,
 	}

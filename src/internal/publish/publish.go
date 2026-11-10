@@ -23,6 +23,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/product"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/testpoint"
@@ -160,6 +161,9 @@ type Options struct {
 	// VariantsDir holds the product's variant declarations (WO-0010 4.3);
 	// default <RootDir>/etc/vintner/variants.d.
 	VariantsDir string
+	// ProductFile is the product's declaration of itself (WO-0010 4.9); default
+	// <RootDir>/etc/vintner/product.conf.
+	ProductFile string
 	// InitialCmdline is the command line of the first image. It is used only when
 	// the manifest has no image yet (vintner install); otherwise the newest
 	// image's command line is carried forward.
@@ -299,7 +303,7 @@ func osReleasePretty(path string) string {
 // versions newest first and "~" sorts before the end of the string, so the
 // variant comes directly after its generation's ordinary entry and before any
 // older generation (WO-0010 4.3).
-func generateOSRelease(origPath, outPath string, gen int, date, id, title string) error {
+func generateOSRelease(origPath, outPath, name string, gen int, date, id, title string) error {
 	data, err := os.ReadFile(origPath)
 	if err != nil {
 		return err
@@ -326,6 +330,9 @@ func generateOSRelease(origPath, outPath string, gen int, date, id, title string
 		}
 	}
 
+	if name != "" {
+		origPretty = name // the product's name (product.conf) replaces the installed one
+	}
 	newPretty := MenuTitle(origPretty, date)
 	version := strconv.Itoa(gen)
 	if id != "" {
@@ -668,6 +675,20 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("variants: %w", err)
 	}
+	// The product's name for the menu (WO-0010 4.9): product.conf's, else the
+	// installed PRETTY_NAME. A bad file refuses the publish, like a bad variant.
+	productFile := opts.ProductFile
+	if productFile == "" {
+		productFile = filepath.Join(rootDir, "etc", "vintner", "product.conf")
+	}
+	prod, err := product.Load(productFile)
+	if err != nil {
+		return nil, fmt.Errorf("product: %w", err)
+	}
+	menuName := prod.Name
+	if menuName == "" {
+		menuName = osReleasePretty(filepath.Join(rootDir, "etc", "os-release"))
+	}
 	wantVariants := make([]manifest.Variant, 0, len(declared))
 	for _, dv := range declared {
 		wantVariants = append(wantVariants, manifest.Variant{ID: dv.ID, Title: dv.Title, Cmdline: dv.Cmdline(baseCmdline)})
@@ -821,7 +842,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	if isUEFI {
 		osReleaseOrig := filepath.Join(rootDir, "etc", "os-release")
 		osReleaseTmp := filepath.Join(buildDir, "os-release")
-		if err := generateOSRelease(osReleaseOrig, osReleaseTmp, g, menuDate, "", ""); err != nil {
+		if err := generateOSRelease(osReleaseOrig, osReleaseTmp, prod.Name, g, menuDate, "", ""); err != nil {
 			return nil, fmt.Errorf("generate os-release: %w", err)
 		}
 
@@ -881,7 +902,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		var variantBytes int
 		for _, dv := range declared {
 			vOsRelease := filepath.Join(buildDir, "os-release-"+dv.ID)
-			if err := generateOSRelease(osReleaseOrig, vOsRelease, g, menuDate, dv.ID, dv.Title); err != nil {
+			if err := generateOSRelease(osReleaseOrig, vOsRelease, prod.Name, g, menuDate, dv.ID, dv.Title); err != nil {
 				return nil, fmt.Errorf("generate os-release of variant %s: %w", dv.ID, err)
 			}
 			bv := builtVariant{v: dv, cmdline: dv.Cmdline(baseCmdline), path: filepath.Join(buildDir, bls.VariantStem(g, dv.ID)+".efi")}
@@ -917,7 +938,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	if isBIOS {
 		slotCfgBuiltPath = filepath.Join(buildDir, "slot.cfg")
-		slotCfgContent := SlotCfg(baseCmdline, MenuTitle(osReleasePretty(filepath.Join(rootDir, "etc", "os-release")), menuDate), declared)
+		slotCfgContent := SlotCfg(baseCmdline, MenuTitle(menuName, menuDate), declared)
 		if err := os.WriteFile(slotCfgBuiltPath, []byte(slotCfgContent), 0644); err != nil {
 			return nil, fmt.Errorf("write slot.cfg: %w", err)
 		}

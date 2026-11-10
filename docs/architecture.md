@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 1.8 (November 2026)** — WO-0010 4.9:
+
+- §3 P1: `/etc/vintner/product.conf` (`name=`) replaces the installed `PRETTY_NAME` in the title of every ordinary and variant entry on both firmwares; `/etc/os-release` is untouched. Read at every publish, no file means `PRETTY_NAME` ([`product.md`](product.md)).
+
 **Revision 1.7 (November 2026)** — WO-0010 4.4:
 
 - §3 P1 and §11 `set_recovery_next_boot`: `vintner next-boot recovery | previous-good | generation <n> | variant <id> | menu | clear` sets one request for the next boot, through `LoaderEntryOneShot` and `LoaderConfigTimeoutOneShot` on UEFI and the grubenv variable `VINTNER_NEXT` on BIOS. It restarts nothing. The request is consumed by the loader, counts like the boot it is, and is not a health finding ([`next-boot.md`](next-boot.md)).
