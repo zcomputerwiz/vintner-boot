@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // MountPoint is where the vintner services mount boot storage, inside their
@@ -37,7 +38,7 @@ func Mount(dev string, rw bool) (func() error, error) {
 	if !rw {
 		flags |= syscall.MS_RDONLY
 	}
-	if err := syscall.Mount(dev, MountPoint, "vfat", flags, "umask=0077,flush"); err != nil {
+	if err := mountRetry(dev, MountPoint, "vfat", flags, "umask=0077,flush"); err != nil {
 		return nil, fmt.Errorf("bootstorage: mount %s: %w", dev, err)
 	}
 	return func() error { return syscall.Unmount(MountPoint, 0) }, nil
@@ -66,4 +67,31 @@ func MountESP(dev string) (func() error, error) {
 		return nil, fmt.Errorf("bootstorage: mount ESP %s: %w", dev, err)
 	}
 	return func() error { return syscall.Unmount(ESPMountPoint, 0) }, nil
+}
+
+// Test seams.
+var (
+	mountFn = syscall.Mount
+	sleepFn = time.Sleep
+)
+
+// Boot storage is a FAT file system that the kernel mounts once: a read-only
+// mount (vintner status, called by a product early in boot) and a read-write
+// one (publish, from a kernel hook) of it cannot exist at the same time, and the
+// second one fails with EBUSY. Each holds it for a moment, so the one that
+// loses retries for a few seconds before it gives up (WO-0010 4.5).
+const (
+	mountTries = 25
+	mountWait  = 200 * time.Millisecond
+)
+
+func mountRetry(dev, target, fstype string, flags uintptr, data string) error {
+	var err error
+	for i := 0; i < mountTries; i++ {
+		if err = mountFn(dev, target, fstype, flags, data); !errors.Is(err, syscall.EBUSY) {
+			return err
+		}
+		sleepFn(mountWait)
+	}
+	return err
 }
