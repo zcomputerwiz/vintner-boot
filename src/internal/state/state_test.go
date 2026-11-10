@@ -502,7 +502,7 @@ func TestCheckHealth_SelectionPolicy(t *testing.T) {
 	if err := efivar.SetString(efivarsDir, "LoaderConfigTimeout", efivar.LoaderInfo, 0x7, "5"); err != nil {
 		t.Fatal(err)
 	}
-	if err := efivar.SetString(efivarsDir, "LoaderEntryOneShot", efivar.LoaderInfo, 0x7, "vintner-recovery-*"); err != nil {
+	if err := efivar.SetString(efivarsDir, "LoaderEntryOneShot", efivar.LoaderInfo, 0x7, "debian-6.12.efi"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -510,10 +510,24 @@ func TestCheckHealth_SelectionPolicy(t *testing.T) {
 	wantEFIVars := []string{
 		"LoaderEntryDefault is set: debian-6.12.efi",
 		"LoaderConfigTimeout is set: 5",
-		"LoaderEntryOneShot is set: vintner-recovery-*",
+		"LoaderEntryOneShot is set: debian-6.12.efi",
 	}
 	if !reflect.DeepEqual(r, wantEFIVars) {
 		t.Errorf("EFI vars reports = %q, want %q", r, wantEFIVars)
+	}
+
+	// A one-shot that vintner next-boot made (WO-0010 4.4) is not a finding; the
+	// same variable with a foreign value still is.
+	for _, ours := range []string{"vintner-recovery-*", "vintner-os-3.efi", "vintner_variant-os-3-safe.efi"} {
+		if err := efivar.SetString(efivarsDir, "LoaderEntryOneShot", efivar.LoaderInfo, 0x7, ours); err != nil {
+			t.Fatal(err)
+		}
+		if r := CheckHealth(m, nil, efivarsDir, sbDir, true); len(r) != 2 {
+			t.Errorf("LoaderEntryOneShot %q made by vintner is reported: %q", ours, r)
+		}
+	}
+	if err := efivar.SetString(efivarsDir, "LoaderEntryOneShot", efivar.LoaderInfo, 0x7, "debian-6.12.efi"); err != nil {
+		t.Fatal(err)
 	}
 
 	// Under non-UEFI (isUEFI = false), efivars are not checked

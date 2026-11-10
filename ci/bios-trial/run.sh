@@ -317,6 +317,54 @@ expect "menu order" "$order" "Generation 2,Generation 1,Recovery Console,Recover
 end "NONE"
 for s in os-1 os-2 recovery-a recovery-b; do slot_cfg "$BS" "$s" "${s/recovery-/r}" poweroff; done
 
+# WO-0010 4.4: "vintner next-boot" leaves one request in VINTNER_NEXT. grub.cfg uses it
+# for one boot and clears it from grubenv in the same save_env as its counter write, or
+# alone where it writes no counter. The second boot of each row shows the normal order is back.
+next_scenario() { # name request grubenv-after: boots, checks grubenv, boots again
+	begin "$1"
+	set_env "VINTNER_ORDER=2 1" "VINTNER_NEXT=$2" "${T[@]}"
+	if [ -n "$VARIANT" ]; then slot_cfg_variant "$BS" os-2 os-2; fi
+	boot
+	expect grubenv "$(vars)" "$3"
+	boot
+}
+T=(VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx) VARIANT=
+next_scenario B16-next-recovery recovery "VINTNER_BOOTED=RA;$O;VINTNER_T_1=xxx;VINTNER_T_2=xxx;VINTNER_T_RA=xx"
+end "ra os-2"
+next_scenario B17-next-generation 1 "VINTNER_BOOTED=1;$O;VINTNER_T_1=xx;VINTNER_T_2=xxx;VINTNER_T_RA=xxx"
+end "os-1 os-2"
+# A chosen generation that is bad boots anyway, as a menu choice does.
+T=(VINTNER_T_2=xxx VINTNER_T_1=0 VINTNER_T_RA=xxx)
+next_scenario B18-next-generation-bad 1 "VINTNER_BOOTED=1;$O;VINTNER_T_1=0;VINTNER_T_2=xxx;VINTNER_T_RA=xxx"
+end "os-1 os-2"
+# A variant counts nothing and writes no VINTNER_BOOTED (D-D); only VINTNER_NEXT goes.
+T=(VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx) VARIANT=1
+next_scenario B19-next-variant 2:safe "$O;VINTNER_T_1=xxx;VINTNER_T_2=xxx;VINTNER_T_RA=xxx"
+end "os-2-safe os-2"
+VARIANT=
+slot_cfg "$BS" os-2 os-2 poweroff
+T=(VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=0)
+next_scenario B20-next-recovery-a-bad recovery "$O;VINTNER_T_1=xxx;VINTNER_T_2=xxx;VINTNER_T_RA=0"
+end "rb os-2"
+# A value that is not one of the forms is dropped, and the normal order boots.
+T=(VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx)
+next_scenario B21-next-garbage 'what ever' "VINTNER_BOOTED=2;$O;VINTNER_T_1=xxx;VINTNER_T_2=xx;VINTNER_T_RA=xxx"
+end "os-2 os-2"
+
+# The menu once: shown for the given seconds, then its first entry boots. The second boot is
+# automatic again.
+begin B22-next-menu
+set_env "VINTNER_ORDER=2 1" VINTNER_NEXT=menu:8 VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+boot
+grep -aq 'Recovery Console (backup)' "$OUT/B22-next-menu-boot1.log" && menu=shown || menu="not shown"
+expect "menu" "$menu" shown
+expect grubenv "$(vars)" "VINTNER_BOOTED=2;$O;VINTNER_T_1=xxx;VINTNER_T_2=xx;VINTNER_T_RA=xxx"
+bless
+boot
+grep -aq 'Recovery Console (backup)' "$OUT/B22-next-menu-boot2.log" && menu=shown || menu="not shown"
+expect "menu on the second boot" "$menu" "not shown"
+end "os-2 os-2"
+
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
 begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block
 : > "$OUT/env" && put_env

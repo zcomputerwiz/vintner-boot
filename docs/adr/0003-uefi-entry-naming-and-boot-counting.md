@@ -12,7 +12,7 @@ Debian 13 ships systemd 257. The findings below come from reading the systemd v2
 
 ## Findings (systemd v257)
 
-1. **An entry ID is the whole file name, lowercased, including the boot counter and the `.efi` or `.conf` suffix** (`boot_entry_add_type1`, `boot_entry_add_type2`). The ID of a counted entry therefore changes on every boot. `default` in `loader.conf`, `LoaderEntryDefault` and `LoaderEntryOneShot` are all matched as glob patterns (`config_find_entry`, `efi_fnmatch`). A policy that must survive renames uses patterns, not exact IDs.
+1. **An entry ID is the file name, lowercased, with the `.efi` or `.conf` suffix and without the boot counter (WO-0010 4.4, `ci/selection-policy` S19: `vintner-os-1.efi` selects `vintner-os-1+3.efi`; `vintner-os-1+*` selects nothing)** (`boot_entry_add_type1`, `boot_entry_add_type2`). The ID of a counted entry therefore does not change when systemd-boot renames the file. `default` in `loader.conf`, `LoaderEntryDefault` and `LoaderEntryOneShot` are all matched as glob patterns (`config_find_entry`, `efi_fnmatch`). A policy that must survive renames uses patterns, not exact IDs.
 2. **Sort order** (`boot_entry_compare`), applied to all entries from the ESP and XBOOTLDR together:
    1. entries with zero tries left go last;
    2. entries with a sort key go before entries without one;

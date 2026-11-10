@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 1.7 (November 2026)** — WO-0010 4.4:
+
+- §3 P1 and §11 `set_recovery_next_boot`: `vintner next-boot recovery | previous-good | generation <n> | variant <id> | menu | clear` sets one request for the next boot, through `LoaderEntryOneShot` and `LoaderConfigTimeoutOneShot` on UEFI and the grubenv variable `VINTNER_NEXT` on BIOS. It restarts nothing. The request is consumed by the loader, counts like the boot it is, and is not a health finding ([`next-boot.md`](next-boot.md)).
+
 **Revision 1.6 (November 2026)** — WO-0010 4.3 and 4.1:
 
 - §4.1 names in menus: ordinary entries show the product's name and the publish date, recovery shows "Recovery Console" and "Recovery Console (backup)" or the product's `--recovery-title`, and both loaders show the same text with no "vintner" in it (ADR-0003 table).

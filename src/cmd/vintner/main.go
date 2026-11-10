@@ -20,6 +20,8 @@ func main() {
 		cmdBootEntry(os.Args[2:])
 	case "install":
 		cmdInstall(os.Args[2:])
+	case "next-boot":
+		cmdNextBoot(os.Args[2:])
 	case "manifest":
 		cmdManifest(os.Args[2:])
 	case "publish":
@@ -39,5 +41,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless      Bless the current boot\n  install    Check a layout and install vintner onto it\n  manifest   Manage the installation manifest\n  publish    Publish kernel and initramfs boot image\n  reconcile  Reconcile boot state\n  secureboot Initialize machine Secure Boot keys")
+	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless      Bless the current boot\n  install    Check a layout and install vintner onto it\n  manifest   Manage the installation manifest\n  next-boot  Choose what the next boot does, once\n  publish    Publish kernel and initramfs boot image\n  reconcile  Reconcile boot state\n  secureboot Initialize machine Secure Boot keys")
 }
