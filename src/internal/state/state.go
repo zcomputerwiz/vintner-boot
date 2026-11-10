@@ -549,10 +549,9 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 		if uefi {
 			for _, f := range sortedKeys(v.UEFIFiles) {
 				if parsed, ok := bls.Parse(f); ok && !parsed.Counted {
-					if g, id, isVar := bls.IsVintnerVariant(parsed.Stem); isVar {
-						if !hasVariant(m, g, id) {
-							reports = append(reports, fmt.Sprintf("unlisted vintner file: %s", f))
-						}
+					if _, _, isVar := bls.IsVintnerVariant(parsed.Stem); isVar {
+						// An unrecorded variant file is reported by Reconcile
+						// ("untracked uefi file"), as an unrecorded ordinary image is.
 						continue
 					}
 				}

@@ -238,6 +238,25 @@ func ukiInitrdSHA256(ukiPath string) (string, error) {
 	return ukiSectionSHA256(ukiPath, ".initrd")
 }
 
+// osReleaseQuote returns s as an os-release(5) double-quoted value: only quote,
+// backslash, dollar and backtick are escaped, and other characters, UTF-8
+// included, stay as they are. Go's %q writes non-ASCII runes as backslash-u
+// escapes, which os-release parsers do not decode, and a variant's title is the
+// product's text.
+func osReleaseQuote(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"', '\\', '$', '`':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 // generateOSRelease writes the .osrel of a UKI. For a variant (id not empty) the
 // name carries its title, and IMAGE_VERSION is "<gen>~<id>": systemd-boot sorts
 // versions newest first and "~" sorts before the end of the string, so the
@@ -283,7 +302,7 @@ func generateOSRelease(origPath, outPath string, gen int, abi, id, title string)
 	}
 
 	lines = append(lines,
-		fmt.Sprintf("PRETTY_NAME=%q", newPretty),
+		"PRETTY_NAME="+osReleaseQuote(newPretty),
 		"IMAGE_ID=vintner-os",
 		"IMAGE_VERSION="+version,
 	)
@@ -382,6 +401,23 @@ func sameVariants(have, want []manifest.Variant) bool {
 		}
 	}
 	return true
+}
+
+// variantUKISlack is what a variant UKI may exceed the ordinary one by: its
+// longer command line and .osrel.
+const variantUKISlack = 4096
+
+// variantsDidNotFit reports whether img was published without the declared
+// variants because they did not fit (Publish says so and skips them): the
+// space left now, after the ordinary image, is less than the variants need. It
+// is then not a change that they are missing, or every publish would make a
+// new generation.
+func variantsDidNotFit(img *manifest.Image, want []manifest.Variant, d DiskSpaceChecker, bootStorageDir string) bool {
+	if len(img.Variants) != 0 || len(want) == 0 || img.UEFI == nil {
+		return false
+	}
+	free, err := d.FreeBytes(bootStorageDir)
+	return err == nil && uint64(len(want))*uint64(img.UEFI.Size+variantUKISlack) > free
 }
 
 func Publish(ctx context.Context, opts Options) (*Result, error) {
@@ -638,7 +674,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 
 		if err == nil && expectedKernelSHA != "" && expectedKernelSHA == currentKernelSHA && newestSameABI.Cmdline == baseCmdline &&
-			sameVariants(newestSameABI.Variants, wantVariants) {
+			(sameVariants(newestSameABI.Variants, wantVariants) || variantsDidNotFit(newestSameABI, wantVariants, diskChecker, bootStorageDir)) {
 			currentInitrdSHA, err := fileSHA256(initrdPath)
 			if err == nil {
 				initrdMatch := false
@@ -775,6 +811,26 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			return nil, fmt.Errorf("hash built UKI: %w", err)
 		}
 
+		// The image budget counts the variants (§5). Decide before building them,
+		// since each is a full UKI: when they do not fit, publish the ordinary image
+		// without them and say so; never make room by dropping a GOOD image or
+		// recovery.
+		if len(declared) > 0 {
+			ordinary := uint64(ukiSize)
+			if isBIOS {
+				for _, p := range []string{srcVmlinuz, srcInitrd} {
+					if fi, err := os.Stat(p); err == nil {
+						ordinary += uint64(fi.Size())
+					}
+				}
+			}
+			need := uint64(len(declared)) * uint64(ukiSize+variantUKISlack)
+			if free, err := diskChecker.FreeBytes(bootStorageDir); err == nil && ordinary <= free && ordinary+need > free {
+				fmt.Fprintf(stderr, "vintner publish: variants skipped: they need about %d bytes and %d are left after the image\n", need, free-ordinary)
+				builtVariants, wantVariants, declared = nil, nil, nil
+			}
+		}
+
 		// One more UKI per variant: the same kernel and initramfs, the variant's
 		// command line, no boot counter.
 		var variantBytes int
@@ -807,24 +863,6 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			}
 			variantBytes += bv.size
 			builtVariants = append(builtVariants, bv)
-		}
-
-		// The image budget counts the variants (§5). When they do not fit, publish
-		// the ordinary image without them and say so; never make room by dropping
-		// a GOOD image or recovery.
-		if variantBytes > 0 {
-			ordinary := uint64(ukiSize)
-			if isBIOS {
-				for _, p := range []string{srcVmlinuz, srcInitrd} {
-					if fi, err := os.Stat(p); err == nil {
-						ordinary += uint64(fi.Size())
-					}
-				}
-			}
-			if free, err := diskChecker.FreeBytes(bootStorageDir); err == nil && ordinary <= free && ordinary+uint64(variantBytes) > free {
-				fmt.Fprintf(stderr, "vintner publish: variants skipped: %d bytes of variants do not fit in the %d bytes left after the image\n", variantBytes, free-ordinary)
-				builtVariants, wantVariants, declared = nil, nil, nil
-			}
 		}
 	}
 

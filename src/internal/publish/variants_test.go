@@ -349,8 +349,10 @@ func TestVariantFilesAreChecked(t *testing.T) {
 		t.Errorf("reports: %v", reports)
 	}
 	health := strings.Join(state.CheckHealth(mf, v, filepath.Join(rootDir, "no-efivars"), "", false), "\n")
-	if !strings.Contains(health, "unlisted vintner file: vintner_variant-os-2-other.efi") {
-		t.Errorf("health: %s", health)
+	// Health leaves it to Reconcile, as for an unrecorded ordinary image, and does
+	// not call it foreign either.
+	if strings.Contains(health, "vintner_variant-os-2-other.efi") {
+		t.Errorf("health reports the variant file a second time: %s", health)
 	}
 	_ = os.Remove(filepath.Join(efiDir, "vintner_variant-os-2-other.efi"))
 

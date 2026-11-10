@@ -5,6 +5,7 @@ package manifest
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -34,10 +35,7 @@ func exampleWithVariant(t *testing.T) *Manifest {
 	return &m
 }
 
-func itoa(n int) string {
-	b, _ := json.Marshal(n)
-	return string(b)
-}
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func TestVariantValidation(t *testing.T) {
 	m := exampleWithVariant(t)
