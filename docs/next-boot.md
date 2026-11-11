@@ -6,7 +6,7 @@
 vintner next-boot [--json] recovery
 vintner next-boot [--json] previous-good
 vintner next-boot [--json] generation <n>
-vintner next-boot [--json] variant <id>
+vintner next-boot [--json] variant [--generation <n>] <id>
 vintner next-boot [--json] menu [--timeout <seconds>]
 vintner next-boot [--json] clear
 ```
@@ -16,7 +16,7 @@ vintner next-boot [--json] clear
 | `recovery` | boots the Recovery Console: recovery A while it is not bad, recovery B after that |
 | `previous-good` | boots the newest `GOOD` generation that is older than the newest generation (Last Known Good Configuration) |
 | `generation <n>` | boots generation `n`, a bad one too, like a choice from the menu |
-| `variant <id>` | boots variant `id` of the generation that would boot next, the newest one that is not bad ([`variants.md`](variants.md)) |
+| `variant <id>` | boots variant `id` of the generation that would boot next, the newest one that is not bad ([`variants.md`](variants.md)). That is not the running generation on its last try, which has no tries left. `--generation <n>` names the generation instead, for example `booted.generation` of `vintner status --json`: a variant has no counter, so it boots whether or not generation `n` has tries left; the generation and variant are still checked. An older vintner without the flag exits 2 |
 | `menu` | shows the boot menu for `--timeout` seconds (default 30, 1 to 3600), then the first entry boots |
 | `clear` | takes back a request that has not been used yet |
 

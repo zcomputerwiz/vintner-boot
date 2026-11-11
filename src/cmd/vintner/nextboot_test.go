@@ -229,6 +229,55 @@ func TestNextBootVariantSkipsBadGeneration(t *testing.T) {
 	}
 }
 
+// --generation names the generation, so the variant of the generation that is
+// running can be started on its last try, when it has no tries left (+0, or an
+// empty VINTNER_T_<n>) and "variant" alone would pick another one or refuse.
+func TestNextBootVariantNamedGeneration(t *testing.T) {
+	bs, ev := nextBootEnv(t, "uefi")
+	efi := filepath.Join(bs, "EFI", "Linux")
+	if err := os.Rename(filepath.Join(efi, "vintner-os-3+2-1.efi"), filepath.Join(efi, "vintner-os-3+0-3.efi")); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := runNB(t, bs, ev, "variant", "--generation", "3", "safe"); code != 0 {
+		t.Fatalf("exit %d: %s%s", code, out, errs)
+	}
+	if got := oneShot(t, ev, "LoaderEntryOneShot"); got != "vintner_variant-os-3-safe.efi" {
+		t.Errorf("LoaderEntryOneShot = %q, want the variant of generation 3", got)
+	}
+
+	bs, ev = nextBootEnv(t, "bios")
+	envPath := filepath.Join(bs, "grub", "grubenv")
+	env, _ := grubenv.Read(envPath)
+	env.Set("VINTNER_T_3", "")
+	if err := grubenv.Write(envPath, env); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, errs := runNB(t, bs, ev, "variant", "safe", "--generation", "3"); code != 0 {
+		t.Fatalf("exit %d: %s%s", code, out, errs)
+	}
+	if got := biosNext(t, bs); got != "3:safe" {
+		t.Errorf("VINTNER_NEXT = %q, want 3:safe", got)
+	}
+
+	// Still checked: an unknown generation, and --generation on another target.
+	for _, c := range []struct {
+		args []string
+		exit int
+		code string
+	}{
+		{[]string{"variant", "--generation", "9", "safe"}, 3, "no-such-generation"},
+		{[]string{"variant", "--generation", "3", "nosuch"}, 3, "no-such-variant"},
+		{[]string{"variant", "--generation", "-5", "safe"}, 2, "usage"},
+		{[]string{"recovery", "--generation", "3"}, 2, "usage"},
+	} {
+		bs, ev := nextBootEnv(t, "uefi")
+		code, out, _ := runNB(t, bs, ev, append([]string{"--json"}, c.args...)...)
+		if code != c.exit || !strings.Contains(out, `"`+c.code+`"`) {
+			t.Errorf("%v: exit %d, output %s; want exit %d, code %s", c.args, code, out, c.exit, c.code)
+		}
+	}
+}
+
 func TestNextBootRefusals(t *testing.T) {
 	for _, firmware := range []string{"uefi", "bios"} {
 		for _, c := range []struct {
