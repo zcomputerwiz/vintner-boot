@@ -22,6 +22,7 @@ func cmdPublish(args []string) {
 	variantsDir := fs.String("variants-dir", "", "the product's variant declarations (default <root-dir>/etc/vintner/variants.d)")
 
 	productFile := fs.String("product-file", "", "the product's name for the menu (default <root-dir>/etc/vintner/product.conf)")
+	kernelCmdline := fs.String("kernel-cmdline-file", "", "the product's kernel command-line options (default <root-dir>/etc/kernel/cmdline)")
 
 	fs.Parse(args)
 
@@ -33,16 +34,17 @@ func cmdPublish(args []string) {
 	}
 
 	opts := publish.Options{
-		KernelABI:      *kernelABI,
-		BootStorageDir: *bootStorage,
-		StateDir:       *stateDir,
-		RootDir:        *rootDir,
-		LockFile:       *lockFile,
-		CmdlineFile:    *cmdlineFile,
-		VariantsDir:    *variantsDir,
-		ProductFile:    *productFile,
-		Stdout:         os.Stdout,
-		Stderr:         os.Stderr,
+		KernelABI:         *kernelABI,
+		BootStorageDir:    *bootStorage,
+		StateDir:          *stateDir,
+		RootDir:           *rootDir,
+		LockFile:          *lockFile,
+		CmdlineFile:       *cmdlineFile,
+		VariantsDir:       *variantsDir,
+		ProductFile:       *productFile,
+		KernelCmdlineFile: *kernelCmdline,
+		Stdout:            os.Stdout,
+		Stderr:            os.Stderr,
 	}
 
 	_, err := publish.Publish(context.Background(), opts)

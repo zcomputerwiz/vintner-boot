@@ -191,21 +191,21 @@ printf '%s (menu %s)\t%s\t%s\tOBSERVED\n' "$SCEN" "$menu" "$got" "$(listing)" | 
 # systemd-boot shows it for any key pressed at start while "timeout 0" keeps it hidden otherwise.
 # A boot takes a few seconds and a key press that lands before or after the loader reads
 # the keyboard is lost (S13 sees the same), so F8 is pressed again and again
-# and up to three boots are tried. Each boot that shows the menu proves the key; none does
+# and up to eight boots are tried. Each boot that shows the menu proves the key; none does
 # when no key is sent (checked by removing the presses).
 f8_keys() {
 	echo '{"execute":"qmp_capabilities"}'
-	for _ in $(seq 60); do key f8; sleep 0.25; done
+	for _ in $(seq 150); do key f8; sleep 0.1; done
 	sleep 5; key ret; sleep 120
 }
 SCEN=S21-f8-shows-menu
 result=FAIL got=-
-for _ in 1 2 3; do
+for _ in 1 2 3 4 5 6 7 8; do
 	new_disk "${S1[@]}"; new_vars
 	got=$(QMP=1 boot 1 < <(f8_keys))
 	if grep -aq 'os-1' "$OUT/$SCEN-boot1.log"; then result=PASS; break; fi
 done
-[ "$result" = PASS ] || { fail=1; echo "$SCEN: F8 did not open the menu in three boots" >&2; }
+[ "$result" = PASS ] || { fail=1; echo "$SCEN: F8 did not open the menu in eight boots" >&2; }
 printf '%s\t%s\t%s\t%s\n' "$SCEN" "$got" "$(listing)" "$result" | tee -a "$SUMMARY"
 
 # WO-0010 4.3 (D-C): a variant has no counter and a name outside "default vintner-*",

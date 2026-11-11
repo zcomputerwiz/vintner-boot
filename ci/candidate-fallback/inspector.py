@@ -14,7 +14,7 @@ from datetime import datetime
 
 mtools_env = dict(os.environ, MTOOLS_SKIP_CHECK="1")
 
-CASES = ["G0", "B1", "B2", "B3", "B4"]
+CASES = ["G0", "B1", "B2", "B3", "B4", "B5"]
 BOOTS = range(1, 7)
 EXPECTED_LABELS = {"G0": ["os-2"] * 6}
 EXPECTED_LABELS.update({c: ["os-2"] * 3 + ["os-1"] * 3 for c in CASES[1:]})

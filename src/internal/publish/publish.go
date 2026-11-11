@@ -22,6 +22,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/kcmdline"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/product"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
@@ -164,6 +165,9 @@ type Options struct {
 	// ProductFile is the product's declaration of itself (WO-0010 4.9); default
 	// <RootDir>/etc/vintner/product.conf.
 	ProductFile string
+	// KernelCmdlineFile holds the product's kernel command-line options (WO-0010
+	// 4.2); default <RootDir>/etc/kernel/cmdline.
+	KernelCmdlineFile string
 	// InitialCmdline is the command line of the first image. It is used only when
 	// the manifest has no image yet (vintner install); otherwise the newest
 	// image's command line is carried forward.
@@ -658,6 +662,23 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	}
 	if baseCmdline == "" {
 		return nil, errors.New("no image command line found in manifest")
+	}
+
+	// The product's options (WO-0010 4.2, D-B): when /etc/kernel/cmdline exists, the
+	// new image's line is the earlier line's root and boot storage with those options,
+	// and nothing else is carried over. Without the file the earlier line is carried
+	// forward as it always was. A bad file refuses the publish: the images already
+	// published stay bootable.
+	kcmdlineFile := opts.KernelCmdlineFile
+	if kcmdlineFile == "" {
+		kcmdlineFile = filepath.Join(rootDir, kcmdline.DefaultFile)
+	}
+	if extra, found, err := kcmdline.Load(kcmdlineFile); err != nil {
+		return nil, fmt.Errorf("kernel command line: %w", err)
+	} else if found {
+		if baseCmdline, err = kcmdline.Rebuild(baseCmdline, extra); err != nil {
+			return nil, fmt.Errorf("kernel command line: %w", err)
+		}
 	}
 
 	if err := ValidateImageCmdline(baseCmdline, m); err != nil {

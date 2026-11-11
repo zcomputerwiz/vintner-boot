@@ -1,7 +1,6 @@
 #!/bin/bash
 # Candidate fallback integration test on an installed vintner system (WO-0006).
 #
-t	# B1 panics in the initramfs and then hangs: stop once the panic is printed.		STOP_FLAG=()		if [ "$CASE" = "B1" ]; then STOP_FLAG=(--stop-on "Kernel panic - not syncing"); fi
 # Tests that a bad candidate image falls back to the known-good image after
 # bounded attempts, on both UEFI and BIOS, across panic, health failure,
 # hang and early kill.
@@ -133,7 +132,7 @@ TEST_BOOT_SEED=$(make_seed "test-boot" "true")
 
 # --- 3. Case Definitions and Execution ---------------------------------------
 
-CASES=("G0" "B1" "B2" "B3" "B4")
+CASES=("G0" "B1" "B2" "B3" "B4" "B5")
 
 for CASE in "${CASES[@]}"; do
 	echo "=================================================================="
@@ -232,6 +231,16 @@ rm -f /etc/initramfs-tools/scripts/init-top/break-test
 EOF
 )
 			;;
+		B5)
+			# WO-0010 4.2: an option that stops the boot, set with vintner cmdline. The
+			# new generation carries it and the initramfs cannot mount the root with it; the
+			# previous GOOD image does not carry it.
+			OP_SCRIPT=$(cat <<'EOF'
+set -e
+/usr/sbin/vintner cmdline set rootfstype=vintnertestnofs
+EOF
+)
+			;;
 		B4)
 			OP_SCRIPT=$(cat <<'EOF'
 set -e
@@ -269,7 +278,7 @@ EOF
 		fi
 		# B1 panics in the initramfs and then hangs: stop once the panic is printed.
 		STOP_FLAG=()
-		if [ "$CASE" = "B1" ]; then STOP_FLAG=(--stop-on "Kernel panic - not syncing"); fi
+		if [ "$CASE" = "B1" ] || [ "$CASE" = "B5" ]; then STOP_FLAG=(--stop-on "Kernel panic - not syncing"); fi
 
 		echo "Booting $CASE Boot $B..."
 		VARS_ARG=()
@@ -302,6 +311,20 @@ python3 ci/candidate-fallback/inspector.py evaluate \
 	--out-dir "$OUT" \
 	--results-file "$RESULTS"
 
+# WO-0010 4.2, C1: the option that vintner cmdline set is on the command line of generation 2
+# (built into its UKI) and not on generation 1's: the fallback image keeps the line it had
+# (R04, no in-place overwrite). The manifest records each image's line; it is read after the
+# operation boot and again after the sixth boot, when generation 1 has been running.
+c1=PASS c1_ev=""
+for r in B5-read-op B5-read-boot6; do
+	for g in 1 2; do
+		has=$(python3 -c 'import json,sys; print("yes" if "rootfstype=vintnertestnofs" in json.load(open(sys.argv[1]))["images"][sys.argv[2]]["cmdline"].split() else "no")' "$OUT/$r.json" "$g" 2>/dev/null || echo error)
+		c1_ev="$c1_ev $r:gen$g=$has"
+		if { [ "$g" = 2 ] && [ "$has" != yes ]; } || { [ "$g" = 1 ] && [ "$has" != no ]; }; then c1=FAIL; fi
+	done
+done
+printf "C1\tB5\t%s\toption on generation 2's command line only:%s\n" "$c1" "$c1_ev" >> "$RESULTS"
+
 echo "=================================================================="
 echo "=== Test Results ($FIRMWARE) ==="
 echo "=================================================================="
@@ -311,8 +334,8 @@ echo "=== versions.txt ==="
 cat "$VERSIONS"
 
 # Every expected row must be present with its status: a check that never ran is a FAIL.
-EXPECTED="H1:G0:PASS H8:all:PASS"
-for c in B1 B2 B3 B4; do
+EXPECTED="H1:G0:PASS H8:all:PASS C1:B5:PASS"
+for c in B1 B2 B3 B4 B5; do
 	for h in H2 H3 H4 H5 H6; do
 		EXPECTED="$EXPECTED $h:$c:PASS"
 	done
