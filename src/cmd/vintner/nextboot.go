@@ -52,9 +52,10 @@ func runNextBoot(args []string, stdout, stderr io.Writer) int {
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", efivar.DefaultDir, "efivars directory")
 	timeout := fs.Int("timeout", nextboot.DefaultMenuTimeout, "menu: seconds to wait before the default entry boots")
+	genFlag := fs.Int("generation", -1, "variant: the generation whose variant to boot, even if it has no tries left (default: the one that would boot next)")
 	asJSON := fs.Bool("json", false, "print the result as one JSON object")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: vintner next-boot [--json] recovery | previous-good | generation <n> | variant <id> | menu [--timeout <s>] | clear")
+		fmt.Fprintln(stderr, "usage: vintner next-boot [--json] recovery | previous-good | generation <n> | variant [--generation <n>] <id> | menu [--timeout <s>] | clear")
 		fs.PrintDefaults()
 	}
 	// Flags may come before or after the target.
@@ -70,7 +71,15 @@ func runNextBoot(args []string, stdout, stderr io.Writer) int {
 		if err := fs.Parse(operands); err != nil {
 			return nextBootUsage
 		}
-		operands = fs.Args()
+		// Flags between and after the operands too: variant safe --generation 3.
+		var all []string
+		for rest := fs.Args(); len(rest) > 0; rest = fs.Args() {
+			all = append(all, rest[0])
+			if err := fs.Parse(rest[1:]); err != nil {
+				return nextBootUsage
+			}
+		}
+		operands = all
 	}
 
 	fail := func(code int, kind, msg string) int {
@@ -105,6 +114,9 @@ func runNextBoot(args []string, stdout, stderr io.Writer) int {
 	default:
 		return usage(fmt.Sprintf("unknown target %q", target))
 	}
+	if *genFlag != -1 && target != "variant" {
+		return usage("--generation goes only with the variant target")
+	}
 	if len(operands) != wantArgs {
 		return usage(fmt.Sprintf("%s takes %d argument(s), not %d", target, wantArgs, len(operands)))
 	}
@@ -120,6 +132,9 @@ func runNextBoot(args []string, stdout, stderr io.Writer) int {
 			return usage(fmt.Sprintf("%q is not a variant ID (lower case letters, digits and _, starting with a letter)", operands[0]))
 		}
 		t.Variant = operands[0]
+		if *genFlag < -1 {
+			return usage(fmt.Sprintf("--generation %d is not a generation number", *genFlag))
+		}
 	case "menu":
 		if *timeout < 1 || *timeout > nextboot.MaxMenuTimeout {
 			return usage(fmt.Sprintf("--timeout must be 1 to %d seconds", nextboot.MaxMenuTimeout))
@@ -157,7 +172,14 @@ func runNextBoot(args []string, stdout, stderr io.Writer) int {
 	case "previous-good":
 		t.Generation, err = nextboot.PreviousGood(m)
 	case "variant":
-		t.Generation, err = nextboot.BootsNext(uefi, inv)
+		if *genFlag >= 0 {
+			// Named by the caller, for example the generation that is running: a
+			// variant has no counter (D-C), so it needs no tries left. Check
+			// still wants the generation in the manifest and the variant's file.
+			t.Generation = *genFlag
+		} else {
+			t.Generation, err = nextboot.BootsNext(uefi, inv)
+		}
 	}
 	if err == nil {
 		err = nextboot.Check(m, uefi, inv, t)
