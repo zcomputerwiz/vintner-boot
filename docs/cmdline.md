@@ -56,6 +56,6 @@ With `--json` there is one object on stdout: `{"ok":true,"file":"…","options":
 
 ### A bad option
 
-The acceptance row is `ci/candidate-fallback` case B5: `vintner cmdline set rootfstype=vintnertestnofs` publishes generation 2, the initramfs cannot mount the root, and after three failed boots the machine is back on generation 1, whose command line does not hold the option (row C1 reads the kernel's `Command line:` of all six boots).
+The acceptance row is `ci/candidate-fallback` case B5: `vintner cmdline set rootfstype=vintnertestnofs` publishes generation 2, the initramfs cannot mount the root, and after three failed boots the machine is back on generation 1, whose command line does not hold the option (row C1 reads the command lines that the manifest records for generations 1 and 2, after the operation boot and after the sixth boot).
 
 A product that finds `failed_attempts > 0` in [`vintner status --json`](status.md) can offer to `vintner cmdline set` the old options again once it is back on the previous image.

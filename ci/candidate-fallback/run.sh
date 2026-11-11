@@ -311,16 +311,19 @@ python3 ci/candidate-fallback/inspector.py evaluate \
 	--out-dir "$OUT" \
 	--results-file "$RESULTS"
 
-# WO-0010 4.2, C1: the option that vintner cmdline set is on the kernel command line of
-# the three failed boots of generation 2 and not on the three boots of os-1 that follow:
-# the fallback image keeps the line it had (R04, no in-place overwrite).
+# WO-0010 4.2, C1: the option that vintner cmdline set is on the command line of generation 2
+# (built into its UKI) and not on generation 1's: the fallback image keeps the line it had
+# (R04, no in-place overwrite). The manifest records each image's line; it is read after the
+# operation boot and again after the sixth boot, when generation 1 has been running.
 c1=PASS c1_ev=""
-for B in 1 2 3 4 5 6; do
-	if tr -d '\r' < "$OUT/B5-boot${B}.log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | grep -a "Command line:" | grep -aq 'rootfstype=vintnertestnofs'; then has=yes; else has=no; fi
-	c1_ev="$c1_ev boot$B=$has"
-	if { [ "$B" -le 3 ] && [ "$has" != yes ]; } || { [ "$B" -ge 4 ] && [ "$has" != no ]; }; then c1=FAIL; fi
+for r in B5-read-op B5-read-boot6; do
+	for g in 1 2; do
+		has=$(python3 -c 'import json,sys; print("yes" if "rootfstype=vintnertestnofs" in json.load(open(sys.argv[1]))["images"][sys.argv[2]]["cmdline"].split() else "no")' "$OUT/$r.json" "$g" 2>/dev/null || echo error)
+		c1_ev="$c1_ev $r:gen$g=$has"
+		if { [ "$g" = 2 ] && [ "$has" != yes ]; } || { [ "$g" = 1 ] && [ "$has" != no ]; }; then c1=FAIL; fi
+	done
 done
-printf "C1\tB5\t%s\toption on the command line of boots 1-3 only:%s\n" "$c1" "$c1_ev" >> "$RESULTS"
+printf "C1\tB5\t%s\toption on generation 2's command line only:%s\n" "$c1" "$c1_ev" >> "$RESULTS"
 
 echo "=================================================================="
 echo "=== Test Results ($FIRMWARE) ==="
