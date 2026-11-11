@@ -2,7 +2,12 @@
 
 package bootstorage
 
-import "testing"
+import (
+	"errors"
+	"syscall"
+	"testing"
+	"time"
+)
 
 func TestDevice(t *testing.T) {
 	for cmdline, want := range map[string]string{
@@ -26,5 +31,39 @@ func TestESPDevice(t *testing.T) {
 		if _, err := ESPDevice(bad); err == nil {
 			t.Errorf("ESPDevice(%q) succeeded", bad)
 		}
+	}
+}
+
+// A mount that meets another holder of the same file system waits for it.
+func TestMountRetriesWhileBusy(t *testing.T) {
+	defer func(m func(string, string, string, uintptr, string) error, s func(time.Duration)) {
+		mountFn, sleepFn = m, s
+	}(mountFn, sleepFn)
+	var slept time.Duration
+	sleepFn = func(d time.Duration) { slept += d }
+
+	calls := 0
+	mountFn = func(string, string, string, uintptr, string) error {
+		calls++
+		if calls < 4 {
+			return syscall.EBUSY
+		}
+		return nil
+	}
+	if err := mountRetry("/dev/x", "/mnt", "vfat", 0, ""); err != nil || calls != 4 || slept != 3*mountWait {
+		t.Errorf("err %v after %d calls, slept %v; want success on the 4th", err, calls, slept)
+	}
+
+	calls = 0
+	mountFn = func(string, string, string, uintptr, string) error { calls++; return syscall.EBUSY }
+	if err := mountRetry("/dev/x", "/mnt", "vfat", 0, ""); !errors.Is(err, syscall.EBUSY) || calls != mountTries {
+		t.Errorf("a mount that stays busy: err %v after %d calls, want EBUSY after %d", err, calls, mountTries)
+	}
+
+	// Any other error is final.
+	calls = 0
+	mountFn = func(string, string, string, uintptr, string) error { calls++; return syscall.EPERM }
+	if err := mountRetry("/dev/x", "/mnt", "vfat", 0, ""); !errors.Is(err, syscall.EPERM) || calls != 1 {
+		t.Errorf("EPERM: err %v after %d calls, want one call", err, calls)
 	}
 }

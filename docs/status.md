@@ -64,3 +64,7 @@ Flags: `--boot-storage`, `--state-dir`, `--efivars`, `--cmdline`, `--sig-enforce
 - **BIOS.** `grub.cfg` adds `vintner.image=<dir>` to the command line of every image it boots (`os-3`, `recovery-a`, `recovery-b`), and a variant adds its own `vintner.variant=<id>`. The kernel therefore tells the image even after the bless service cleared `VINTNER_BOOTED`. A loader payload from before the token falls back to `VINTNER_BOOTED`, which names the image until bless. `failed_attempts` is the tries minus the counter's `x` count, minus one while the boot is still unblessed. `ci/bios-trial` rows B23 to B25 prove the token on GRUB.
 
 Existing BIOS installations need a refreshed loader payload to get the token.
+
+## Mounting
+
+`status` mounts boot storage read-only on demand, as `publish` mounts it read-write. The kernel cannot hold both at once, and the loser gets EBUSY. Every on-demand mount (`bootstorage.Mount`) therefore retries on EBUSY for up to five seconds before it fails, so a product that polls `status` during a kernel upgrade does not make the publish fail, and the reverse.
