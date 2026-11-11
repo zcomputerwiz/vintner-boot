@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zcomputerwiz/vintner-boot/src/internal/kcmdline"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
@@ -307,26 +308,11 @@ func versionLess(a, b string) bool {
 // (decision D-B), and the boot storage identity. The product's options must not
 // name the root or the boot storage: those two belong to vintner.
 func Cmdline(rootFSUUID, bootStoragePartUUID, product string) (string, error) {
-	var opts []string
-	for _, line := range strings.Split(product, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		for _, f := range strings.Fields(line) {
-			switch {
-			case strings.HasPrefix(f, "root=") || strings.HasPrefix(f, "vintner.bootstorage="):
-				return "", fmt.Errorf("the option %q belongs to vintner and must not be in the product's command line", f)
-			case f == "ro" || f == "rw":
-				return "", fmt.Errorf("the option %q is set by vintner (the root is mounted read-only first)", f)
-			}
-			opts = append(opts, f)
-		}
+	opts, err := kcmdline.Parse(product)
+	if err != nil {
+		return "", err
 	}
-	out := []string{"root=UUID=" + rootFSUUID, "ro"}
-	out = append(out, opts...)
-	out = append(out, "vintner.bootstorage=PARTUUID="+bootStoragePartUUID)
-	return strings.Join(out, " "), nil
+	return kcmdline.Compose("root=UUID="+rootFSUUID, "vintner.bootstorage=PARTUUID="+bootStoragePartUUID, opts)
 }
 
 // RemoveStock removes Debian's stock loader: \EFI\debian on the ESP first,
