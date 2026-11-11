@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 2.0 (November 2026)** — WO-0010 4.8:
+
+- §3 P1 menu key: F8 (or any key) on UEFI, Shift on BIOS, where GRUB cannot see F8 without a delay. No boot delay is added (R10). `ci/selection-policy` S21 and `ci/bios-trial` B26 hold both ([`menu-key.md`](menu-key.md)).
+
 **Revision 1.9 (November 2026)** — WO-0010 4.5:
 
 - §3 P1 "common status/reporting commands": `vintner status [--json]` reports each generation (state, date, ABI, variants, tries left), the booted image and its failed attempts (not counting this boot), newest and previous GOOD, health, tier, firmware and whether out-of-tree modules can load. Read-only, no lock, readable early in boot. On BIOS `grub.cfg` adds `vintner.image=<dir>` to every image it boots, so the booted image is known after bless ([`status.md`](status.md)).

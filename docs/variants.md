@@ -45,5 +45,5 @@ Booting a variant re-arms, promotes or demotes no image. A `GOOD` image stays `G
 
 ## Choosing a variant
 
-- From the boot menu: UEFI shows every variant entry in systemd-boot's menu (hold a key at start); BIOS lists them under their generation in the Shift menu.
+- From the boot menu: UEFI shows every variant entry in systemd-boot's menu (press F8 or any key at start); BIOS lists them under their generation in the Shift menu ([`menu-key.md`](menu-key.md)).
 - From the running system: `vintner next-boot variant <id>` (WO-0010 4.4) restarts into that variant of the generation that would boot next, once.
