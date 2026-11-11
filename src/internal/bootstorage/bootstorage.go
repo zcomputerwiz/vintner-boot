@@ -69,6 +69,20 @@ func MountESP(dev string) (func() error, error) {
 	return func() error { return syscall.Unmount(ESPMountPoint, 0) }, nil
 }
 
+// MountESPWritable mounts the ESP read-write at ESPMountPoint, for the one
+// command that edits loader.conf (vintner menu-timeout), and returns a function
+// that unmounts it.
+func MountESPWritable(dev string) (func() error, error) {
+	if err := os.MkdirAll(ESPMountPoint, 0o700); err != nil {
+		return nil, err
+	}
+	flags := uintptr(syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC)
+	if err := mountRetry(dev, ESPMountPoint, "vfat", flags, "umask=0077,flush"); err != nil {
+		return nil, fmt.Errorf("bootstorage: mount ESP %s: %w", dev, err)
+	}
+	return func() error { return syscall.Unmount(ESPMountPoint, 0) }, nil
+}
+
 // Test seams.
 var (
 	mountFn = syscall.Mount

@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 2.2 (November 2026)** — WO-0010 4.7:
+
+- §3 P1 and §4.1: `vintner menu-timeout [--json] [<seconds>]` shows or sets how long the menu is shown at every boot (0 to 3600, 0 hidden as installed). UEFI keeps it in the `timeout` line of the ESP's `loader.conf`, BIOS in the grubenv variable `VINTNER_TIMEOUT`, which `grub.cfg` honours after a pending `next-boot` request. Setting it removes a `LoaderConfigTimeout` that the menu keys wrote ([`menu-timeout.md`](menu-timeout.md)).
+
 **Revision 2.0 (November 2026)** — WO-0010 4.8:
 
 - §3 P1 menu key: F8 (or any key) on UEFI, Shift on BIOS, where GRUB cannot see F8 without a delay. No boot delay is added (R10). `ci/selection-policy` S21 and `ci/bios-trial` B26 hold both ([`menu-key.md`](menu-key.md)).

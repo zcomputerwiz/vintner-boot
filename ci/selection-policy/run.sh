@@ -208,6 +208,26 @@ done
 [ "$result" = PASS ] || { fail=1; echo "$SCEN: F8 did not open the menu in three boots" >&2; }
 printf '%s\t%s\t%s\t%s\n' "$SCEN" "$got" "$(listing)" "$result" | tee -a "$SUMMARY"
 
+# WO-0010 4.7: "vintner menu-timeout <n>" changes the timeout line of loader.conf (the
+# file the Go test checks against firmware/uefi/loader.conf). With "timeout 4" the menu is
+# shown without a key and the default entry boots when it runs out; with "timeout 0" no key
+# means no menu (S1 boots the same disk without one).
+set_timeout() { sed "s/^timeout 0\$/timeout $1/" firmware/uefi/loader.conf > "$OUT/loader.conf"; mcopy -o -i "$ESP" "$OUT/loader.conf" ::/loader/loader.conf; }
+new_disk "${S1[@]}"; new_vars
+set_timeout 4
+SCEN=S22-menu-timeout-shows-menu
+got=$(boot 1)
+result=PASS
+grep -aq 'os-1' "$OUT/$SCEN-boot1.log" || { result=FAIL; fail=1; echo "$SCEN: no menu with timeout 4" >&2; }
+[ "$got" = os-2 ] || { result=FAIL; fail=1; echo "$SCEN: booted '$got', expected the default os-2 after the timeout" >&2; }
+printf '%s\t%s\t%s\t%s\n' "$SCEN" "$got" "$(listing)" "$result" | tee -a "$SUMMARY"
+new_disk "${S1[@]}"; new_vars
+SCEN=S23-no-timeout-no-menu
+got=$(boot 1)
+result=PASS
+if grep -aq 'os-1' "$OUT/$SCEN-boot1.log"; then result=FAIL; fail=1; echo "$SCEN: a menu with timeout 0 and no key" >&2; fi
+printf '%s\t%s\t%s\t%s\n' "$SCEN" "$got" "$(listing)" "$result" | tee -a "$SUMMARY"
+
 # WO-0010 4.3 (D-C): a variant has no counter and a name outside "default vintner-*",
 # so the default never selects it, and with every ordinary image bad recovery A
 # still boots without input. An uncounted variant of a broken kernel would

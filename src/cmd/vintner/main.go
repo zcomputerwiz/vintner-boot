@@ -20,6 +20,8 @@ func main() {
 		cmdBootEntry(os.Args[2:])
 	case "install":
 		cmdInstall(os.Args[2:])
+	case "menu-timeout":
+		cmdMenuTimeout(os.Args[2:])
 	case "next-boot":
 		cmdNextBoot(os.Args[2:])
 	case "manifest":
@@ -43,5 +45,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless      Bless the current boot\n  install    Check a layout and install vintner onto it\n  manifest   Manage the installation manifest\n  next-boot  Choose what the next boot does, once\n  publish    Publish kernel and initramfs boot image\n  reconcile  Reconcile boot state\n  secureboot Initialize machine Secure Boot keys\n  status     Report the installation and the boot as JSON")
+	fmt.Fprintln(os.Stderr, "usage: vintner <command> [arguments]\n\nAvailable commands:\n  bless      Bless the current boot\n  install    Check a layout and install vintner onto it\n  manifest   Manage the installation manifest\n  menu-timeout  Show or set how long the boot menu is shown\n  next-boot  Choose what the next boot does, once\n  publish    Publish kernel and initramfs boot image\n  reconcile  Reconcile boot state\n  secureboot Initialize machine Secure Boot keys\n  status     Report the installation and the boot as JSON")
 }

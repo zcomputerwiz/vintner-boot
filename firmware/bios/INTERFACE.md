@@ -58,6 +58,7 @@ IDs are lower case letters, digits and `_` (they are part of GRUB variable names
 | `VINTNER_T_RA` | recovery updater, GRUB, recovery image | The same for recovery A. Recovery B has no counter |
 | `VINTNER_BOOTED` | GRUB, bless service | The image GRUB chose on this boot: `<gen>`, or `RA` for recovery A |
 | `VINTNER_NEXT` | `vintner next-boot`, GRUB | A request for the next boot only (WO-0010 4.4): `recovery`, `<gen>`, `<gen>:<id>` (a variant) or `menu:<seconds>`. GRUB removes it |
+| `VINTNER_TIMEOUT` | `vintner menu-timeout`, GRUB | The menu timeout (WO-0010 4.7): a whole number of seconds from 1 to 3600. The menu is shown for that long at every boot, then its first entry boots. Absent (or 0, which the command writes as absent) keeps the menu hidden. GRUB only reads it |
 
 A counter that is unset or not made of `x` characters counts as bad. A generation in `VINTNER_ORDER` that is not a decimal integer is skipped.
 
@@ -81,6 +82,8 @@ The last try still boots: a counter of `x` becomes `0` and the image boots once 
 ## Menu
 
 The menu is hidden, with no delay. F8 is not seen (GRUB's `keystatus` reads only Shift, Ctrl and Alt; [`docs/menu-key.md`](../../docs/menu-key.md)). Holding Shift at boot (`keystatus --shift`) shows a menu with one entry per generation in `VINTNER_ORDER`, titled by the slot's `vintner_title`, each followed by an entry for each of its variants (titled by `vintner_vtitle_<id>`: the slot's title, `: ` and the variant's title), plus recovery A and recovery B (titled by their `vintner_title`). The text matches the UEFI menu, and no entry says "vintner". A menu choice counts like an automatic boot. It also boots an image that is already bad, and still records `VINTNER_BOOTED`, as systemd-boot does on UEFI. Recovery B writes nothing. A variant entry counts nothing and writes nothing either: no counter, no `VINTNER_BOOTED` (D-D). It boots the slot's `vmlinuz` and `initrd.img` with the variant's command line from `slot.cfg`.
+
+The menu is also shown, without Shift, when `VINTNER_TIMEOUT` holds a number of seconds from 1 up ([`docs/menu-timeout.md`](../../docs/menu-timeout.md)): `grub.cfg` then sets `timeout` to it, and the first entry boots when it runs out, as for the `menu:<seconds>` request. It is checked after the request, so a pending request still boots at once and shows no menu. `ci/bios-trial` rows B27 to B29 show all three.
 
 ## Image token
 
