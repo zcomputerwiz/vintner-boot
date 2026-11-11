@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 2.1 (November 2026)** — WO-0010 4.2:
+
+- §3 P1 kernel command line (D-B): `/etc/kernel/cmdline` is read at every publish and composes the new image's line (`root=… ro <options> vintner.bootstorage=…`), replacing what the earlier line carried; without the file the earlier line is carried forward. The file may not name `root=`, `ro`/`rw` or `vintner.*`. `vintner cmdline show|set [--json]` edits it and publishes a generation for the running kernel, so a bad option is a `TRYING` image that falls back ([`cmdline.md`](cmdline.md)). `ci/candidate-fallback` B5 and C1 show the fallback.
+
 **Revision 2.0 (November 2026)** — WO-0010 4.8:
 
 - §3 P1 menu key: F8 (or any key) on UEFI, Shift on BIOS, where GRUB cannot see F8 without a delay. No boot delay is added (R10). `ci/selection-policy` S21 and `ci/bios-trial` B26 hold both ([`menu-key.md`](menu-key.md)).
