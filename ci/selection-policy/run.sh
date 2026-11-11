@@ -200,7 +200,7 @@ f8_keys() {
 }
 SCEN=S21-f8-shows-menu
 result=FAIL got=-
-for try in 1 2 3; do
+for _ in 1 2 3; do
 	new_disk "${S1[@]}"; new_vars
 	got=$(QMP=1 boot 1 < <(f8_keys))
 	if grep -aq 'os-1' "$OUT/$SCEN-boot1.log"; then result=PASS; break; fi
