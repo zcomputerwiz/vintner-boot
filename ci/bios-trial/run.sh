@@ -386,6 +386,20 @@ slot_cfg_variant "$BS" os-2 os-2
 boot qmp < <(variant_keys down ret)
 expect "image token" "$(image_of "$OUT/B25-image-token-variant-boot1.log")" os-2
 end "os-2-safe"
+
+# WO-0010 4.8: GRUB's keystatus reads only Shift, Ctrl and Alt, and a hidden menu with no
+# delay never waits for a key, so F8 (pressed for the first 20 s) does not open the menu
+# on BIOS: the newest image boots at once. Shift is the BIOS menu key (B8); docs/menu-key.md.
+begin B26-f8-does-not-open-menu-on-bios
+set_env "VINTNER_ORDER=2 1" VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+f8_keys() {
+	echo '{"execute":"qmp_capabilities"}'
+	for _ in $(seq 100); do key f8 true; key f8 false; sleep 0.2; done
+}
+boot qmp < <(f8_keys)
+sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$OUT/B26-f8-does-not-open-menu-on-bios-boot1.log" | grep -aq 'Recovery Console (backup)' && menu=shown || menu=hidden
+expect "menu after F8" "$menu" hidden
+end "os-2"
 slot_cfg "$BS" os-2 os-2 poweroff
 # What a power cut during grub-editenv (O_TRUNC) can leave behind.
 begin B9-empty-grubenv; EXPECT_ERR=1 # GRUB reports the bad block

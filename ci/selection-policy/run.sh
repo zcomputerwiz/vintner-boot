@@ -187,6 +187,20 @@ got=$(QMP=1 boot 1 < <(keys))
 grep -aq 'os-1' "$OUT/$SCEN-boot1.log" && menu=shown || menu="not shown"
 printf '%s (menu %s)\t%s\t%s\tOBSERVED\n' "$SCEN" "$menu" "$got" "$(listing)" | tee -a "$SUMMARY"
 
+# WO-0010 4.8: F8 opens the menu on UEFI, as the documented menu key (docs/menu-key.md).
+# systemd-boot shows it for any key pressed at start while "timeout 0" keeps it hidden otherwise.
+f8_keys() {
+	echo '{"execute":"qmp_capabilities"}'
+	for _ in $(seq 60); do key f8; sleep 0.25; done
+	sleep 5; key ret; sleep 120
+}
+new_disk "${S1[@]}"; new_vars
+SCEN=S21-f8-shows-menu
+got=$(QMP=1 boot 1 < <(f8_keys))
+result=PASS
+grep -aq 'os-1' "$OUT/$SCEN-boot1.log" || { result=FAIL; fail=1; echo "$SCEN: F8 did not open the menu" >&2; }
+printf '%s\t%s\t%s\t%s\n' "$SCEN" "$got" "$(listing)" "$result" | tee -a "$SUMMARY"
+
 # WO-0010 4.3 (D-C): a variant has no counter and a name outside "default vintner-*",
 # so the default never selects it, and with every ordinary image bad recovery A
 # still boots without input. An uncounted variant of a broken kernel would
