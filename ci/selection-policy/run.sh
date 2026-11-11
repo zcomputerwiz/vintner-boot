@@ -191,18 +191,18 @@ printf '%s (menu %s)\t%s\t%s\tOBSERVED\n' "$SCEN" "$menu" "$got" "$(listing)" | 
 # systemd-boot shows it for any key pressed at start while "timeout 0" keeps it hidden otherwise.
 # A boot takes a few seconds and a key press that lands before or after the loader reads
 # the keyboard is lost (S13 sees the same), so F8 is pressed again and again
-# and up to eight boots are tried. Each boot that shows the menu proves the key; none does
+# and up to eight boots are tried, each at another press interval (the same press rate can miss the loader eight times running on a loaded runner). Each boot that shows the menu proves the key; none does
 # when no key is sent (checked by removing the presses).
-f8_keys() {
+f8_keys() { # interval between presses: a different phase against the loader each boot
 	echo '{"execute":"qmp_capabilities"}'
-	for _ in $(seq 150); do key f8; sleep 0.1; done
+	for _ in $(seq 100); do key f8; sleep "$1"; done
 	sleep 5; key ret; sleep 120
 }
 SCEN=S21-f8-shows-menu
 result=FAIL got=-
-for _ in 1 2 3 4 5 6 7 8; do
+for rate in 0.25 0.1 0.17 0.3 0.13 0.2 0.08 0.35; do
 	new_disk "${S1[@]}"; new_vars
-	got=$(QMP=1 boot 1 < <(f8_keys))
+	got=$(QMP=1 boot 1 < <(f8_keys "$rate"))
 	if grep -aq 'os-1' "$OUT/$SCEN-boot1.log"; then result=PASS; break; fi
 done
 [ "$result" = PASS ] || { fail=1; echo "$SCEN: F8 did not open the menu in eight boots" >&2; }
