@@ -221,6 +221,10 @@ def parse_fsck_anomalies(text):
     nonfatal_patterns = [
         r"^Free cluster summary wrong\s*\(\d+\s+vs\.\s+really\s+\d+\)",
         r"^Reclaimed\s+\d+\s+unused cluster.*",
+        # A power cut between the writes of the two FAT copies: fsck says the file
+        # system is intact and uses the first copy, as a mount does.
+        r"^FATs differ but appear to be intact\.",
+        r"^Using first FAT\.",
     ]
     fatal = []
     nonfatal = []
