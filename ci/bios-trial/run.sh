@@ -365,6 +365,30 @@ grep -aq 'Recovery Console (backup)' "$OUT/B22-next-menu-boot2.log" && menu=show
 expect "menu on the second boot" "$menu" "not shown"
 end "os-2 os-2"
 
+# WO-0010 4.7: "vintner menu-timeout <n>" leaves VINTNER_TIMEOUT=<n> in the grubenv. The
+# menu is then shown for n seconds at every boot and its first entry boots; absent or 0
+# keeps it hidden. A pending request (VINTNER_NEXT) boots at once and shows no menu.
+menu_shown() { grep -aq 'Recovery Console (backup)' "$1" && echo shown || echo "not shown"; }
+begin B27-menu-timeout
+set_env "VINTNER_ORDER=2 1" VINTNER_TIMEOUT=3 VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+boot
+expect "menu on the first boot" "$(menu_shown "$OUT/B27-menu-timeout-boot1.log")" shown
+expect grubenv "$(vars)" "VINTNER_BOOTED=2;$O;VINTNER_TIMEOUT=3;VINTNER_T_1=xxx;VINTNER_T_2=xx;VINTNER_T_RA=xxx"
+bless
+boot
+expect "menu on the second boot" "$(menu_shown "$OUT/B27-menu-timeout-boot2.log")" shown
+end "os-2 os-2"
+begin B28-menu-timeout-zero
+set_env "VINTNER_ORDER=2 1" VINTNER_TIMEOUT=0 VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+boot
+expect "menu" "$(menu_shown "$OUT/B28-menu-timeout-zero-boot1.log")" "not shown"
+end "os-2"
+begin B29-next-boot-beats-menu-timeout
+set_env "VINTNER_ORDER=2 1" VINTNER_TIMEOUT=3 VINTNER_NEXT=recovery VINTNER_T_2=xxx VINTNER_T_1=xxx VINTNER_T_RA=xxx
+boot
+expect "menu" "$(menu_shown "$OUT/B29-next-boot-beats-menu-timeout-boot1.log")" "not shown"
+end "ra"
+
 # WO-0010 4.5: every image GRUB boots gets "vintner.image=<dir>" on its command line, so
 # "vintner status" can tell which image booted after the bless service has cleared
 # VINTNER_BOOTED. The test initramfs prints the token it saw.

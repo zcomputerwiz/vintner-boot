@@ -385,6 +385,10 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 2.2 (November 2026)** — WO-0010 4.7:
+
+- §3 P1 and §4.1: `vintner menu-timeout [--json] [<seconds>]` shows or sets how long the menu is shown at every boot (0 to 3600, 0 hidden as installed). UEFI keeps it in the `timeout` line of the ESP's `loader.conf`, BIOS in the grubenv variable `VINTNER_TIMEOUT`, which `grub.cfg` honours after a pending `next-boot` request. Setting it removes a `LoaderConfigTimeout` that the menu keys wrote ([`menu-timeout.md`](menu-timeout.md)).
+
 **Revision 2.1 (November 2026)** — WO-0010 4.2:
 
 - §3 P1 kernel command line (D-B): `/etc/kernel/cmdline` is read at every publish and composes the new image's line (`root=… ro <options> vintner.bootstorage=…`), replacing what the earlier line carried; without the file the earlier line is carried forward. The file may not name `root=`, `ro`/`rw` or `vintner.*`. `vintner cmdline show|set [--json]` edits it and publishes a generation for the running kernel, so a bad option is a `TRYING` image that falls back ([`cmdline.md`](cmdline.md)). `ci/candidate-fallback` B5 and C1 show the fallback.

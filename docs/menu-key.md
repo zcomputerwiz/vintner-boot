@@ -24,3 +24,5 @@ Adding F8 on BIOS would need a GRUB module of our own that polls the keyboard wi
 ## Without a key
 
 `vintner next-boot menu` shows the menu on the next boot without any key ([`next-boot.md`](next-boot.md)). It is the way for a product that cannot rely on the user's timing.
+
+`vintner menu-timeout <seconds>` makes the menu show at every boot for that long, with no key ([`menu-timeout.md`](menu-timeout.md)); 0, the installed setting, keeps it hidden.
