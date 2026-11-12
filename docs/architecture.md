@@ -385,6 +385,8 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 2.3 (November 2026)** — WO-0010 4.7 fix: a read-only mount of boot storage or the ESP that another holder has mounted read-write no longer fails with EBUSY; vintner binds the existing mount read-only (found by Wine Explorer: `vintner menu-timeout` failed on every install whose ESP is mounted rw, [`status.md`](status.md)).
+
 **Revision 2.2 (November 2026)** — WO-0010 4.7:
 
 - §3 P1 and §4.1: `vintner menu-timeout [--json] [<seconds>]` shows or sets how long the menu is shown at every boot (0 to 3600, 0 hidden as installed). UEFI keeps it in the `timeout` line of the ESP's `loader.conf`, BIOS in the grubenv variable `VINTNER_TIMEOUT`, which `grub.cfg` honours after a pending `next-boot` request. Setting it removes a `LoaderConfigTimeout` that the menu keys wrote ([`menu-timeout.md`](menu-timeout.md)).
