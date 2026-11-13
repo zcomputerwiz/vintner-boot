@@ -386,10 +386,6 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
-**Revision 2.1 (November 2026)** — WO-0010 4.2:
-
-- §3 P1 kernel command line (D-B): `/etc/kernel/cmdline` is read at every publish and composes the new image's line (`root=… ro <options> vintner.bootstorage=…`), replacing what the earlier line carried; without the file the earlier line is carried forward. The file may not name `root=`, `ro`/`rw` or `vintner.*`. `vintner cmdline show|set [--json]` edits it and publishes a generation for the running kernel, so a bad option is a `TRYING` image that falls back ([`cmdline.md`](cmdline.md)). `ci/candidate-fallback` B5 and C1 show the fallback.
-
 **Revision 2.6 (November 2026)** — WO-0010 Phase 4 note: §12 risk 6 records the watchdog behaviour measured on QEMU (OVMF resets a hung kernel after 45–60 s through the TCO watchdog; SeaBIOS does not), as measured on that VM only, not a guarantee.
 
 **Revision 2.5 (November 2026)** — WO-0010 Phase 4 note: architecture §5 records where `update-grub` and its kernel hooks come from (`grub2-common`, not `grub-common`), so `grub-common` for `grub-mkimage` is safe and needs no `Conflicts`.
