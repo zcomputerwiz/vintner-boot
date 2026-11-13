@@ -316,7 +316,7 @@ Backend interface (semantics, not final API signatures): `list_images`, `publish
 3. **GRUB BIOS state robustness:** the write location is now fixed (boot storage partition, §4). The trial and fallback logic in `firmware/bios/grub.cfg` passes `ci/bios-trial` on Debian's GRUB 2.12-9+deb13u2. A 1 KiB block torn across its two 512-byte sectors loads without error and mixes any variable that straddles them, so `firmware/bios/INTERFACE.md` keeps every variable in the first sector. Power cuts on real hardware, including whether its sector writes are atomic, are still unverified.
 4. **Kernel/module coherence:** prior kernel rollback with mutable root may fail after `apt` removes modules or DKMS, a same-ABI revision or firmware updates change the tree in place; §6.1 limits v1 to detection, package pinning and different-ABI fallback. Per-image module snapshots or full root snapshots/slots are the upgrade path.
 5. **Recovery longevity:** independent recovery on same disk does not survive complete disk failure; offer external rescue media and documented firmware-entry reconstruction.
-6. **Unattended reboot on hang:** boot counter cannot advance if a hung machine never restarts; watch the availability of watchdogs and document fallback limitations.
+6. **Unattended reboot on hang:** boot counter cannot advance if a hung machine never restarts; watch the availability of watchdogs and document fallback limitations. Measured by the Wine Explorer integration on 2026-11-12 (Debian kernel 6.12.116, systemd 257.13, OVMF 2025.02-8+deb13u1, `RuntimeWatchdogSec=0`), on QEMU q35 only: the chipset's TCO watchdog (`iTCO_wdt`) is fed by the kernel from early boot, and once the kernel hangs or panics (even with `kernel.panic=0`) the OVMF VM is reset after 45–60 s, so the try is spent and the counter advances. Under SeaBIOS a panic was still waiting after 75 s, and stopping the timer made a UEFI panic wait longer than 120 s. So a hang falls back by itself only where the platform's watchdog is running at boot; vintner does not arm one, and real hardware, whose firmware may leave the TCO halted, is unverified. Do not rely on it: a machine that never restarts needs the user's power button.
 7. **Windows dual boot:** some firmware resets boot order or Windows servicing adjusts ESP entries; never overwrite `\EFI\Microsoft\Boot` or automatic Windows boot entries. Firmware/NVRAM resilience tests required.
 8. **Boot platform safety vs freezes:** immutable baseline avoids accidental changes but may accumulate vulnerabilities and revocations. Signed, rollback-safe, intentionally invoked platform updates are required.
 9. **Shared BLS namespace:** systemd-boot scans `/loader/entries/` and `/EFI/Linux/` on the ESP and XBOOTLDR for every installed OS and tool, and only one `loader.conf` exists per ESP. Another systemd-boot-based OS on the same ESP would contend for `loader.conf`; v1 detects and reports this rather than supporting it.
@@ -385,6 +385,12 @@ The project's first release should be judged on unattended installation, autonom
 | D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 2.1 (November 2026)** — WO-0010 4.2:
+
+- §3 P1 kernel command line (D-B): `/etc/kernel/cmdline` is read at every publish and composes the new image's line (`root=… ro <options> vintner.bootstorage=…`), replacing what the earlier line carried; without the file the earlier line is carried forward. The file may not name `root=`, `ro`/`rw` or `vintner.*`. `vintner cmdline show|set [--json]` edits it and publishes a generation for the running kernel, so a bad option is a `TRYING` image that falls back ([`cmdline.md`](cmdline.md)). `ci/candidate-fallback` B5 and C1 show the fallback.
+
+**Revision 2.6 (November 2026)** — WO-0010 Phase 4 note: §12 risk 6 records the watchdog behaviour measured on QEMU (OVMF resets a hung kernel after 45–60 s through the TCO watchdog; SeaBIOS does not), as measured on that VM only, not a guarantee.
 
 **Revision 2.5 (November 2026)** — WO-0010 Phase 4 note: architecture §5 records where `update-grub` and its kernel hooks come from (`grub2-common`, not `grub-common`), so `grub-common` for `grub-mkimage` is safe and needs no `Conflicts`.
 
