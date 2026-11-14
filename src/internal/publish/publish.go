@@ -610,8 +610,8 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		return nil, fmt.Errorf("boot storage partuuid mismatch: manifest=%s, cmdline=%s", m.BootStorage.PartUUID, bsPartUUID)
 	}
 
-	if m.SecureBootTier != "none" && m.SecureBootTier != "A" {
-		return nil, fmt.Errorf("unsupported secure boot tier %q (only \"none\" and \"A\" supported)", m.SecureBootTier)
+	if m.SecureBootTier != "none" && !manifest.SignedTier(m.SecureBootTier) {
+		return nil, fmt.Errorf("unsupported secure boot tier %q (only \"none\", \"A\" and \"B\" supported)", m.SecureBootTier)
 	}
 
 	// 4. Reconcile.
@@ -810,7 +810,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 
 	// 8. Build the image files under /var/tmp/.
 	var sbKeyPath, sbCertPath string
-	if m.SecureBootTier == "A" {
+	if manifest.SignedTier(m.SecureBootTier) {
 		sbDir := opts.SecureBootDir
 		if sbDir == "" {
 			sbDir = "/etc/vintner/secureboot"
@@ -1029,7 +1029,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 			Entry:  fmt.Sprintf("vintner-os-%d", g),
 			SHA256: ukiSHA,
 			Size:   ukiSize,
-			Signed: m.SecureBootTier == "A",
+			Signed: manifest.SignedTier(m.SecureBootTier),
 		}
 	}
 	for _, wv := range wantVariants {
@@ -1037,7 +1037,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		if isUEFI {
 			for _, bv := range builtVariants {
 				if bv.v.ID == wv.ID {
-					rec.UEFI = &manifest.UEFIFile{Entry: bls.VariantStem(g, wv.ID), SHA256: bv.sha, Size: bv.size, Signed: m.SecureBootTier == "A"}
+					rec.UEFI = &manifest.UEFIFile{Entry: bls.VariantStem(g, wv.ID), SHA256: bv.sha, Size: bv.size, Signed: manifest.SignedTier(m.SecureBootTier)}
 				}
 			}
 		}
@@ -1192,7 +1192,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
-	if m.SecureBootTier == "A" && isUEFI {
+	if manifest.SignedTier(m.SecureBootTier) && isUEFI {
 		if err := verifier.Verify(ctx, stagedUKI, sbCertPath); err != nil {
 			return nil, cleanupStagingAndRefuse(fmt.Errorf("signature check failed: %w", err))
 		}

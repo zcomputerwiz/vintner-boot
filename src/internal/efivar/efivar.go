@@ -26,6 +26,10 @@ const (
 	// ImageSecurityDatabase GUID: the variables db and dbx.
 	ImageSecurityDatabase GUID = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
 
+	// ShimLock GUID (SHIM_LOCK_GUID): shim's variables, MokNew, MokAuth,
+	// MokTimeout and MokListRT among them.
+	ShimLock GUID = "605dab50-e046-4300-abb6-3dd810dd8b23"
+
 	// FS_IOC_GETFLAGS and FS_IOC_SETFLAGS from linux/fs.h
 	fsIocGetFlags = 0x80086601
 	fsIocSetFlags = 0x40086602

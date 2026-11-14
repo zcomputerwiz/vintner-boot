@@ -48,7 +48,7 @@ type fakeVerifier struct{ checked []string }
 
 func (v *fakeVerifier) Verify(_ context.Context, file, cert string) error {
 	v.checked = append(v.checked, filepath.Base(file))
-	if base := filepath.Base(file); base != "loader.efi" && base != "systemd-bootx64.efi" {
+	if base := filepath.Base(file); base != "loader.efi" && base != "systemd-bootx64.efi" && base != "grubx64.efi" {
 		return nil
 	}
 	b, err := os.ReadFile(file)
@@ -200,7 +200,7 @@ func TestInstallTierARefusesBeforeWritingAnything(t *testing.T) {
 		setup func(*env, *FullOptions)
 		want  string
 	}{
-		"tier B": {func(_ *env, f *FullOptions) { f.SecureBootTier = "B" }, "not implemented"},
+		"tier C": {func(_ *env, f *FullOptions) { f.SecureBootTier = "C" }, "not implemented"},
 		"no sbsign": {func(_ *env, f *FullOptions) {
 			f.LookPath = func(n string) (string, error) {
 				if n == "sbsign" {

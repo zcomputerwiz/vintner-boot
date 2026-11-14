@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
@@ -50,9 +51,10 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	recA := fs.String("recovery-cmdline-a", "", "extra kernel options for recovery A, for example a serial console")
 	recB := fs.String("recovery-cmdline-b", "", "extra kernel options for recovery B")
 	recTitle := fs.String("recovery-title", "", "the product's name for the recovery image in the boot menus (default \"Recovery Console\"; recovery B adds \" (backup)\")")
-	sbTier := fs.String("secure-boot", "none", "Secure Boot tier: none, or A (a machine key in the firmware's db, no shim): creates the key, signs the loader and the recovery images")
+	sbTier := fs.String("secure-boot", "none", "Secure Boot tier: none; A (a machine key in the firmware's db, no shim); or B (the machine key in shim's MOK list, confirmed once at the console in MokManager). A and B create the key, sign the loader and the recovery images")
 	sbDir := fs.String("secure-boot-dir", "", "where the machine key is kept (default <target>/etc/vintner/secureboot)")
-	sbEnrolled := fs.Bool("secure-boot-enrolled", false, "tier A: the machine certificate is in the firmware's db (use when the installer cannot read the firmware's variables)")
+	sbEnrolled := fs.Bool("secure-boot-enrolled", false, "the machine certificate is in the firmware's db (tier A) or shim's MOK list (tier B); use when the installer cannot read the firmware's variables")
+	mokPasswordFile := fs.String("mok-password-file", "", "tier B: a file holding the one-time password for MokManager (default: vintner install makes one and prints it)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -115,12 +117,22 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	mokPassword := ""
+	if *mokPasswordFile != "" {
+		b, err := os.ReadFile(*mokPasswordFile)
+		if err != nil {
+			fmt.Fprintf(stderr, "vintner install: %v\n", err)
+			return 1
+		}
+		mokPassword = strings.TrimRight(string(b), "\r\n")
+	}
+
 	// Deploy.
 	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, UpdateInitramfs: *updateInitramfs, Options: install.Options{
 		Firmware: *firmware, Layout: l, Payload: pl,
 		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
 		EFIVarDir: *efivars, NoEFIVars: *efivars == "none", RecoveryExtraA: *recA, RecoveryExtraB: *recB, RecoveryTitle: *recTitle,
-		SecureBootTier: *sbTier, SecureBootDir: *sbDir, SecureBootEnrolled: *sbEnrolled,
+		SecureBootTier: *sbTier, SecureBootDir: *sbDir, SecureBootEnrolled: *sbEnrolled, MOKPassword: mokPassword,
 		Log: stdout,
 	}}
 	if *firmware != "bios" && opts.ESPDir == "" {
@@ -167,11 +179,17 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		}
 		return 1
 	}
-	if *sbTier == "A" {
-		if *sbDir == "" {
-			*sbDir = filepath.Join(*target, "etc", "vintner", "secureboot")
-		}
+	if *sbDir == "" {
+		*sbDir = filepath.Join(*target, "etc", "vintner", "secureboot")
+	}
+	switch res.Manifest.SecureBootTier {
+	case "A":
 		fmt.Fprintf(stdout, "Secure Boot tier A: the machine certificate is %s; out-of-tree kernel modules cannot load with Secure Boot on (no shim, no MOK list)\n", filepath.Join(*sbDir, "cert.der"))
+	case "B":
+		fmt.Fprintf(stdout, "Secure Boot tier B: the machine certificate is %s\n", filepath.Join(*sbDir, "cert.der"))
+		if res.MOKPassword != "" {
+			printMOKRequest(stdout, res.MOKPassword, *mokPasswordFile != "")
+		}
 	}
 	fmt.Fprintf(stdout, "installed: %d changes; installation %s; generation 1 is TRYING and is blessed GOOD by the first boot that reaches boot-complete.target\n", len(res.Changed), res.Manifest.InstallationID)
 	return 0

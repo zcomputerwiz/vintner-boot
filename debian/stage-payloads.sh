@@ -27,6 +27,38 @@ done
 cp "$SDB/systemd-bootx64.efi" "$SDB/linuxx64.efi.stub" "$P/uefi/"
 cp firmware/uefi/loader.conf "$P/uefi/"
 
+# Secure Boot tier B (docs/secure-boot.md §8.2): Debian's Microsoft-signed shim
+# and MokManager, unchanged. They come from the trixie packages, unpacked and not
+# installed: shim-signed's maintainer scripts run grub-install, and
+# vintner-platform conflicts with it. Each .deb is checked against the SHA256 in
+# the Packages index, as recovery/build.sh fetches its packages. Set
+# VINTNER_SHIM_DIR to a directory that already holds shimx64.efi.signed,
+# mmx64.efi.signed and a versions file to use those instead.
+if [ -n "${VINTNER_SHIM_DIR:-}" ]; then
+	S=$VINTNER_SHIM_DIR
+else
+	S=debian/build/shim
+	MIRROR=${VINTNER_MIRROR:-https://deb.debian.org/debian}
+	rm -rf "$S" && mkdir -p "$S/root"
+	curl -sSfL "$MIRROR/dists/trixie/main/binary-amd64/Packages.xz" | xz -dc > "$S/Packages"
+	: > "$S/versions"
+	for pkg in shim-signed shim-helpers-amd64-signed; do
+		field() { awk -v p="$pkg" -v f="$1:" '$1=="Package:"{cur=$2} cur==p && $1==f{print $2; exit}' "$S/Packages"; }
+		fn=$(field Filename)
+		[ -n "$fn" ] || { echo "stage-payloads: no $pkg in trixie" >&2; exit 1; }
+		curl -sSfL "$MIRROR/$fn" -o "$S/$pkg.deb"
+		echo "$(field SHA256)  $S/$pkg.deb" | sha256sum -c --quiet || { echo "stage-payloads: $pkg.deb does not match the Packages index" >&2; exit 1; }
+		dpkg-deb -x "$S/$pkg.deb" "$S/root"
+		echo "$pkg $(field Version)" >> "$S/versions"
+	done
+	cp "$S/root/usr/lib/shim/shimx64.efi.signed" "$S/root/usr/lib/shim/mmx64.efi.signed" "$S/"
+fi
+for f in shimx64.efi.signed mmx64.efi.signed versions; do
+	[ -s "$S/$f" ] || { echo "stage-payloads: $S/$f not found" >&2; exit 1; }
+done
+cp "$S/shimx64.efi.signed" "$P/uefi/shimx64.efi"
+cp "$S/mmx64.efi.signed" "$P/uefi/mmx64.efi"
+
 # BIOS: what `grub-mkimage -d` reads to build a core.img whose early config names
 # the boot storage UUID (unknowable here): the three images core.img is made of,
 # boot.img for the boot sector, moddep.lst and the modules; plus the static
@@ -57,6 +89,7 @@ done
 	for pkg in systemd-boot-efi grub-pc-bin; do
 		echo "$pkg $(dpkg-query -W -f='${Version}' "$pkg")"
 	done
+	cat "$S/versions"
 	echo "recovery:"
 	sed 's/^/  /' "$P/recovery/versions.txt"
 } > "$P/VERSIONS"

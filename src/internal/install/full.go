@@ -207,6 +207,8 @@ func Resume(ctx context.Context, f FullOptions) (*Result, error) {
 		return step(d.fail("check", errors.New("the manifest on boot storage belongs to another layout or firmware")))
 	}
 	d.m = m
+	// The tier is the one Install recorded, whatever the command line says now.
+	d.SecureBootTier = m.SecureBootTier
 	if d.uefi {
 		if l.ESP == nil || o.ESPDir == "" {
 			return step(d.fail("check", errors.New("an ESP and its mount directory are required for uefi")))
@@ -214,7 +216,9 @@ func Resume(ctx context.Context, f FullOptions) (*Result, error) {
 		if err := checkWritable(o.ESPDir); err != nil {
 			return step(d.fail("check", fmt.Errorf("the ESP: %w", err)))
 		}
-		d.espFiles["EFI/vintner/systemd-bootx64.efi"] = payload.SystemdBoot
+		for _, f := range d.loaderFiles() {
+			d.espFiles[f.rel] = f.payload
+		}
 		d.espFiles["loader/loader.conf"] = payload.LoaderConf
 		if err := d.loadSignedLoader(ctx); err != nil {
 			return step(d.fail("check", err))

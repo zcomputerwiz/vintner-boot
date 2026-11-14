@@ -27,6 +27,8 @@ const (
 	SystemdBoot  = "uefi/systemd-bootx64.efi"
 	Stub         = "uefi/linuxx64.efi.stub"
 	LoaderConf   = "uefi/loader.conf"
+	Shim         = "uefi/shimx64.efi" // Debian's Microsoft-signed shim (Secure Boot tier B)
+	MokManager   = "uefi/mmx64.efi"   // MokManager, signed for shim (tier B)
 	GrubDir      = "bios/i386-pc"
 	GrubCfg      = "bios/grub.cfg"
 	CoreModules  = "bios/core-modules.txt"
@@ -38,7 +40,7 @@ const (
 // Required lists the files a payload directory must hold (the MANIFEST and
 // VERSIONS are checked separately).
 var Required = []string{
-	SystemdBoot, Stub, LoaderConf,
+	SystemdBoot, Stub, LoaderConf, Shim, MokManager,
 	GrubDir + "/boot.img", GrubDir + "/diskboot.img", GrubDir + "/kernel.img", GrubDir + "/lzma_decompress.img", GrubDir + "/moddep.lst",
 	GrubCfg, CoreModules, RecoveryKern, RecoveryInit, RecoveryVer,
 }
