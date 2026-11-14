@@ -9,6 +9,8 @@ What `debian/` builds and why (WO-0010 2.1 to 2.4). The packages build with `dpk
 | `/usr/sbin/vintner` | the static binary (`CGO_ENABLED=0`, ADR-0002) |
 | `/etc/kernel/postinst.d/zz-vintner` | kernel hook: `vintner publish --kernel` |
 | `/etc/initramfs/post-update.d/zz-vintner` | initramfs hook: publish after an initramfs update |
+| `/etc/kernel/header_postinst.d/zz-vintner` | headers hook: publish after DKMS built modules for an installed kernel with `dkms autoinstall` (WO-0010 5.3) |
+| `/etc/dkms/framework.conf.d/vintner-publish.conf`, `/usr/lib/vintner/dkms-post-transaction` | DKMS `post_transaction`: publish after `dkms install`, `remove`, `unbuild` and `uninstall` (WO-0010 5.3) |
 | `/usr/share/initramfs-tools/hooks/plymouth-vintner` | puts the Plymouth theme into the initramfs (a package ships hooks here, not in `/etc/initramfs-tools/hooks/`) |
 | `/usr/lib/systemd/system/vintner-bless.service` | blesses the boot after `boot-complete.target`; enabled for `basic.target`, not started by the postinst |
 | `/etc/systemd/system/systemd-bless-boot.service`, `.../systemd-boot-update.service` | symlinks to `/dev/null` (masks) |

@@ -103,7 +103,7 @@ boot_sb() {
 		-global driver=cfi.pflash01,property=secure,value=on \
 		-drive "if=pflash,format=raw,unit=0,readonly=on,file=$SECBOOT_CODE" \
 		-drive "if=pflash,format=raw,unit=1,file=$vars" \
-		-drive "file=$DISK,format=raw,if=virtio" "${seedargs[@]}" \
+		-drive "file=${BOOT_DISK:-$DISK},format=raw,if=virtio" "${seedargs[@]}" \
 		-nic "user,model=virtio-net-pci" || rc=$?
 	return "$rc"
 }
@@ -205,6 +205,179 @@ else
 	row T3-boots-enforced-and-healthy FAIL "$evidence"
 fi
 
+# --- T4 to T6: out-of-tree modules (WO-0010 5.3) --------------------------------
+# DKMS builds a module in the installed system, signs it with the machine key (the
+# drop-in `vintner install` wrote), and the rebuild leads to a newly published
+# generation. Debian 13's kernel then loads it with Secure Boot on: in tier B
+# because the key is a MOK, and with the firmware trusting only db (tier A's
+# setup) because the module check falls back to the platform keyring.
+# The guest expands everything in these scripts, not this one.
+IFS= read -r -d '' GUEST_LIB <<'EOS' || true
+P() { echo "$*" > /dev/ttyS0; }
+systemctl mask --now serial-getty@ttyS0.service >/dev/null 2>&1
+export DEBIAN_FRONTEND=noninteractive
+mountpoint -q /sys/firmware/efi/efivars || mount -t efivarfs efivarfs /sys/firmware/efi/efivars
+ABI=$(uname -r)
+for i in $(seq 120); do s=$(systemctl show -p ActiveState --value vintner-bless.service); [ "$s" = active ] || [ "$s" = failed ] && break; sleep 1; done
+vstat() {
+  /usr/sbin/vintner status --json > /tmp/st.json 2>/tmp/st.err
+  python3 - "$1" <<'PY' > /dev/ttyS0
+import json, sys
+p = sys.argv[1]
+r = json.load(open("/tmp/st.json"))
+print(p + "-GENS: " + ";".join("%d:%s:%s:%s" % (g["generation"], g["state"], "stale" if g["stale"] else "fresh", g["abi"]) for g in r["generations"]))
+print(p + "-HEALTH: " + ("|".join(r["health"]) or "-"))
+m = r["modules"]
+print(p + "-MODULES: %s %s %s" % (m["out_of_tree"], str(m.get("requires_signature")).lower(), m.get("reason", "")))
+PY
+}
+common() {
+  P "SB-STATE: $(od -An -tu1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c | tr -d ' ')"
+  P "KERNEL-SB: $(dmesg | grep -m1 -o 'secureboot: Secure boot [a-z]*')"
+  P "SIG-ENFORCE: $(cat /sys/module/module/parameters/sig_enforce)"
+  P "MOKVARS: $(ls /sys/firmware/efi/efivars | grep -ci '^mok')"
+  grep -E '\.(platform|machine):' /proc/keys | sed 's/^[0-9a-f]* *[^ ]* *[^ ]* *[^ ]* *[^ ]* *[0-9]* *[0-9]* *//; s/^/KEYRING: /' > /dev/ttyS0
+}
+loadtest() {
+  modprobe vintner_test > /tmp/mp.log 2>&1; P "MODPROBE-RC: $?"
+  P "MODPROBE-LOG: $(tr '\n' ' ' < /tmp/mp.log)"
+  P "LSMOD: $(lsmod | grep -c '^vintner_test')"
+  P "DMESG: $(dmesg | grep -m1 'vintner_test: loaded')"
+}
+EOS
+IFS= read -r -d '' GUEST_T4 <<'EOS' || true
+P "=== T4-BEGIN"
+vstat PRE
+apt-get update -q > /tmp/apt.log 2>&1
+apt-get install -y -q dkms build-essential "linux-headers-$ABI" >> /tmp/apt.log 2>&1; P "APT-RC: $?"
+tail -3 /tmp/apt.log | sed 's/^/APT-LOG: /' > /dev/ttyS0
+vstat MID
+mkdir -p /usr/src/vintner-test-1.0
+cat > /usr/src/vintner-test-1.0/dkms.conf <<'EOF'
+PACKAGE_NAME="vintner-test"
+PACKAGE_VERSION="1.0"
+BUILT_MODULE_NAME[0]="vintner_test"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+AUTOINSTALL="yes"
+EOF
+printf 'obj-m := vintner_test.o\nKDIR := /lib/modules/$(kernelver)/build\nall:\n\t$(MAKE) -C $(KDIR) M=$(CURDIR) modules\nclean:\n\t$(MAKE) -C $(KDIR) M=$(CURDIR) clean\n' > /usr/src/vintner-test-1.0/Makefile
+cat > /usr/src/vintner-test-1.0/vintner_test.c <<'EOF'
+#include <linux/module.h>
+#include <linux/init.h>
+static int __init vt_init(void) { pr_info("vintner_test: loaded\n"); return 0; }
+static void __exit vt_exit(void) { pr_info("vintner_test: unloaded\n"); }
+module_init(vt_init);
+module_exit(vt_exit);
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("vintner DKMS test module");
+EOF
+P "DROPIN: $(grep -c '^mok_' /etc/dkms/framework.conf.d/vintner-secureboot.conf) mok lines; $(ls /etc/dkms/framework.conf.d | tr '\n' ' ')"
+dkms add -m vintner-test -v 1.0 > /tmp/dkms.log 2>&1; P "DKMS-ADD-RC: $?"
+dkms install -m vintner-test -v 1.0 -k "$ABI" >> /tmp/dkms.log 2>&1; P "DKMS-INSTALL-RC: $?"
+sed 's/^/DKMS-LOG: /' /tmp/dkms.log > /dev/ttyS0
+sed 's/^/POSTTX: /' /var/lib/dkms/post_transaction.log > /dev/ttyS0 2>&1
+vstat POST
+M=$(find /lib/modules/$ABI/updates -name 'vintner_test.ko*' | head -1)
+P "MODULE-FILE: $M"
+P "MODINFO-SIGNER: $(modinfo -F signer "$M")"
+P "MODINFO-HASH: $(modinfo -F sig_hashalgo "$M")"
+common
+loadtest
+modprobe -r vintner_test
+
+# Controls. A module that DKMS signed with a key nothing trusts, and one that is not
+# signed at all, must be refused, or "loads" proves nothing.
+openssl req -new -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes -subj "/CN=foreign dkms key/" -addext extendedKeyUsage=codeSigning -keyout /root/foreign.key -out /root/foreign.crt 2>/dev/null
+openssl x509 -in /root/foreign.crt -outform DER -out /root/foreign.der
+mkdir -p /usr/src/vintner-foreign-1.0
+sed 's/vintner_test/vintner_foreign/g; s/vintner-test/vintner-foreign/g' /usr/src/vintner-test-1.0/dkms.conf > /usr/src/vintner-foreign-1.0/dkms.conf
+sed 's/vintner_test/vintner_foreign/g' /usr/src/vintner-test-1.0/Makefile > /usr/src/vintner-foreign-1.0/Makefile
+sed 's/vintner_test/vintner_foreign/g' /usr/src/vintner-test-1.0/vintner_test.c > /usr/src/vintner-foreign-1.0/vintner_foreign.c
+printf 'mok_signing_key=/root/foreign.key\nmok_certificate=/root/foreign.der\n' > /etc/dkms/framework.conf.d/zz-foreign.conf
+dkms add -m vintner-foreign -v 1.0 > /tmp/dkms2.log 2>&1
+dkms install -m vintner-foreign -v 1.0 -k "$ABI" >> /tmp/dkms2.log 2>&1; P "FOREIGN-INSTALL-RC: $?"
+modprobe vintner_foreign > /tmp/mp2.log 2>&1; P "FOREIGN-MODPROBE-RC: $?"
+P "FOREIGN-DMESG: $(dmesg | grep -m1 'unavailable key')"
+dkms remove -m vintner-foreign -v 1.0 --all >> /tmp/dkms2.log 2>&1
+rm -f /etc/dkms/framework.conf.d/zz-foreign.conf
+mkdir -p /tmp/unsigned && cp /usr/src/vintner-test-1.0/vintner_test.c /tmp/unsigned/ && printf 'obj-m := vintner_test.o\n' > /tmp/unsigned/Makefile
+make -C "/lib/modules/$ABI/build" M=/tmp/unsigned modules > /tmp/unsigned.log 2>&1; P "UNSIGNED-BUILD-RC: $?"
+insmod /tmp/unsigned/vintner_test.ko > /tmp/mp3.log 2>&1; P "UNSIGNED-INSMOD-RC: $?"
+P "UNSIGNED-DMESG: $(dmesg | grep -m1 'unsigned module is rejected')"
+vstat END
+EOS
+IFS= read -r -d '' GUEST_T5 <<'EOS' || true
+P "=== T5-BEGIN"
+common
+vstat T5
+loadtest
+EOS
+T4_SEED=$(make_seed T4 "$GUEST_LIB
+$GUEST_T4")
+boot_sb "$OUT/T4.log" 1800 "$VARS" "$T4_SEED" || true
+f4() { field "$OUT/T4.log" "$1"; }
+f4_has() { f4 "$1" | grep "$2" >/dev/null; }
+evidence="apt=$(f4 APT-RC); dkms=$(f4 DKMS-INSTALL-RC); signer='$(f4 MODINFO-SIGNER)'; modprobe=$(f4 MODPROBE-RC) lsmod=$(f4 LSMOD); sb=$(f4 SB-STATE)"
+evidence+="; foreign_rc=$(f4 FOREIGN-MODPROBE-RC) unsigned_rc=$(f4 UNSIGNED-INSMOD-RC)"
+evidence+="; gens PRE=$(f4 PRE-GENS) MID=$(f4 MID-GENS) POST=$(f4 POST-GENS)"
+evidence+="; post_tx=$(tr -d '\r' < "$OUT/T4.log" | grep -a -c '^POSTTX: .*module tree changed (dkms' || true)"
+if [ "$(f4 APT-RC)" = 0 ] && [ "$(f4 DKMS-INSTALL-RC)" = 0 ] && f4_has MODINFO-SIGNER 'vintner machine' \
+	&& [ "$(f4 SB-STATE)" = 1 ] && [ "$(f4 MODPROBE-RC)" = 0 ] && [ "$(f4 LSMOD)" = 1 ] \
+	&& [ "$(f4 FOREIGN-MODPROBE-RC)" != 0 ] && [ -n "$(f4 FOREIGN-DMESG)" ] \
+	&& [ "$(f4 UNSIGNED-INSMOD-RC)" != 0 ] && [ -n "$(f4 UNSIGNED-DMESG)" ]; then
+	row T4-dkms-signs-and-loads PASS "$evidence"
+else
+	row T4-dkms-signs-and-loads FAIL "$evidence"
+fi
+# The rebuild led to a newly published generation: the newest image is fresh, the
+# one that predates the module is stale or gone, and the health report has no
+# out-of-date line. DKMS ran the publish itself (post_transaction).
+newest=$(f4 POST-GENS | tr ';' '\n' | sort -t: -k1,1nr | head -1)
+if [ -n "$newest" ] && [[ "$newest" == *":fresh:"* ]] && [[ "$newest" != "$(f4 PRE-GENS | tr ';' '\n' | sort -t: -k1,1nr | head -1)" ]] \
+	&& ! f4_has POST-HEALTH 'out of date' && ! f4_has END-HEALTH 'out of date' \
+	&& [ "$(tr -d '\r' < "$OUT/T4.log" | grep -a -c '^POSTTX: .*module tree changed (dkms')" -ge 1 ]; then
+	row T4b-rebuild-publishes-an-image PASS "newest=$newest; $evidence"
+else
+	row T4b-rebuild-publishes-an-image FAIL "newest=$newest; $evidence"
+fi
+
+# --- T5: the next boot starts that generation and loads the module ---------------
+T5_SEED=$(make_seed T5 "$GUEST_LIB
+$GUEST_T5")
+boot_sb "$OUT/T5.log" 600 "$VARS" "$T5_SEED" || true
+f5() { field "$OUT/T5.log" "$1"; }
+evidence="sb=$(f5 SB-STATE); entry=$(f5 LOADER_ENTRY_SELECTED); modprobe=$(f5 MODPROBE-RC) lsmod=$(f5 LSMOD); bless=$(f5 BLESS_ACTIVE); gens=$(f5 T5-GENS); modules='$(f5 T5-MODULES)'"
+newest_gen=$(f4 POST-GENS | tr ';' '\n' | sort -t: -k1,1nr | head -1 | cut -d: -f1)
+if [ "$(f5 SB-STATE)" = 1 ] && [ "$(f5 MODPROBE-RC)" = 0 ] && [ "$(f5 LSMOD)" = 1 ] \
+	&& [[ "$(f5 LOADER_ENTRY_SELECTED)" == "vintner-os-$newest_gen"* ]] && [ "$(f5 BLESS_ACTIVE)" = active ] \
+	&& [[ "$(f5 T5-MODULES)" == "allowed true "* ]] && ! f5 T5-HEALTH | grep 'out of date' >/dev/null; then
+	row T5-new-generation-boots-and-loads-the-module PASS "$evidence"
+else
+	row T5-new-generation-boots-and-loads-the-module FAIL "$evidence"
+fi
+
+# --- T6: the firmware trusts only db (tier A's setup): the same module loads ------
+# No shim and no MokList: the machine certificate is the only db entry, systemd-boot
+# is started directly, and the kernel's .machine keyring is empty. The module check
+# falls back to the .platform keyring, which holds db's certificates.
+TA_DISK=$OUT/tiera.raw
+cp --sparse=always "$DISK" "$TA_DISK"
+mcopy -n -i "$TA_DISK@@$ESP_OFFSET" ::/EFI/vintner/grubx64.efi "$OUT/loader-machine-signed.efi"
+mcopy -o -i "$TA_DISK@@$ESP_OFFSET" "$OUT/loader-machine-signed.efi" ::/EFI/BOOT/BOOTX64.EFI
+virt-fw-vars -i "$VARS_TEMPLATE" -o "$OUT/tiera-vars.fd" --set-pk "$OWNER" "$K/pk.crt" --add-kek "$OWNER" "$K/pk.crt" \
+	--add-db "$OWNER" "$OUT/machine-sb/cert.pem" --secure-boot >/dev/null 2>&1
+T6_SEED=$(make_seed T6 "$GUEST_LIB
+$GUEST_T5")
+BOOT_DISK=$TA_DISK boot_sb "$OUT/T6.log" 600 "$OUT/tiera-vars.fd" "$T6_SEED" || true
+f6() { field "$OUT/T6.log" "$1"; }
+keyrings=$(tr -d '\r' < "$OUT/T6.log" | grep -a '^KEYRING: ' | tr -s ' ' | tr '\n' ' ' || true)
+evidence="sb=$(f6 SB-STATE); mokvars=$(f6 MOKVARS); modprobe=$(f6 MODPROBE-RC) lsmod=$(f6 LSMOD); keyrings: $keyrings"
+if [ "$(f6 SB-STATE)" = 1 ] && [ "$(f6 MOKVARS)" = 0 ] && [ "$(f6 MODPROBE-RC)" = 0 ] && [ "$(f6 LSMOD)" = 1 ] \
+	&& [[ "$keyrings" == *"keyring .machine: empty"* ]] && [[ "$keyrings" == *"keyring .platform: 1"* ]]; then
+	row T6-db-only-trust-loads-the-module PASS "$evidence"
+else
+	row T6-db-only-trust-loads-the-module FAIL "$evidence"
+fi
 {
 	echo "=== Host packages (tier B) ==="
 	dpkg-query -W ovmf qemu-system-x86 python3-virt-firmware sbsigntool 2>/dev/null || true

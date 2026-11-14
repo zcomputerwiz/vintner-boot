@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -208,6 +209,43 @@ func (d *deployer) loadCertDER() error {
 		return d.fail("secure boot", err)
 	}
 	d.certDER = der
+	return nil
+}
+
+// inTarget is a path under the target as the installed system sees it.
+func (d *deployer) inTarget(p string) string {
+	t := filepath.Clean(d.TargetDir)
+	if t == "/" {
+		return filepath.ToSlash(p)
+	}
+	if t == "." { // no target given: a relative path is relative to the root
+		if filepath.IsAbs(p) {
+			return filepath.ToSlash(p)
+		}
+		return "/" + filepath.ToSlash(p)
+	}
+	if rest, ok := strings.CutPrefix(p, t+string(filepath.Separator)); ok {
+		return "/" + filepath.ToSlash(rest)
+	}
+	return filepath.ToSlash(p)
+}
+
+// writeDKMSDropIn makes DKMS sign out-of-tree modules with the machine key
+// (tiers A and B, WO-0010 5.3). The key is where checkSecureBoot and
+// initSecureBoot left it; the drop-in names it and copies nothing.
+func (d *deployer) writeDKMSDropIn() error {
+	if !d.signed() {
+		return nil
+	}
+	p := filepath.Join(d.TargetDir, filepath.FromSlash(strings.TrimPrefix(secureboot.DKMSDropIn, "/")))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return d.fail("dkms", err)
+	}
+	content := secureboot.DKMSDropInContent(d.inTarget(d.sbPath("key.pem")), d.inTarget(d.sbPath("cert.der")))
+	if err := writeFileSync(p, []byte(content)); err != nil {
+		return d.fail("dkms", err)
+	}
+	d.rec("wrote %s: DKMS signs out-of-tree modules with the machine key", secureboot.DKMSDropIn)
 	return nil
 }
 

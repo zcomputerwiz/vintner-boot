@@ -13,6 +13,7 @@ import (
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/publish"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/status"
 )
@@ -46,6 +47,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", efivar.DefaultDir, "efivars directory")
 	secureBootDir := fs.String("secureboot-dir", "/etc/vintner/secureboot", "directory holding machine keys and certificates")
+	rootDir := fs.String("root", "/", "the root of the running system, whose /lib/modules the images' module trees are compared with")
 	cmdlineFile := fs.String("cmdline", "/proc/cmdline", "the running kernel's command line")
 	sigEnforce := fs.String("sig-enforce", status.DefaultSigEnforce, "the kernel's module signature enforcement parameter")
 	asJSON := fs.Bool("json", false, "print the status as one JSON object")
@@ -93,6 +95,7 @@ func runStatus(args []string, stdout, stderr io.Writer) int {
 		return fail(statusFailed, "failed", fmt.Errorf("failed to scan boot storage: %w", err))
 	}
 	_, reports := state.Reconcile(m, v)
+	reports = append(reports, publish.StaleReports(m, *rootDir)...)
 	cmdline, _ := os.ReadFile(*cmdlineFile)
 
 	r := status.Build(status.Inputs{
@@ -122,7 +125,11 @@ func printStatus(w io.Writer, r *status.Report) {
 		if g.TriesLeft != nil {
 			tries = fmt.Sprintf(", %d tries left", *g.TriesLeft)
 		}
-		fmt.Fprintf(w, "generation %d: %s, %s, kernel %s%s\n", g.Generation, g.State, g.Date, g.ABI, tries)
+		stale := ""
+		if g.Stale {
+			stale = ", stale (its module tree changed)"
+		}
+		fmt.Fprintf(w, "generation %d: %s, %s, kernel %s%s%s\n", g.Generation, g.State, g.Date, g.ABI, tries, stale)
 		for _, v := range g.Variants {
 			fmt.Fprintf(w, "    variant %s: %s\n", v.ID, v.Title)
 		}
@@ -142,7 +149,11 @@ func printStatus(w io.Writer, r *status.Report) {
 		fmt.Fprintf(w, ", %d earlier boots failed", *b.FailedAttempts)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "out-of-tree modules: %s\n", r.Modules.OutOfTree)
+	fmt.Fprintf(w, "out-of-tree modules: %s", r.Modules.OutOfTree)
+	if r.Modules.Reason != "" {
+		fmt.Fprintf(w, " (%s)", r.Modules.Reason)
+	}
+	fmt.Fprintln(w)
 	if r.Healthy {
 		fmt.Fprintln(w, "health: ok")
 		return

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 )
@@ -105,6 +106,62 @@ func ComputeModuleTree(rootDir, abi string) (*manifest.ModuleTree, error) {
 		ModulesDepSHA256: depSHA,
 		DKMSSHA256:       dkmsSHA,
 	}, nil
+}
+
+// emptyDKMSSHA256 is what ComputeDKMSSHA256 gives for no DKMS module.
+var emptyDKMSSHA256 = func() string {
+	h := sha256.Sum256(nil)
+	return hex.EncodeToString(h[:])
+}()
+
+// treeDifference says what differs between the module tree now (cur) and the one
+// an image recorded (rec): "dkms", "modules.dep", both joined by ", ", or "" when
+// they agree. The kernel is compared elsewhere. An image with no record
+// (module_tree null, as the installer writes generation 1) differs only when
+// DKMS modules exist, so that installing does not make a pointless successor.
+func treeDifference(cur, rec *manifest.ModuleTree) string {
+	if rec == nil {
+		if cur.DKMSSHA256 != emptyDKMSSHA256 {
+			return "dkms"
+		}
+		return ""
+	}
+	var parts []string
+	if cur.DKMSSHA256 != rec.DKMSSHA256 {
+		parts = append(parts, "dkms")
+	}
+	if cur.ModulesDepSHA256 != rec.ModulesDepSHA256 {
+		parts = append(parts, "modules.dep")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// StaleReports names the images whose recorded module tree no longer matches
+// /lib/modules under rootDir, which the health service shows (WO-0010 5.3). Only
+// a publish recomputes the manifest's stale flag; this reads the tree now.
+func StaleReports(m *manifest.Manifest, rootDir string) []string {
+	// Only the newest image of a kernel matters: an older one is out of date for
+	// good, and the newer one says what to do about it.
+	newest := map[string]int{}
+	for _, img := range m.Images {
+		if img.State != "FAILED" && img.Generation > newest[img.Kernel.ABI] {
+			newest[img.Kernel.ABI] = img.Generation
+		}
+	}
+	var reports []string
+	for _, img := range m.Images {
+		if img.Generation != newest[img.Kernel.ABI] {
+			continue
+		}
+		cur, err := ComputeModuleTree(rootDir, img.Kernel.ABI)
+		if err != nil {
+			continue // the kernel or its modules are gone: publish flags that as stale
+		}
+		if diff := treeDifference(cur, img.ModuleTree); diff != "" {
+			reports = append(reports, fmt.Sprintf("generation %d is out of date: the module tree of %s changed since it was published (%s); vintner publish --kernel %s publishes an image that records the current one", img.Generation, img.Kernel.ABI, diff, img.Kernel.ABI))
+		}
+	}
+	return reports
 }
 
 // ModuleTreeMatches checks if the installed module tree for abi under rootDir matches expected.

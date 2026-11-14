@@ -58,7 +58,7 @@ An ordinary image record:
 |---|---|
 | `generation` | Publish generation, also its `IMAGE_VERSION` and file name stem (ADR-0003) |
 | `state` | `STAGED`, `TRYING`, `GOOD` or `FAILED`; see [state-machine.md](state-machine.md) |
-| `stale` | `true` when the installed module tree no longer matches `module_tree` (architecture §6.1). Not a state: a stale image keeps its state but does not count as the known-good fallback for R04 |
+| `stale` | `true` when the installed module tree no longer matches `module_tree` (architecture §6.1). Not a state: a stale image keeps its state but does not count as the known-good fallback for R04. A DKMS build or removal makes the newest image of its kernel stale, and the next publish (run by DKMS's `post_transaction`, WO-0010 5.3) publishes a new generation that records the current tree, unless the newest image never booted good, which then records the tree itself |
 | `kernel` | `abi` (for example `6.12.43+deb13-amd64`) and the Debian `package` and `version` it came from |
 | `module_tree` | `kernel_sha256` (SHA-256 of `/boot/vmlinuz-<abi>` at publish time; it identifies the build and with it the module signing key), `modules_dep_sha256` (SHA-256 of `/lib/modules/<abi>/modules.dep`) and `dkms_sha256` (SHA-256 of the sorted list of `<path> <sha256>` lines for every file under `/lib/modules/<abi>/updates/dkms`, or of the empty string) |
 | `cmdline` | Kernel command line embedded in the UKI or written to the BIOS `slot.cfg` |

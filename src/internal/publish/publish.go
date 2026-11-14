@@ -777,9 +777,31 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 					}
 				}
 				if initrdMatch {
-					fmt.Fprintln(stdout, "unchanged")
-					// Jump to Step 12
-					return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, true)
+					// The modules are on the root, not in the image: the same kernel and
+					// initramfs run with whatever tree /lib/modules holds. A DKMS build,
+					// rebuild or removal changes that tree, and the image's record then
+					// no longer says what it runs with (WO-0010 5.3).
+					diff := treeDifference(modTree, newestSameABI.ModuleTree)
+					switch {
+					case diff == "":
+						fmt.Fprintln(stdout, "unchanged")
+						// Jump to Step 12
+						return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, true)
+					case newestSameABI.State == "TRYING" && newestSameABI.FirstGood == nil:
+						// It has not booted good yet, so it is still the newest trial and
+						// nothing falls back to it: record the tree it will run with
+						// instead of publishing a trial of a trial for every DKMS call of
+						// one package transaction.
+						newestSameABI.ModuleTree = modTree
+						newestSameABI.Stale = false
+						if err := manifest.Save(stateDir, m); err != nil {
+							return nil, fmt.Errorf("save manifest module tree: %w", err)
+						}
+						fmt.Fprintf(stdout, "vintner publish: module tree changed (%s); generation %d has not booted good yet, so its record now has the current tree\n", diff, newestSameABI.Generation)
+						return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, true)
+					default:
+						fmt.Fprintf(stdout, "vintner publish: module tree changed (%s) since generation %d was published: publishing a new generation\n", diff, newestSameABI.Generation)
+					}
 				}
 			}
 		}

@@ -414,6 +414,18 @@ func Keep(m *manifest.Manifest) (keep, remove []int, overBudget bool) {
 			break
 		}
 	}
+	if baseABI == "" {
+		// No GOOD image is fresh (every one's module tree changed, WO-0010 5.3). The
+		// newest still names the kernel whose fallback matters: a GOOD image of
+		// another kernel must stay, because a stale image of the same kernel runs
+		// with the same modules and is no fallback from a broken module.
+		for _, img := range newest {
+			if img.State == "GOOD" {
+				baseABI = img.Kernel.ABI
+				break
+			}
+		}
+	}
 	for _, img := range newest { // rule 2
 		if baseABI != "" && img.State == "GOOD" && img.Kernel.ABI != baseABI {
 			kept[img.Generation] = true

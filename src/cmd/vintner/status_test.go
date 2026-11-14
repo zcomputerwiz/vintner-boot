@@ -12,6 +12,7 @@ import (
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/status"
 )
 
@@ -253,6 +254,76 @@ func TestStatusHealthAndText(t *testing.T) {
 		t.Fatal(code, errb.String())
 	}
 	for _, want := range []string{"generation 3: TRYING", "booted: generation 3, 0 earlier boots failed", "health: LoaderEntryDefault"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("text lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// WO-0010 5.3: a DKMS rebuild changes the module tree, and the health report says
+// which image no longer matches it, before any publish has flagged it.
+func TestStatusReportsAnImageWhoseModuleTreeChanged(t *testing.T) {
+	bs, ev := nextBootEnv(t, "uefi")
+	root := t.TempDir()
+	abi := "6.12.48+deb13-amd64" // generation 3, the newest image of that kernel
+	if err := os.MkdirAll(filepath.Join(root, "boot"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "boot", "vmlinuz-"+abi), []byte("kernel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mods := filepath.Join(root, "lib", "modules", abi)
+	if err := os.MkdirAll(filepath.Join(mods, "updates", "dkms"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for p, c := range map[string]string{"modules.dep": "# dep", "updates/dkms/vendor.ko.xz": "built by dkms"} {
+		if err := os.WriteFile(filepath.Join(mods, filepath.FromSlash(p)), []byte(c), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out, errb bytes.Buffer
+	if code := runStatus([]string{"--json", "--boot-storage", bs, "--efivars", ev, "--cmdline", "/nonexistent", "--root", root}, &out, &errb); code != statusOK {
+		t.Fatal(code, errb.String())
+	}
+	var r status.Report
+	if err := json.Unmarshal(out.Bytes(), &r); err != nil {
+		t.Fatal(err)
+	}
+	health := strings.Join(r.Health, "\n")
+	if r.Healthy || !strings.Contains(health, "generation 3 is out of date") || !strings.Contains(health, "(dkms, modules.dep)") ||
+		!strings.Contains(health, "vintner publish --kernel "+abi) {
+		t.Errorf("healthy %v, health:\n%s", r.Healthy, health)
+	}
+	// The other kernels are not on this root: nothing to compare, nothing reported.
+	if strings.Contains(health, "generation 2 is out of date") || strings.Contains(health, "generation 1 is out of date") {
+		t.Errorf("reports for kernels that are not installed:\n%s", health)
+	}
+}
+
+func TestStatusTextShowsStaleImagesAndTheModulesReason(t *testing.T) {
+	bs, ev := nextBootEnv(t, "uefi")
+	if err := efivar.Set(ev, "SecureBoot", efivar.GlobalVariable, efivar.BootAttrs, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	// Mark generation 3 stale in the manifest the fixture wrote.
+	mf := filepath.Join(bs, "vintner", "state")
+	m, err := manifest.Load(mf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range m.Images {
+		if m.Images[i].Generation == 3 {
+			m.Images[i].Stale = true
+		}
+	}
+	if err := manifest.Save(mf, m); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := runStatus([]string{"--boot-storage", bs, "--efivars", ev, "--cmdline", "/nonexistent"}, &out, &errb); code != statusOK {
+		t.Fatal(code, errb.String())
+	}
+	for _, want := range []string{", stale (its module tree changed)", "out-of-tree modules: blocked (Secure Boot is on and vintner holds no machine key"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, out.String())
 		}

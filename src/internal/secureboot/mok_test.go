@@ -106,6 +106,68 @@ func TestGeneratePassword(t *testing.T) {
 	}
 }
 
+func TestCertFileSHA256TakesPEMAndDER(t *testing.T) {
+	dir := t.TempDir()
+	fp, err := GenerateKey(dir, "11111111-2222-4333-8444-555555555555")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"cert.pem", "cert.der"} {
+		got, err := CertFileSHA256(filepath.Join(dir, name))
+		if err != nil || got != fp {
+			t.Errorf("%s: %q, %v, want %s", name, got, err, fp)
+		}
+	}
+	// A key is not a certificate.
+	if _, err := CertFileSHA256(filepath.Join(dir, "key.pem")); err == nil {
+		t.Error("key.pem was taken for a certificate")
+	}
+	if _, err := CertFileSHA256(filepath.Join(dir, "missing")); err == nil {
+		t.Error("a missing file was accepted")
+	}
+}
+
+func TestDKMSDropInContent(t *testing.T) {
+	got := DKMSDropInContent("/k/key.pem", "/k/cert.der")
+	for _, want := range []string{"mok_signing_key='/k/key.pem'\n", "mok_certificate='/k/cert.der'\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no %q in\n%s", want, got)
+		}
+	}
+	// DKMS sources the file as shell: a path with a space, a quote or a dollar sign
+	// must stay one word with its own value.
+	got = DKMSDropInContent("/k k/it's $HOME/key.pem", "/k/cert.der")
+	if !strings.Contains(got, `mok_signing_key='/k k/it'\''s $HOME/key.pem'`+"\n") {
+		t.Errorf("unquoted special characters in\n%s", got)
+	}
+	if !strings.HasPrefix(got, "#") {
+		t.Error("the drop-in does not say who wrote it")
+	}
+}
+
+func TestKeyMatchesCertTakesADERCertificate(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := GenerateKey(dir, "11111111-2222-4333-8444-555555555555"); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeyMatchesCert(filepath.Join(dir, "key.pem"), filepath.Join(dir, "cert.der")); err != nil {
+		t.Errorf("DER certificate: %v", err)
+	}
+	other := t.TempDir()
+	if _, err := GenerateKey(other, "11111111-2222-4333-8444-666666666666"); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeyMatchesCert(filepath.Join(dir, "key.pem"), filepath.Join(other, "cert.der")); err == nil {
+		t.Error("another certificate's DER form was accepted")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "junk.der"), []byte("not a certificate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeyMatchesCert(filepath.Join(dir, "key.pem"), filepath.Join(dir, "junk.der")); err == nil {
+		t.Error("junk was accepted as a certificate")
+	}
+}
+
 func TestMOKEnrolled(t *testing.T) {
 	der := []byte("the machine certificate")
 	other := MOKSignatureList([]byte("someone else"))

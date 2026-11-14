@@ -246,7 +246,29 @@ func CertSHA256(certPEMPath string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// KeyMatchesCert parses both keyPEMPath and certPEMPath and returns nil if the
+// CertFileSHA256 returns the lowercase hex SHA-256 fingerprint of the
+// certificate in path, which is PEM or DER (DKMS and sign-file take either).
+func CertFileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read certificate: %w", err)
+	}
+	der := data
+	if block, _ := pem.Decode(data); block != nil {
+		if block.Type != "CERTIFICATE" {
+			return "", fmt.Errorf("unexpected PEM block type: %s", block.Type)
+		}
+		der = block.Bytes
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return "", fmt.Errorf("parse certificate %s: %w", path, err)
+	}
+	sum := sha256.Sum256(cert.Raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// KeyMatchesCert parses both keyPEMPath and certPEMPath (PEM or DER) and returns nil if the
 // private key's public half equals the certificate's public key. It fails if
 // either file is missing or unparsable, or if the key is not RSA.
 func KeyMatchesCert(keyPEMPath, certPEMPath string) error {
@@ -254,11 +276,12 @@ func KeyMatchesCert(keyPEMPath, certPEMPath string) error {
 	if err != nil {
 		return fmt.Errorf("read certificate %s: %w", certPEMPath, err)
 	}
-	certBlock, _ := pem.Decode(certData)
-	if certBlock == nil {
-		return fmt.Errorf("decode certificate PEM %s: no PEM block found", certPEMPath)
+	// PEM, or DER as DKMS is given it (cert.der).
+	certDER := certData
+	if certBlock, _ := pem.Decode(certData); certBlock != nil {
+		certDER = certBlock.Bytes
 	}
-	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	cert, err := x509.ParseCertificate(certDER)
 	if err != nil {
 		return fmt.Errorf("parse certificate %s: %w", certPEMPath, err)
 	}
