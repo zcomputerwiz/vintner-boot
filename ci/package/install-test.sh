@@ -220,6 +220,20 @@ check "D-remove-keeps-core" "removing vintner-platform leaves vintner-core insta
 	bash -c "test \"\$(sudo chroot '$D' dpkg-query -W -f '\${Status}' vintner-core)\" = 'install ok installed'"
 sudo umount "$D/proc"
 
+# --- E: vintner-platform recommends grub-common ------------------------------
+# A BIOS install needs grub-mkimage (vintner install builds core.img with it), so
+# apt's default, with recommended packages, brings grub-common. That must not bring
+# update-grub or its kernel hooks: they are in grub2-common (architecture §5).
+check "E-recommends" "vintner-platform Recommends: grub-common" \
+	bash -c "dpkg-deb -f '$DEBS/$platform_deb' Recommends | tr ',' '\n' | grep -qx ' *grub-common *'"
+D=$(scenario recommends)
+in_chroot "$D" apt-get install -y "/root/$platform_deb" > "$OUT/e-recommends.log" 2>&1 || true
+check "E-grub-mkimage" "installing vintner-platform the default way (with recommended packages) brings grub-mkimage" \
+	sudo chroot "$D" sh -c 'command -v grub-mkimage'
+check "E-no-update-grub" "it brings no update-grub, no zz-update-grub kernel hook and no grub2-common" \
+	sudo chroot "$D" sh -c '! command -v update-grub && ! command -v grub-install && ! ls /etc/kernel/*/zz-update-grub 2>/dev/null | grep -q . && ! dpkg-query -W -f "\${Status}" grub2-common 2>/dev/null | grep -q "ok installed"'
+sudo umount "$D/proc"
+
 echo
 if [ "$FAILS" -ne 0 ]; then
 	echo "FAIL: $FAILS check(s) failed, see $RESULTS" >&2

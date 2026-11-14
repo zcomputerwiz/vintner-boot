@@ -21,6 +21,7 @@ Description: vintner boot platform - core tools, publisher and health checks
 Package: vintner-platform
 Architecture: amd64
 Depends: ${misc:Depends}
+Recommends: grub-common
 Conflicts: systemd-boot, grub-pc, grub-efi-amd64, shim-signed, grub-cloud-amd64,
  grub-efi-ia32, grub-coreboot, grub-xen, grub-ieee1275, refind
 Description: vintner boot platform - inert boot loader and recovery payloads
