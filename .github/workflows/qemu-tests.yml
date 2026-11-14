@@ -17,6 +17,9 @@ jobs:
           - name: selection-policy
             run: ci/selection-policy/run.sh
             out: ci/out/selection-policy
+          - name: mok-chain
+            run: ci/mok-chain/run.sh
+            out: ci/out/mok-chain
           - name: bios-trial
             run: ci/bios-trial/run.sh
             out: ci/out/bios-trial

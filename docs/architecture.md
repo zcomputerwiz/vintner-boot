@@ -311,7 +311,7 @@ Backend interface (semantics, not final API signatures): `list_images`, `publish
 
 ## 12. Key risks / decisions still to verify
 
-1. **UEFI Secure Boot with Debian shim and custom images:** actual downstream trust policy must be tested under the shipping Debian 13 shim/systemd-boot binary combination (`systemd-boot-efi-amd64-signed` loaded by `shim-signed` 1.51~1+deb13u1), for each tier in §8. MOK does not automatically guarantee generic EFI image acceptance. Pin a lab test matrix, including the 2011/2023 Microsoft CA combinations, before any release claim.
+1. **UEFI Secure Boot with Debian shim and custom images:** actual downstream trust policy must be tested under the shipping Debian 13 shim/systemd-boot binary combination (`systemd-boot-efi-amd64-signed` loaded by `shim-signed` 1.51~1+deb13u1), for each tier in §8. MOK does not automatically guarantee generic EFI image acceptance. Pin a lab test matrix, including the 2011/2023 Microsoft CA combinations, before any release claim. For tier B in QEMU this is answered: `ci/mok-chain` shows on these binaries that shim and systemd-boot accept a machine-signed loader and UKI when, and only when, the machine certificate is in the MOK list, with either Microsoft CA in `db` (`docs/secure-boot.md` §8). Real firmware and tier C are still open.
 2. **Limine updater conflict:** config hash embedded into loader could force loader resigning for each changing kernel path/hash. A static fixed-slot config and separate signed manifest may work, but is a design change requiring analysis. No Limine trial-counter protocol equivalent to systemd-boot's is assumed.
 3. **GRUB BIOS state robustness:** the write location is now fixed (boot storage partition, §4). The trial and fallback logic in `firmware/bios/grub.cfg` passes `ci/bios-trial` on Debian's GRUB 2.12-9+deb13u2. A 1 KiB block torn across its two 512-byte sectors loads without error and mixes any variable that straddles them, so `firmware/bios/INTERFACE.md` keeps every variable in the first sector. Power cuts on real hardware, including whether its sector writes are atomic, are still unverified.
 4. **Kernel/module coherence:** prior kernel rollback with mutable root may fail after `apt` removes modules or DKMS, a same-ABI revision or firmware updates change the tree in place; §6.1 limits v1 to detection, package pinning and different-ABI fallback. Per-image module snapshots or full root snapshots/slots are the upgrade path.
@@ -385,6 +385,8 @@ The project's first release should be judged on unattended installation, autonom
 | D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 2.8 (November 2026)** — WO-0010 5.2, first part: the tier B design ([`secure-boot.md`](secure-boot.md) §8) and `ci/mok-chain`, which proves its chain in QEMU; §12 risk 1 records the result.
 
 **Revision 2.6 (November 2026)** — WO-0010 Phase 4 note: §12 risk 6 records the watchdog behaviour measured on QEMU (OVMF resets a hung kernel after 45–60 s through the TCO watchdog; SeaBIOS does not), as measured on that VM only, not a guarantee.
 
