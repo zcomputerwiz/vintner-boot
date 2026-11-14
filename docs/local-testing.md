@@ -136,6 +136,7 @@ Then run a suite as its CI job does. Most build the recovery image first:
 |---|---|
 | `selection-policy` | `ci/selection-policy/run.sh` |
 | `bios-trial` | `ci/bios-trial/run.sh` |
+| `mok-chain` | `ci/mok-chain/run.sh` |
 | `recovery-smoke` | `recovery/build.sh && recovery/tests/qemu-smoke.sh` |
 | `uefi-bless` | `ci/integration/uefi-bless/run.sh` |
 | `bios-bless` | `recovery/build.sh && ci/integration/bios-bless/run.sh` |
