@@ -20,7 +20,7 @@ func TestLoadSave(t *testing.T) {
 		InstallationID: "0f8e2d6c-4b1a-4c3d-9e8f-7a6b5c4d3e2f",
 		MachineID:      "3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f",
 		Firmware:       "uefi",
-		SecureBootTier: "B",
+		SecureBootTier: "none",
 		Root: Root{
 			PartUUID: "6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b",
 			UUID:     "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
@@ -160,6 +160,11 @@ func TestValidation(t *testing.T) {
 	}
 	if err := mTierA.Validate(); err != nil {
 		t.Errorf("tier A example manifest failed validation: %v", err)
+	}
+	// Tier B records the same as tier A: only the list that trusts the key differs.
+	mTierA.SecureBootTier = "B"
+	if err := mTierA.Validate(); err != nil {
+		t.Errorf("tier B manifest failed validation: %v", err)
 	}
 
 	tests := []struct {
@@ -306,6 +311,38 @@ func TestValidation(t *testing.T) {
 			wantErr: "tier A requires uefi.signed to be true",
 		},
 		{
+			name: "tier B without signing",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "B"
+				m.Signing = nil
+				for i := range m.Images {
+					m.Images[i].UEFI.Signed = true
+				}
+			},
+			wantErr: "tier B requires signing",
+		},
+		{
+			name: "tier B with bios firmware",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "B"
+				m.Firmware = "bios"
+				m.Signing = &Signing{CertSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+			},
+			wantErr: "tier B requires firmware uefi or both",
+		},
+		{
+			name: "tier B image with signed false",
+			mutate: func(m *Manifest) {
+				m.SecureBootTier = "B"
+				m.Signing = &Signing{CertSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}
+				for i := range m.Images {
+					m.Images[i].UEFI.Signed = true
+				}
+				m.Images[0].UEFI.Signed = false
+			},
+			wantErr: "tier B requires uefi.signed to be true",
+		},
+		{
 			name: "invalid uefi sha256",
 			mutate: func(m *Manifest) {
 				m.Images[0].UEFI.SHA256 = "invalid"
@@ -349,7 +386,7 @@ func TestUnknownFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "manifest-a")
 
-	jsonStr := `{"format":1,"seq":1,"unknown":true,"installation_id":"0f8e2d6c-4b1a-4c3d-9e8f-7a6b5c4d3e2f","machine_id":"3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f","firmware":"uefi","secure_boot_tier":"B","root":{"partuuid":"6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b","uuid":"b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e"},"boot_storage":{"partuuid":"9d8c7b6a-5f4e-4d3c-2b1a-0e9f8d7c6b5a"},"tries":3,"retain":3,"next_generation":2,"images":[],"recovery":[]}`
+	jsonStr := `{"format":1,"seq":1,"unknown":true,"installation_id":"0f8e2d6c-4b1a-4c3d-9e8f-7a6b5c4d3e2f","machine_id":"3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f","firmware":"uefi","secure_boot_tier":"none","root":{"partuuid":"6a1f3c2e-0d5b-4f7e-9a8c-1b2d3e4f5a6b","uuid":"b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e"},"boot_storage":{"partuuid":"9d8c7b6a-5f4e-4d3c-2b1a-0e9f8d7c6b5a"},"tries":3,"retain":3,"next_generation":2,"images":[],"recovery":[]}`
 	h := sha256.Sum256([]byte(jsonStr))
 	content := fmt.Sprintf("%s\n%x\n", jsonStr, h)
 

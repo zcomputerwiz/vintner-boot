@@ -134,6 +134,13 @@ def mdir_list(disk, offset):
         sys.exit(f"no files listed on {disk} at offset {offset}")
     return sorted(lines)
 
+# Secure Boot tier B: shim in front, systemd-boot beside it as grubx64.efi,
+# MokManager and the machine certificate (docs/secure-boot.md §8.2).
+if mtype_read(base_raw, esp_offset, "/EFI/vintner/shimx64.efi") is not None:
+    VINTNER_ESP = ["/EFI/BOOT/BOOTX64.EFI", "/EFI/BOOT/grubx64.efi", "/EFI/BOOT/mmx64.efi",
+                   "/EFI/vintner/shimx64.efi", "/EFI/vintner/grubx64.efi", "/EFI/vintner/mmx64.efi",
+                   "/EFI/vintner/machine-cert.cer", "/loader/loader.conf"]
+
 def read_at(path, offset, size):
     with open(path, "rb") as f:
         f.seek(offset)

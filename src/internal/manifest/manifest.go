@@ -306,6 +306,10 @@ var (
 	sha256Re    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+// SignedTier reports whether a Secure Boot tier signs every UEFI image with the
+// machine key: A (the key in db) and B (the key in shim's MOK list) do.
+func SignedTier(tier string) bool { return tier == "A" || tier == "B" }
+
 func (m *Manifest) Validate() error {
 	if m.Format != 1 {
 		return fmt.Errorf("invalid format: %d", m.Format)
@@ -329,12 +333,12 @@ func (m *Manifest) Validate() error {
 	default:
 		return fmt.Errorf("invalid secure_boot_tier: %s", m.SecureBootTier)
 	}
-	if m.SecureBootTier == "A" {
+	if SignedTier(m.SecureBootTier) {
 		if m.Firmware == "bios" {
-			return errors.New("tier A requires firmware uefi or both")
+			return fmt.Errorf("tier %s requires firmware uefi or both", m.SecureBootTier)
 		}
 		if m.Signing == nil {
-			return errors.New("tier A requires signing")
+			return fmt.Errorf("tier %s requires signing", m.SecureBootTier)
 		}
 		if !sha256Re.MatchString(m.Signing.CertSHA256) {
 			return fmt.Errorf("invalid cert_sha256 in signing: %q", m.Signing.CertSHA256)
@@ -433,8 +437,8 @@ func (m *Manifest) Validate() error {
 
 		expectedStem := fmt.Sprintf("vintner-os-%d", img.Generation)
 		if img.UEFI != nil {
-			if m.SecureBootTier == "A" && !img.UEFI.Signed {
-				return fmt.Errorf("tier A requires uefi.signed to be true in image %d", i)
+			if SignedTier(m.SecureBootTier) && !img.UEFI.Signed {
+				return fmt.Errorf("tier %s requires uefi.signed to be true in image %d", m.SecureBootTier, i)
 			}
 			if m.SecureBootTier == "none" && img.UEFI.Signed {
 				return fmt.Errorf("tier none must not have uefi.signed in image %d", i)
@@ -471,8 +475,8 @@ func (m *Manifest) Validate() error {
 				if !sha256Re.MatchString(v.UEFI.SHA256) || v.UEFI.Size < 1 {
 					return fmt.Errorf("invalid uefi sha256 or size in variant %s of image %d", v.ID, i)
 				}
-				if m.SecureBootTier == "A" && !v.UEFI.Signed {
-					return fmt.Errorf("tier A requires uefi.signed to be true in variant %s of image %d", v.ID, i)
+				if SignedTier(m.SecureBootTier) && !v.UEFI.Signed {
+					return fmt.Errorf("tier %s requires uefi.signed to be true in variant %s of image %d", m.SecureBootTier, v.ID, i)
 				}
 				if m.SecureBootTier == "none" && v.UEFI.Signed {
 					return fmt.Errorf("tier none must not have uefi.signed in variant %s of image %d", v.ID, i)

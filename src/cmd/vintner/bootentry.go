@@ -25,7 +25,8 @@ func runBootEntry(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	disk := fs.String("disk", "", "the whole disk that holds the ESP (required)")
 	espUUID := fs.String("esp-partuuid", "", "PARTUUID of the EFI System Partition (default: the one partition of the ESP type)")
-	espDir := fs.String("esp", "", "the mounted ESP, to check that vintner's loader is on it")
+	espDir := fs.String("esp", "", "the mounted ESP, to check that vintner's loader is on it (and to find shim on it, Secure Boot tier B)")
+	sbTier := fs.String("secure-boot", "", "the installation's Secure Boot tier when --esp is not given: B makes the entry start shim (default: systemd-boot)")
 	efivars := fs.String("efivars", efivar.DefaultDir, "the efivarfs directory")
 	check := fs.Bool("check", false, "only report the state of the entry and BootOrder; change nothing")
 	if err := fs.Parse(args); err != nil {
@@ -35,8 +36,12 @@ func runBootEntry(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "vintner boot-entry: --disk is required")
 		return 2
 	}
+	file := efivar.VintnerEntryPath(*sbTier)
+	if *espDir != "" {
+		file = install.EntryPathOnESP(*espDir)
+	}
 	if *check {
-		r, err := efivar.BootOrderReport(*efivars)
+		r, err := efivar.BootOrderReport(*efivars, file)
 		if err != nil {
 			fmt.Fprintf(stderr, "vintner boot-entry: %v\n", err)
 			return 1
@@ -78,7 +83,7 @@ func runBootEntry(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "vintner boot-entry: %d EFI System Partitions on %s; name one with --esp-partuuid\n", len(ps), *disk)
 		return 1
 	}
-	num, created, err := install.SetBootEntry(*efivars, *espDir, esp)
+	num, created, err := install.SetBootEntry(*efivars, *espDir, esp, file)
 	if err != nil {
 		fmt.Fprintf(stderr, "vintner boot-entry: %v\n", err)
 		return 1

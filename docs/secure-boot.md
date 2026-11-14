@@ -1,6 +1,6 @@
 # Secure Boot design (WP-008, phase 4)
 
-Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Tier A is implemented (WO-0009c): `publish.Publish` signs with the machine key; `vintner install --secure-boot A` (WO-0010 5.1) creates the key, signs the loader and the recovery images, and refuses to take booting over until the certificate is in `db` (`docs/accepted-platforms.md`). Tiers B and C are not: the publisher refuses them (`src/internal/publish/publish.go`). Tier B is designed in §8, and its chain is proved by `ci/mok-chain`.
+Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Tier A is implemented (WO-0009c): `publish.Publish` signs with the machine key; `vintner install --secure-boot A` (WO-0010 5.1) creates the key, signs the loader and the recovery images, and refuses to take booting over until the certificate is in `db` (`docs/accepted-platforms.md`). Tier B is implemented as §8 describes (WO-0010 5.2): `vintner install --secure-boot B`, `vintner secureboot request`, and the publisher signs as in tier A; `ci/mok-chain` proves its chain on hand-made disks and `ci/secure-boot-b` the installed system. Tier C is not: the publisher refuses it (`src/internal/publish/publish.go`).
 
 ## 1. Scope of the first slice
 
@@ -103,7 +103,7 @@ S0 to S4 and S8 are blocking for phase 4. S5, S6, S7 and S9 record behaviour and
 
 ## 8. Tier B: shim and a Machine Owner Key (WO-0010 5.2)
 
-Status: design, with its chain proved in QEMU by [`ci/mok-chain`](../ci/mok-chain/README.md); `vintner install` and `vintner publish` do not accept tier `B` yet. Tier A needs the firmware in setup mode, which an ordinary PC is not in. Tier B works on a PC as it is sold, with Microsoft's keys in `db`, at the cost of one confirmation at the console on the first boot.
+Status: implemented (WO-0010 5.2). [`ci/mok-chain`](../ci/mok-chain/README.md) proves the chain on Debian's binaries; [`ci/secure-boot-b`](../ci/secure-boot-b/README.md) installs with `vintner install --secure-boot B`, writes the request from the installed system, confirms it in MokManager and boots with Secure Boot enforced. Real firmware is WO-0010 6.1. Tier A needs the firmware in setup mode, which an ordinary PC is not in. Tier B works on a PC as it is sold, with Microsoft's keys in `db`, at the cost of one confirmation at the console on the first boot.
 
 ### 8.1 Chain of trust
 
@@ -135,7 +135,7 @@ shim's `fbx64.efi` is not installed: it creates boot entries from `BOOTX64.CSV` 
 The certificate reaches the MOK list only through MokManager, at the console, before the operating system starts. Nothing in a running system can add to the list, which is the point of it.
 
 1. **The installer writes the request.** `vintner install --secure-boot B` writes three variables through efivarfs: `MokNew` (the certificate as a signature list), `MokAuth` (SHA-256 over `MokNew` and a password in UTF-16, MokManager's plain form) and `MokTimeout` = -1. This is what `mokutil --import` and `mokutil --timeout -1` write; vintner writes them itself so that it needs no further tool and the request can be unit-tested against a fake efivarfs.
-2. **The password.** One-time, used once at the console. The product passes it (`--mok-password-file`) or lets `vintner install` make one and print it; either way the product must show it to the person before the restart.
+2. **The password.** One-time, used once at the console: 1 to 256 printable ASCII characters, because the firmware console can type nothing else. The product passes it (`--mok-password-file`; it is not printed then) or lets `vintner install` make one (10 characters from `a-z` and `2-9`, without the easily confused `l`, `o`, `0` and `1`) and print it with the three steps; either way the product must show it to the person before the restart.
 3. **First boot.** shim finds the request and starts MokManager, which waits with no time limit because of `MokTimeout`. The person chooses Enroll MOK, confirms, types the password and restarts (E1). From then on the machine boots like tier A.
 4. **Already enrolled.** If `MokListRT` already holds the certificate (a reinstall that kept the key), no request is written.
 
@@ -152,14 +152,15 @@ Between the takeover and the confirmation the machine can start nothing but MokM
 | From there | Enroll key from disk, then `EFI/vintner/machine-cert.cer`: no password, physical presence is the proof. The next boot works (E4) |
 | The ESP copy of the certificate was removed | External recovery media, or Secure Boot off in firmware setup, as for a tier A machine whose `db` lost the certificate |
 
-A product that cannot accept this window uses the two-step order where the stock Debian shim is still the boot path: `vintner secureboot request` (new, the request alone), restart, confirm, then `vintner install --secure-boot B`, which finds the certificate in `MokListRT` and has nothing left to ask.
+A product that cannot accept this window uses the two-step order where the stock Debian shim is still the boot path: `vintner secureboot request` (the request alone; it makes the key in `/etc/vintner/secureboot` when there is none, `--password-file` as above), restart, confirm, then `vintner install --secure-boot B`, which keeps that key, finds the certificate in `MokListRT` and has nothing left to ask. The certificate's subject then names a random ID, not the installation's; nothing reads it.
 
 ### 8.5 Installer and publisher
 
-- **`vintner install --secure-boot B`.** As tier A (key, signed loader, signed recovery UKIs, tier and fingerprint in the manifest), plus: shim, MokManager and the certificate file on the ESP (§8.2), the boot entry at shim, and the request (§8.3). Where tier A refuses to take booting over until the certificate is in `db`, tier B takes over once the request is written or the certificate is in `MokListRT`. Without efivarfs (a chroot on another machine) it needs `--secure-boot-enrolled`, as tier A does.
+- **`vintner install --secure-boot B`.** As tier A (key, signed loader, signed recovery UKIs, tier and fingerprint in the manifest), plus: shim, MokManager and the certificate file on the ESP (§8.2), the boot entry at shim, and the request (§8.3). Where tier A refuses to take booting over until the certificate is in `db`, tier B takes over once the request is written or the certificate is in `MokListRT` (read from efivarfs, `MokListRT1` and on when shim split it, or `/sys/firmware/efi/mok-variables`). Without efivarfs (a chroot on another machine) it needs `--secure-boot-enrolled`, as tier A does. Unlike tier A it keeps a complete key set whose key matches its certificate (a reinstall, or the two-step order of §8.4), and refuses part of one. A `fbx64.efi` in `EFI/BOOT` is removed when the removable path is taken: shim started from there would run it instead of vintner.
+- **`vintner boot-entry`.** With `--esp` the entry starts shim when shim is on the ESP; without it, `--secure-boot B` says so. `--check` and the health report look for the entry the manifest's tier needs.
 - **`vintner publish`.** The tier gate accepts `B`; signing and the verification before publication are tier A's.
 - **Health.** `secure_boot=off` and the certificate mismatch as in tier A. New: the certificate is not in `MokListRT` (the request was never confirmed, or the MOK list was reset in firmware setup).
-- **Reconcile and status.** `grubx64.efi` and `mmx64.efi` in `EFI/vintner` and `EFI/BOOT` are vintner's own files in tier B, not foreign loaders.
+- **Reconcile and status.** Reconcile looks only at boot storage, so the ESP's `grubx64.efi` and `mmx64.efi` need nothing there. The QEMU rows' disk inspector treats them as vintner's own files in tier B.
 
 ### 8.6 Revocation and updates
 
@@ -175,10 +176,14 @@ Whether the kernel accepts the MOK list for module signatures, the DKMS drop-in 
 1. This section and `ci/mok-chain` (the chain, on Debian's binaries).
 2. Payload: shim and MokManager in `vintner-platform`.
 3. `vintner install --secure-boot B`, `vintner secureboot request`, the publisher's gate, health and reconcile, with unit tests.
-4. A QEMU row that installs with tier B, confirms the request in MokManager and runs tier A's S0 to S9 against it.
+4. A QEMU row that installs with tier B, confirms the request in MokManager and boots with Secure Boot enforced: `ci/secure-boot-b` T1 to T3. Tier A's S1 to S9 are not repeated: the images are signed and checked by the same code, and `ci/mok-chain` M2, M3, M6, R1 and R2 show that shim refuses what the MOK list does not vouch for.
 5. Tier C.
 
-### 8.9 Decisions for the owner
+Steps 1 to 4 are done.
 
-1. **Take over with the request pending (proposed default), or only after the certificate is enrolled.** The first is one restart and one console step, with the window of §8.4. The second never leaves a machine that cannot boot, and costs a second restart through the stock loader.
-2. **vintner writes the request itself (proposed), or calls `mokutil`.** `mokutil` would be a new dependency of `vintner-core` and uses a salted password hash by default; the plain form above is what MokManager accepted in E1.
+### 8.9 Decisions
+
+Both were decided by the owner on 2026-11-14, as proposed.
+
+1. **Take over with the request pending (decided), or only after the certificate is enrolled.** The first is one restart and one console step, with the window of §8.4. The second never leaves a machine that cannot boot, and costs a second restart through the stock loader.
+2. **vintner writes the request itself (decided), or calls `mokutil`.** `mokutil` would be a new dependency of `vintner-core` and uses a salted password hash by default; the plain form above is what MokManager accepted in E1.

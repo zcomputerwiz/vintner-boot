@@ -49,7 +49,14 @@ func (r *recordingVerifier) Verify(ctx context.Context, file, certPEMPath string
 	return r.errToReturn
 }
 
-func TestPublisherTierA(t *testing.T) {
+// Tiers A and B sign alike: only the list that trusts the key differs.
+func TestPublisherSignedTiers(t *testing.T) {
+	for _, tier := range []string{"A", "B"} {
+		t.Run("Tier_"+tier, func(t *testing.T) { testPublisherSigned(t, tier) })
+	}
+}
+
+func testPublisherSigned(t *testing.T, tier string) {
 	rootDir, bootStorageDir, m := setupTestEnv(t, "uefi")
 	newABI := "6.12.112-test"
 	setupKernelFiles(t, rootDir, newABI)
@@ -60,7 +67,7 @@ func TestPublisherTierA(t *testing.T) {
 		t.Fatalf("GenerateKey failed: %v", err)
 	}
 
-	m.SecureBootTier = "A"
+	m.SecureBootTier = tier
 	m.Signing = &manifest.Signing{CertSHA256: fp}
 	for i := range m.Images {
 		if m.Images[i].UEFI != nil {
@@ -387,8 +394,8 @@ func TestPublisherTierNoneNeverCallsVerifier(t *testing.T) {
 	}
 }
 
-func TestPublisherTiersBAndCRefused(t *testing.T) {
-	for _, tier := range []string{"B", "C"} {
+func TestPublisherTierCRefused(t *testing.T) {
+	for _, tier := range []string{"C"} {
 		t.Run("Tier_"+tier, func(t *testing.T) {
 			rootDir, bootStorageDir, m := setupTestEnv(t, "uefi")
 			setupKernelFiles(t, rootDir, "test")
@@ -405,7 +412,7 @@ func TestPublisherTiersBAndCRefused(t *testing.T) {
 				PackageQuery:   mockPackageQuery{pkg: "p", ver: "1"},
 			}
 			_, err := Publish(context.Background(), opts)
-			wantErr := fmt.Sprintf("unsupported secure boot tier %q (only \"none\" and \"A\" supported)", tier)
+			wantErr := fmt.Sprintf("unsupported secure boot tier %q (only \"none\", \"A\" and \"B\" supported)", tier)
 			if err == nil || !strings.Contains(err.Error(), wantErr) {
 				t.Fatalf("got %v, want %s", err, wantErr)
 			}

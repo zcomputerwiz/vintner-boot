@@ -928,7 +928,7 @@ func TestRefusalsAdditional(t *testing.T) {
 	t.Run("SecureBootTierNotNone", func(t *testing.T) {
 		rootDir, bootStorageDir, m := setupTestEnv(t, "uefi")
 		setupKernelFiles(t, rootDir, "test")
-		m.SecureBootTier = "B"
+		m.SecureBootTier = "C"
 		stateDir := filepath.Join(bootStorageDir, "vintner", "state")
 		_ = manifest.Save(stateDir, m)
 
@@ -941,7 +941,7 @@ func TestRefusalsAdditional(t *testing.T) {
 			PackageQuery:   mockPackageQuery{pkg: "p", ver: "1"},
 		}
 		_, err := Publish(context.Background(), opts)
-		if err == nil || !strings.Contains(err.Error(), "unsupported secure boot tier \"B\" (only \"none\" and \"A\" supported)") {
+		if err == nil || !strings.Contains(err.Error(), "unsupported secure boot tier \"C\" (only \"none\", \"A\" and \"B\" supported)") {
 			t.Fatalf("expected unsupported secure boot tier error, got: %v", err)
 		}
 	})

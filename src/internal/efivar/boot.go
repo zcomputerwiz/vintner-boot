@@ -230,7 +230,18 @@ const (
 	VintnerDescription = "Vintner Boot"
 	// VintnerLoaderPath is the file that entry starts, on the ESP.
 	VintnerLoaderPath = `\EFI\vintner\systemd-bootx64.efi`
+	// VintnerShimPath is the file that entry starts in Secure Boot tier B: shim,
+	// which starts systemd-boot as grubx64.efi beside it (docs/secure-boot.md §8.2).
+	VintnerShimPath = `\EFI\vintner\shimx64.efi`
 )
+
+// VintnerEntryPath is the file vintner's boot entry starts for a Secure Boot tier.
+func VintnerEntryPath(tier string) string {
+	if tier == "B" {
+		return VintnerShimPath
+	}
+	return VintnerLoaderPath
+}
 
 // FindEntry returns the first entry with this description whose device path
 // ends in the file path node of file.
@@ -248,15 +259,16 @@ func FindEntry(entries []BootEntry, description, file string) (BootEntry, bool) 
 }
 
 // BootOrderReport says what is wrong with vintner's place in the firmware boot
-// order, or "" when the vintner entry exists and BootOrder starts with it.
-func BootOrderReport(dir string) (string, error) {
+// order, or "" when the vintner entry exists and BootOrder starts with it. The
+// entry must start file (VintnerEntryPath of the installation's tier).
+func BootOrderReport(dir, file string) (string, error) {
 	entries, err := BootEntries(dir)
 	if err != nil {
 		return "", err
 	}
-	e, ok := FindEntry(entries, VintnerDescription, VintnerLoaderPath)
+	e, ok := FindEntry(entries, VintnerDescription, file)
 	if !ok {
-		return fmt.Sprintf("NVRAM boot entry missing: no Boot#### entry %q starts %s; vintner boot-entry --disk <disk> creates it", VintnerDescription, VintnerLoaderPath), nil
+		return fmt.Sprintf("NVRAM boot entry missing: no Boot#### entry %q starts %s; vintner boot-entry --disk <disk> creates it", VintnerDescription, file), nil
 	}
 	order, err := BootOrder(dir)
 	if err != nil {

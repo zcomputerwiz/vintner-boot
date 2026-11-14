@@ -78,14 +78,23 @@ type Options struct {
 	// by " (backup)". Empty means "Recovery Console".
 	RecoveryTitle string
 
-	// SecureBootTier is "none" (the default) or "A": the installer then creates
-	// the machine key in SecureBootDir, signs the loader and the recovery images,
-	// and records the tier in the manifest (WO-0010 5.1).
+	// SecureBootTier is "none" (the default), "A" or "B": the installer then
+	// creates the machine key in SecureBootDir, signs the loader and the recovery
+	// images, and records the tier in the manifest (WO-0010 5.1). Tier B also
+	// installs shim and MokManager and asks MokManager to enroll the certificate
+	// (WO-0010 5.2, docs/secure-boot.md §8).
 	SecureBootTier string
 	SecureBootDir  string // default <TargetDir>/etc/vintner/secureboot
-	// SecureBootEnrolled says the certificate is in the firmware's db, without
-	// the installer being able to read it (installing from outside the machine).
+	// SecureBootEnrolled says the certificate is in the firmware's db (tier A) or
+	// shim's MOK list (tier B), without the installer being able to read it
+	// (installing from outside the machine).
 	SecureBootEnrolled bool
+	// MOKPassword is the one-time password of tier B's request for MokManager.
+	// Empty: the installer makes one, and Result.MOKPassword carries it.
+	MOKPassword string
+	// MOKVarDir is where Linux shows shim's MOK lists from a configuration table
+	// (default /sys/firmware/efi/mok-variables next to the real efivarfs).
+	MOKVarDir string
 
 	Runner   Runner
 	UKI      publish.UKIBuilder
@@ -104,6 +113,9 @@ type Options struct {
 type Result struct {
 	Changed  []string
 	Manifest *manifest.Manifest
+	// MOKPassword is set when tier B wrote a request for MokManager: the person
+	// at the console types it at the next boot.
+	MOKPassword string
 }
 
 // Error is a failed step, with everything that was changed before it.
@@ -179,7 +191,9 @@ func (p *Deployment) Cutover() error { return p.d.wrap(p.d.cutover()) }
 func (p *Deployment) Verify() error { return p.d.wrap(p.d.verify()) }
 
 // Result says what was changed so far.
-func (p *Deployment) Result() *Result { return &Result{Changed: p.d.changed, Manifest: p.d.m} }
+func (p *Deployment) Result() *Result {
+	return &Result{Changed: p.d.changed, Manifest: p.d.m, MOKPassword: p.d.mokPassword}
+}
 
 // Manifest is the manifest Stage wrote.
 func (p *Deployment) Manifest() *manifest.Manifest { return p.d.m }
@@ -217,8 +231,11 @@ type deployer struct {
 	core               []byte
 	bootImg            []byte
 	instID             string // the new installation's UUID
-	certFP             string // sha256 of the machine certificate (tier A)
-	signedLoader       []byte // the loader signed with the machine key (tier A)
+	certFP             string // sha256 of the machine certificate (tiers A and B)
+	certDER            []byte // the machine certificate (tiers A and B)
+	keepKey            bool   // tier B: the key set in SecureBootDir is used, not made
+	signedLoader       []byte // the loader signed with the machine key (tiers A and B)
+	mokPassword        string // tier B: the password of the request that was written
 
 	uefi, bios bool
 	bs         string // PARTUUID of boot storage
@@ -548,7 +565,7 @@ func (d *deployer) recoveryUKI(ctx context.Context, slot, cmdline, version strin
 	}); err != nil {
 		return err
 	}
-	if d.tier() == "A" {
+	if d.signed() {
 		if err := d.Verifier.Verify(ctx, out, d.sbPath("cert.pem")); err != nil {
 			return fmt.Errorf("the signed recovery image %s: %w", slot, err)
 		}
@@ -599,7 +616,7 @@ func (d *deployer) writeManifest(machineID, recVersion string) error {
 		Images:         []manifest.Image{},
 		Recovery:       []manifest.Recovery{},
 	}
-	if d.tier() == "A" {
+	if d.signed() {
 		m.Signing = &manifest.Signing{CertSHA256: d.certFP}
 	}
 	if d.Layout.ESP != nil && d.uefi {
@@ -646,12 +663,9 @@ func (d *deployer) writeManifest(machineID, recVersion string) error {
 }
 
 func (d *deployer) copyToESP(rel, payloadRel string) error {
-	b, err := os.ReadFile(d.Payload.Path(payloadRel))
+	b, err := d.espContent(payloadRel)
 	if err != nil {
 		return err
-	}
-	if payloadRel == payload.SystemdBoot && d.signedLoader != nil {
-		b = d.signedLoader
 	}
 	p := filepath.Join(d.ESPDir, filepath.FromSlash(rel))
 	if err := writeFileSync(p, b); err != nil {
@@ -671,8 +685,10 @@ func (d *deployer) stageESP(ctx context.Context) error {
 	if err := d.signLoader(ctx); err != nil {
 		return d.fail("sign loader", err)
 	}
-	if err := d.copyToESP("EFI/vintner/systemd-bootx64.efi", payload.SystemdBoot); err != nil {
-		return d.fail("ESP", err)
+	for _, f := range d.loaderFiles() {
+		if err := d.copyToESP(f.rel, f.payload); err != nil {
+			return d.fail("ESP", err)
+		}
 	}
 	if err := d.copyToESP("loader/loader.conf", payload.LoaderConf); err != nil {
 		return d.fail("ESP", err)
@@ -702,8 +718,22 @@ func (d *deployer) cutoverESP() error {
 	if err := d.mkdir(d.ESPDir, "EFI/BOOT"); err != nil {
 		return d.fail("ESP", err)
 	}
-	if err := d.copyToESP("EFI/BOOT/BOOTX64.EFI", payload.SystemdBoot); err != nil {
-		return d.fail("ESP", err)
+	for _, f := range d.removableFiles() {
+		if err := d.copyToESP(f.rel, f.payload); err != nil {
+			return d.fail("ESP", err)
+		}
+	}
+	// shim started from the removable path runs fbx64.efi when it lies beside it,
+	// which makes boot entries from other systems' BOOTX64.CSV files instead of
+	// starting vintner (docs/secure-boot.md §8.2).
+	if d.tier() == "B" {
+		fb := filepath.Join(d.ESPDir, "EFI", "BOOT", "fbx64.efi")
+		if _, err := os.Stat(fb); err == nil {
+			if err := os.Remove(fb); err != nil {
+				return d.fail("ESP", err)
+			}
+			d.rec("removed EFI/BOOT/fbx64.efi (shim's fallback) from the ESP")
+		}
 	}
 	d.tookUEFI = true
 	return nil
@@ -720,10 +750,6 @@ func (d *deployer) cutoverUEFI() error {
 
 // NVRAMDescription is the description of the boot entry vintner creates.
 const NVRAMDescription = efivar.VintnerDescription
-
-// nvramPath is the file the boot entry starts: vintner's own loader, never the
-// removable path, so the entry works whatever the removable path holds.
-const nvramPath = efivar.VintnerLoaderPath
 
 // efiVarDir is the efivarfs directory to write the entry to. It is empty when
 // the running system did not start through UEFI (a BIOS-booted installer, a
@@ -758,7 +784,10 @@ func (d *deployer) cutoverNVRAM() error {
 		return d.fail("NVRAM", errors.New("the layout has no ESP"))
 	}
 	p := *l.ESP
-	dp, err := BootEntryDevicePath(p)
+	// The entry starts vintner's own loader (shim in tier B), never the removable
+	// path, so it works whatever the removable path holds.
+	nvramPath := efivar.VintnerEntryPath(d.tier())
+	dp, err := BootEntryDevicePath(p, nvramPath)
 	if err != nil {
 		return d.fail("NVRAM", err)
 	}
@@ -897,7 +926,7 @@ func (d *deployer) removableOverwritable() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if sum(cur) == d.espWant(payload.SystemdBoot) {
+	if sum(cur) == d.espWant(d.removableFiles()[0].payload) {
 		return true, nil
 	}
 	ents, err := os.ReadDir(filepath.Join(d.ESPDir, "EFI"))

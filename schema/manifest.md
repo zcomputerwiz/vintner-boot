@@ -42,7 +42,7 @@ The schema is authoritative. This table explains the intent.
 | `machine_id` | `/etc/machine-id` of the installed system, used to detect a cloned or swapped root (threat model T12) |
 | `firmware` | `uefi`, `bios`, or `both` for mixed-firmware lab disks (architecture §5) |
 | `secure_boot_tier` | `A`, `B`, `C` or `none` (architecture §8) |
-| `signing` | Present and required in tier `A`, forbidden in tier `none`. Object with `cert_sha256` (SHA-256 fingerprint of the machine certificate, 64 lowercase hex) |
+| `signing` | Present and required in tiers `A` and `B`, forbidden in tier `none`. Object with `cert_sha256` (SHA-256 fingerprint of the machine certificate, 64 lowercase hex) |
 | `root` | Root filesystem identity: GPT `partuuid` and filesystem `uuid` |
 | `boot_storage` | `partuuid` of the boot storage partition. The publisher also puts it on every image's kernel command line as `vintner.bootstorage=PARTUUID=<partuuid>`, so the services can find and mount boot storage (architecture §5, D4) |
 | `esp` | Optional. `partuuid` of the EFI System Partition. `vintner bless` mounts it read-only by this identity (it does not rely on `/boot/efi`) and reports side-loaded files there (threat model T6). The installer writes it on UEFI installs |
@@ -62,7 +62,7 @@ An ordinary image record:
 | `kernel` | `abi` (for example `6.12.43+deb13-amd64`) and the Debian `package` and `version` it came from |
 | `module_tree` | `kernel_sha256` (SHA-256 of `/boot/vmlinuz-<abi>` at publish time; it identifies the build and with it the module signing key), `modules_dep_sha256` (SHA-256 of `/lib/modules/<abi>/modules.dep`) and `dkms_sha256` (SHA-256 of the sorted list of `<path> <sha256>` lines for every file under `/lib/modules/<abi>/updates/dkms`, or of the empty string) |
 | `cmdline` | Kernel command line embedded in the UKI or written to the BIOS `slot.cfg` |
-| `uefi` | Present when `firmware` is `uefi` or `both`. `entry` is the file name stem `vintner-os-<generation>`, without counter or `.efi`; the counter changes on every boot, so the file is found by stem. `sha256` and `size` describe the UKI. `signed` is a boolean (true in tier `A`, forbidden in tier `none`) |
+| `uefi` | Present when `firmware` is `uefi` or `both`. `entry` is the file name stem `vintner-os-<generation>`, without counter or `.efi`; the counter changes on every boot, so the file is found by stem. `sha256` and `size` describe the UKI. `signed` is a boolean (true in tiers `A` and `B`, forbidden in tier `none`) |
 | `bios` | Present when `firmware` is `bios` or `both`. `dir` is `/vintner/bios/os-<generation>`; `files` maps `vmlinuz`, `initrd.img` and `slot.cfg` to their SHA-256 |
 | `variants` | Optional. The extra boot entries published with the image ([`docs/variants.md`](../docs/variants.md), WO-0010 4.3), each with `id`, `title`, `cmdline` (the image's command line, the product's tokens and `vintner.variant=<id>`) and, when `firmware` is `uefi` or `both`, `uefi` for its UKI: `entry` is the stem `vintner_variant-os-<generation>-<id>`, which has no counter. On BIOS the command line is in the image's `slot.cfg`, whose hash `bios` records |
 | `created` | When the image was staged (RFC 3339, UTC) |

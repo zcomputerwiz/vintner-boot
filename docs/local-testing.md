@@ -147,6 +147,7 @@ Then run a suite as its CI job does. Most build the recovery image first:
 | `interrupt-uefi`, `interrupt-bios` | `recovery/build.sh && ci/publish-interrupt/run.sh <uefi\|bios>` |
 | `graphics-uefi`, `graphics-bios` | `recovery/build.sh && ci/graphics/run.sh <uefi\|bios>` |
 | `secure-boot-uefi` | `recovery/build.sh && ci/secure-boot/run.sh uefi` |
+| `secure-boot-b` | `recovery/build.sh && ci/secure-boot-b/run.sh` |
 
 For scale: on the reference machine (i7-11800H, WSL2 with 16 CPUs and 15 GiB), with packages and the cloud image already cached, `bios-trial` takes about 1 minute, and `recovery/build.sh && ci/recovery-fallback/run.sh uefi` about 24 minutes. Most of that is boots the suite deliberately lets run until their timeout.
 

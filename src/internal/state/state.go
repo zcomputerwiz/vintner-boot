@@ -450,8 +450,35 @@ func Keep(m *manifest.Manifest) (keep, remove []int, overBudget bool) {
 	return keep, remove, overBudget
 }
 
+// mokReport says what is wrong with tier B's enrollment: the machine
+// certificate must be in the MOK list that shim passed to this boot. The
+// configuration-table copy in /sys is read only on the real efivarfs, so that a
+// test's directory stands alone.
+func mokReport(dir, efivarsDir, secureBootDir string) string {
+	der, err := os.ReadFile(filepath.Join(secureBootDir, "cert.der"))
+	if err != nil {
+		return fmt.Sprintf("secure boot tier B: the machine certificate cannot be read: %v", err)
+	}
+	mokVarDir := ""
+	if efivarsDir == "" || efivarsDir == efivar.DefaultDir {
+		mokVarDir = secureboot.DefaultMOKVarDir
+	}
+	ok, err := secureboot.MOKEnrolled(dir, mokVarDir, der)
+	if err != nil {
+		return fmt.Sprintf("secure boot tier B: cannot read the MOK list: %v", err)
+	}
+	if ok {
+		return ""
+	}
+	if pending, _ := secureboot.MOKRequested(dir, der); pending {
+		return "secure boot tier B: the machine certificate is not in the MOK list yet; a request is pending: confirm it in MokManager at the next boot"
+	}
+	return "secure boot tier B: the machine certificate is not in shim's MOK list (MokListRT): with Secure Boot on, nothing vintner signed would start; vintner secureboot request writes a new request for MokManager"
+}
+
 // CheckHealth performs health checks for vintner bless (the health service):
-//   - Verifies Secure Boot firmware state if the manifest specifies Tier A and running on UEFI.
+//   - Verifies Secure Boot firmware state if the manifest specifies tier A or B and running on UEFI.
+//   - In tier B, verifies that the machine certificate is in shim's MOK list.
 //   - Reports when LoaderEntryDefault, LoaderConfigTimeout, or LoaderEntryOneShot is set in efivars.
 //     A LoaderEntryOneShot that vintner next-boot made (WO-0010 4.4) is not reported.
 //   - Verifies the machine certificate on disk against manifest.signing.cert_sha256 if configured.
@@ -470,9 +497,14 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 		if dir == "" {
 			dir = efivar.DefaultDir
 		}
-		if m.SecureBootTier == "A" {
+		if manifest.SignedTier(m.SecureBootTier) {
 			if !efivar.SecureBootEnabled(dir) {
 				reports = append(reports, "secure_boot=off")
+			}
+		}
+		if m.SecureBootTier == "B" {
+			if r := mokReport(dir, efivarsDir, secureBootDir); r != "" {
+				reports = append(reports, r)
 			}
 		}
 		if _, val, err := efivar.GetString(dir, "LoaderEntryDefault", efivar.LoaderInfo); err == nil && val != "" {
@@ -485,7 +517,7 @@ func CheckHealth(m *manifest.Manifest, v *View, efivarsDir, secureBootDir string
 			reports = append(reports, fmt.Sprintf("LoaderEntryOneShot is set: %s", val))
 		}
 		if uefi {
-			if r, err := efivar.BootOrderReport(dir); errors.Is(err, fs.ErrNotExist) {
+			if r, err := efivar.BootOrderReport(dir, efivar.VintnerEntryPath(m.SecureBootTier)); errors.Is(err, fs.ErrNotExist) {
 				// no efivarfs here: nothing to report
 			} else if err != nil {
 				reports = append(reports, fmt.Sprintf("cannot read the NVRAM boot entries: %v", err))

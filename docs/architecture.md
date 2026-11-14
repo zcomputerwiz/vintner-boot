@@ -386,6 +386,8 @@ The project's first release should be judged on unattended installation, autonom
 
 ## 17. Change log
 
+**Revision 2.9 (November 2026)** — WO-0010 5.2, second part: tier B is implemented. `vintner install --secure-boot B` installs Debian's shim and MokManager from `vintner-platform`'s payload and writes the request for MokManager; `vintner secureboot request` writes it alone; the publisher signs as in tier A, and the health service reports a certificate that is not in the MOK list. The owner decided both questions of [`secure-boot.md`](secure-boot.md) §8.9 as proposed. `ci/secure-boot-b` proves the installed system in QEMU.
+
 **Revision 2.8 (November 2026)** — WO-0010 5.2, first part: the tier B design ([`secure-boot.md`](secure-boot.md) §8) and `ci/mok-chain`, which proves its chain in QEMU; §12 risk 1 records the result.
 
 **Revision 2.7 (November 2026)** — `vintner-platform` now has `Recommends: grub-common`, so a default install has the `grub-mkimage` that `vintner install` needs on BIOS (§5 table; `ci/package/install-test.sh` rows E).

@@ -74,6 +74,9 @@ jobs:
           - name: secure-boot-uefi
             run: recovery/build.sh && ci/secure-boot/run.sh uefi
             out: ci/out/secure-boot/uefi
+          - name: secure-boot-b
+            run: recovery/build.sh && ci/secure-boot-b/run.sh
+            out: ci/out/secure-boot-b
 
     steps:
       - name: Check out repository
@@ -93,13 +96,13 @@ jobs:
             debootstrap debian-archive-keyring dosfstools
 
       - name: Set up Go
-        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios' || matrix.name == 'candidate-uefi' || matrix.name == 'candidate-bios' || matrix.name == 'interrupt-uefi' || matrix.name == 'interrupt-bios' || matrix.name == 'graphics-uefi' || matrix.name == 'graphics-bios' || matrix.name == 'secure-boot-uefi'
+        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios' || matrix.name == 'candidate-uefi' || matrix.name == 'candidate-bios' || matrix.name == 'interrupt-uefi' || matrix.name == 'interrupt-bios' || matrix.name == 'graphics-uefi' || matrix.name == 'graphics-bios' || matrix.name == 'secure-boot-uefi' || matrix.name == 'secure-boot-b'
         uses: actions/setup-go@v7
         with:
           go-version-file: src/go.mod
 
       - name: Cache Debian image
-        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios' || matrix.name == 'candidate-uefi' || matrix.name == 'candidate-bios' || matrix.name == 'interrupt-uefi' || matrix.name == 'interrupt-bios' || matrix.name == 'graphics-uefi' || matrix.name == 'graphics-bios' || matrix.name == 'secure-boot-uefi'
+        if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios' || matrix.name == 'candidate-uefi' || matrix.name == 'candidate-bios' || matrix.name == 'interrupt-uefi' || matrix.name == 'interrupt-bios' || matrix.name == 'graphics-uefi' || matrix.name == 'graphics-bios' || matrix.name == 'secure-boot-uefi' || matrix.name == 'secure-boot-b'
         uses: actions/cache@v6
         with:
           path: ci/out/cache/debian-13-genericcloud-amd64-20261001-2618.qcow2
