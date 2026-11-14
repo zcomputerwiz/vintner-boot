@@ -89,7 +89,8 @@ for p7 in "$K"/shim-sig*.p7; do
 		f { print > f }
 		/END CERTIFICATE/ { f = "" }'
 done
-ca() { awk -F'\t' -v cn="CN=$1\$" '$2 ~ cn { print $1; exit }' "$K/shim-cas.txt"; }
+# OpenSSL 3.5 prints "CN=x", older releases (Ubuntu 24.04's 3.0) "CN = x".
+ca() { awk -F'\t' -v cn="CN ?= ?$1\$" '$2 ~ cn { print $1; exit }' "$K/shim-cas.txt"; }
 CA2011=$(ca "Microsoft Corporation UEFI CA 2011")
 CA2023=$(ca "Microsoft UEFI CA 2023")
 if [ -z "$CA2011" ] || [ -z "$CA2023" ]; then echo "shim does not carry both Microsoft CA signatures:" >&2; cat "$K/shim-cas.txt" >&2; exit 1; fi
