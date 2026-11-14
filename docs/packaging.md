@@ -34,6 +34,8 @@ What an upgrade of `plymouth` does to such an edit:
 ## vintner-platform (amd64)
 `Conflicts: systemd-boot, grub-pc, grub-efi-amd64, shim-signed, grub-cloud-amd64, grub-efi-ia32, grub-coreboot, grub-xen, grub-ieee1275, refind` (architecture §5). apt resolves a conflict by removing the installed package, so installing one of them removes `vintner-platform`; `dpkg -i` refuses.
 
+`Recommends: grub-common`: `vintner install` builds GRUB's `core.img` on a BIOS machine with `grub-mkimage` from that package, and refuses when it is missing. `grub-common` has no `update-grub` and no kernel hook (those are in `grub2-common`, architecture §5). A UEFI-only product does not need it and can install with `--no-install-recommends`.
+
 It is `amd64`, not `all` as architecture §5 first had it: it carries x86-64 EFI binaries and i386-pc GRUB objects, which an `all` package must not.
 
 ### Payloads (WO-0010 2.4)
@@ -63,7 +65,7 @@ Licences: the payloads are unmodified Debian files and keep their upstream licen
 ## Checks
 - `debian-package` (lint workflow): build in a Debian 13 container, `lintian --fail-on error`. Overrides are in `debian/vintner-core.lintian-overrides` with their reasons.
 - `build-debs` (`qemu-tests.yml`): the same build, for the QEMU rows to install from; see the last section.
-- `package-install` (lint workflow, `ci/package/install-test.sh`): debootstrap a trixie chroot, install `vintner-core` before and after `plymouth`, check the files and masks, remove, purge, the `Conflicts`, and that `vintner-platform` is inert and its `MANIFEST` verifies.
+- `package-install` (lint workflow, `ci/package/install-test.sh`): debootstrap a trixie chroot, install `vintner-core` before and after `plymouth`, check the files and masks, remove, purge, the `Conflicts`, that `vintner-platform` is inert and its `MANIFEST` verifies, and that its `Recommends: grub-common` brings `grub-mkimage` and no `update-grub`.
 
 ## The QEMU rows install from the packages (WO-0010 2.5)
 `ci/lib/vintner-base.sh`, which builds the guest every row starts from, no longer copies the binary, the unit, the masks and `install.conf` into the guest by hand. It installs `vintner-core` with `apt-get install /root/vintner-core.deb` in a chroot of the mounted guest root, so the binary, both hooks, the Plymouth hook, the enabled unit, the masks and `/etc/kernel/install.conf` come from the package, and `systemd-ukify` and `sbsigntool` from the Debian archive through its `Depends`. The binary the host side of the rows runs (`$OUT/vintner`) is extracted from the same `.deb`. `ci/graphics` no longer copies the theme or the Plymouth hook either.
