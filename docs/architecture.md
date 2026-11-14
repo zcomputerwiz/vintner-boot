@@ -186,6 +186,8 @@ A UKI or BIOS slot contains the kernel and initramfs, but after `switch_root` th
 
 Under Secure Boot this is worse than a version mismatch: since 2023 Debian signs modules with an ephemeral per-build key embedded in that build's kernel, so an older kernel cannot load modules from a different build at all.
 
+A DKMS build, rebuild or removal is the case this section is for, and since WO-0010 5.3 it is handled rather than only flagged: `vintner publish` compares the tree as well as the kernel and initramfs, so a rebuild publishes a new generation (a counted trial that records the new tree), DKMS's `post_transaction` hook and a `header_postinst.d` hook make publish run, and the health report names an image whose tree changed ([`secure-boot.md`](secure-boot.md) §9.3). The earlier image of the same kernel still loads the same modules, so it is no fallback from a module that breaks the boot.
+
 v1 rule: the manifest records a module-tree identity for each image (the SHA-256 of the kernel image, which identifies the build and its module signing key, plus hashes of `modules.dep` and the DKMS modules; see `schema/manifest.md`). The publisher pins retained kernel packages (§6 step 8). At boot and on every publish, an image whose recorded identity no longer matches the installed tree is reported as stale and no longer counts as the known-good fallback required by R04; garbage collection must then keep a `GOOD` image of a different ABI. Fallback across a changed tree is therefore only guaranteed between different ABIs. A per-image module snapshot (for example an EROFS image of the tree mounted by an initramfs hook) is the v2 option if same-ABI fallback proves necessary.
 
 ## 7. Project-by-project adoption decisions
@@ -385,6 +387,8 @@ The project's first release should be judged on unattended installation, autonom
 | D4 | Boot storage mount | On demand only, at `/run/vintner/boot` in the vintner services' own mount namespace; never in fstab; found by `vintner.bootstorage=PARTUUID=` on the kernel command line (§5) |
 
 ## 17. Change log
+
+**Revision 2.10 (November 2026)** — WO-0010 5.3, out-of-tree modules. Measured on Debian 13's 6.12 kernel in QEMU: with Secure Boot on, a module signed with the machine key loads in tier B (shim's MOK list, `.machine` keyring) **and in tier A** (the module check falls back to the `.platform` keyring, which holds `db`), so the work order's "tier A cannot load DKMS modules" is withdrawn ([`secure-boot.md`](secure-boot.md) §9.1). `vintner install` writes the DKMS drop-in that signs with the machine key; `vintner publish` treats a changed module tree as a change (§6.1); the health report and `vintner status` name out-of-date images and report the module state per tier.
 
 **Revision 2.9 (November 2026)** — WO-0010 5.2, second part: tier B is implemented. `vintner install --secure-boot B` installs Debian's shim and MokManager from `vintner-platform`'s payload and writes the request for MokManager; `vintner secureboot request` writes it alone; the publisher signs as in tier A, and the health service reports a certificate that is not in the MOK list. The owner decided both questions of [`secure-boot.md`](secure-boot.md) §8.9 as proposed. `ci/secure-boot-b` proves the installed system in QEMU.
 

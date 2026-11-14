@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Installed as /etc/kernel/header_postinst.d/zz-vintner. A linux-headers package
+# was configured (linux-run-hooks headers postinst runs this directory with the
+# kernel version). DKMS's own hook in this directory ran first and built the
+# modules for that kernel with "dkms autoinstall", which does not run the
+# post_transaction hook (dkms 3.2.2), so publish here, by the same script. It
+# never fails the headers package.
+exec /usr/lib/vintner/dkms-post-transaction "$1"

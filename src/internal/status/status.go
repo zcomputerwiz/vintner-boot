@@ -17,6 +17,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/nextboot"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/variants"
 )
@@ -63,7 +64,11 @@ type Report struct {
 type Modules struct {
 	SigEnforce *bool  `json:"sig_enforce"` // the kernel refuses unsigned modules; null if unreadable
 	OutOfTree  string `json:"out_of_tree"` // "allowed", "blocked" or "unknown"
-	Reason     string `json:"reason,omitempty"`
+	// RequiresSignature says that only modules signed with the machine key load:
+	// Secure Boot is on (the kernel is locked down and enforces signatures). Null
+	// where it is not known.
+	RequiresSignature *bool  `json:"requires_signature"`
+	Reason            string `json:"reason,omitempty"`
 }
 
 // Generation is one recorded image.
@@ -129,6 +134,9 @@ type Inputs struct {
 	SecureBootDir string
 	// SigEnforcePath is the kernel's module.sig_enforce parameter; empty means the default.
 	SigEnforcePath string
+	// DKMSDropIn is the DKMS configuration vintner install wrote for the signed
+	// tiers; empty means secureboot.DKMSDropIn.
+	DKMSDropIn string
 	// Reports are findings of reconciliation, added to the health report.
 	Reports []string
 }
@@ -157,7 +165,7 @@ func Build(in Inputs) *Report {
 		sb := efivar.SecureBootEnabled(efivars)
 		r.SecureBoot = &sb
 	}
-	r.Modules = modules(r.SecureBoot, in.SigEnforcePath, m.SecureBootTier)
+	r.Modules = modules(r.SecureBoot, in.SigEnforcePath, m, in.DKMSDropIn)
 
 	for _, img := range m.Images {
 		g := Generation{
@@ -219,36 +227,64 @@ func day(created string) string {
 	return created
 }
 
-// modules answers "can a DKMS module load": not if the kernel enforces module
-// signatures or Secure Boot is on, because the machine key is not in any list the
-// kernel trusts (no shim and so no MOK list in tier A; WO-0010 5.3 verifies the
-// kernel's side). Only a readable, off answer for both is "allowed".
-func modules(secureBoot *bool, sigEnforcePath, tier string) Modules {
+// modules answers "can a DKMS module load". With Secure Boot on the kernel loads
+// only signed modules, and which key signs decides:
+//   - tiers A and B: the machine key. Debian 13's kernel trusts it in both: in
+//     tier B through shim's MOK list (.machine keyring), in tier A through db (the
+//     .platform keyring, which the module check falls back to). ci/dkms-modules
+//     shows a DKMS module signed with it loading in each. So the answer is
+//     "allowed" while DKMS is configured to sign with it (vintner install writes
+//     that), and "blocked" when it is not;
+//   - tier none: vintner holds no key to sign with, so "blocked".
+//
+// With Secure Boot off, or unknown, the kernel's own sig_enforce says: only a
+// readable, off answer is "allowed".
+func modules(secureBoot *bool, sigEnforcePath string, m *manifest.Manifest, dropIn string) Modules {
 	if sigEnforcePath == "" {
 		sigEnforcePath = DefaultSigEnforce
 	}
-	var m Modules
+	if dropIn == "" {
+		dropIn = secureboot.DKMSDropIn
+	}
+	tier := m.SecureBootTier
+	var out Modules
 	if data, err := os.ReadFile(sigEnforcePath); err == nil {
 		v := strings.TrimSpace(string(data))
 		if v == "Y" || v == "1" || v == "N" || v == "0" {
 			b := v == "Y" || v == "1"
-			m.SigEnforce = &b
+			out.SigEnforce = &b
 		}
 	}
 	switch {
+	case secureBoot != nil && *secureBoot && manifest.SignedTier(tier):
+		t := true
+		out.RequiresSignature = &t
+		switch st, why := dkmsSigning(m, dropIn); st {
+		case signingOK:
+			out.OutOfTree = "allowed"
+			out.Reason = "Secure Boot is on: only modules signed with the machine key load, and DKMS signs with it (tier " + tier + ")"
+		case signingUnknown:
+			out.OutOfTree = "unknown"
+			out.Reason = "Secure Boot is on and " + why
+		default:
+			out.OutOfTree = "blocked"
+			out.Reason = "Secure Boot is on and " + why
+		}
 	case secureBoot != nil && *secureBoot:
-		m.OutOfTree = "blocked"
-		m.Reason = "Secure Boot is on; the machine key is not in a list the kernel trusts for modules (tier " + tier + ")"
-	case m.SigEnforce != nil && *m.SigEnforce:
-		m.OutOfTree = "blocked"
-		m.Reason = "the kernel enforces module signatures"
-	case m.SigEnforce != nil:
-		m.OutOfTree = "allowed"
+		t := true
+		out.RequiresSignature = &t
+		out.OutOfTree = "blocked"
+		out.Reason = "Secure Boot is on and vintner holds no machine key to sign modules with (tier " + tier + ")"
+	case out.SigEnforce != nil && *out.SigEnforce:
+		out.OutOfTree = "blocked"
+		out.Reason = "the kernel enforces module signatures"
+	case out.SigEnforce != nil:
+		out.OutOfTree = "allowed"
 	default:
-		m.OutOfTree = "unknown"
-		m.Reason = "the kernel does not say whether it enforces module signatures"
+		out.OutOfTree = "unknown"
+		out.Reason = "the kernel does not say whether it enforces module signatures"
 	}
-	return m
+	return out
 }
 
 // triesLeft reads the boot counter of generation g from boot storage.

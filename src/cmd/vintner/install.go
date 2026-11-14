@@ -18,6 +18,7 @@ import (
 	"github.com/zcomputerwiz/vintner-boot/src/internal/install"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/layout"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/payload"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/secureboot"
 )
 
 // installTestHook lets tests replace the external programs; it is nil in the binary.
@@ -184,9 +185,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 	switch res.Manifest.SecureBootTier {
 	case "A":
-		fmt.Fprintf(stdout, "Secure Boot tier A: the machine certificate is %s; out-of-tree kernel modules cannot load with Secure Boot on (no shim, no MOK list)\n", filepath.Join(*sbDir, "cert.der"))
+		fmt.Fprintf(stdout, "Secure Boot tier A: the machine certificate is %s; DKMS signs out-of-tree kernel modules with the machine key (%s) and Debian 13's kernel trusts the firmware's db for module signatures, so signed modules load with Secure Boot on\n", filepath.Join(*sbDir, "cert.der"), secureboot.DKMSDropIn)
 	case "B":
-		fmt.Fprintf(stdout, "Secure Boot tier B: the machine certificate is %s\n", filepath.Join(*sbDir, "cert.der"))
+		fmt.Fprintf(stdout, "Secure Boot tier B: the machine certificate is %s; DKMS signs out-of-tree kernel modules with the machine key (%s), which the kernel trusts through shim's MOK list, so signed modules load with Secure Boot on\n", filepath.Join(*sbDir, "cert.der"), secureboot.DKMSDropIn)
 		if res.MOKPassword != "" {
 			printMOKRequest(stdout, res.MOKPassword, *mokPasswordFile != "")
 		}

@@ -246,6 +246,24 @@ func TestKeep(t *testing.T) {
 			wantKeep: []int{1, 2, 3},
 		},
 		{
+			// WO-0010 5.3: DKMS rebuilds made every GOOD image stale and published a
+			// fresh trial of kernel X. With no fresh GOOD image the newest stale one
+			// still names the base kernel, so the GOOD image of kernel Y stays: it is
+			// the fallback from a broken module, while X's stale image runs with the
+			// same modules as the trial.
+			name:       "every GOOD is stale: the other kernel's GOOD stays over the base kernel's",
+			retain:     2,
+			images:     []manifest.Image{img(1, "GOOD", "Y", true), img(2, "GOOD", "X", true), img(3, "TRYING", "X", false)},
+			wantKeep:   []int{1, 3},
+			wantRemove: []int{2},
+		},
+		{
+			name:     "a stale GOOD is a last resort behind the fresh trial while there is room",
+			retain:   3,
+			images:   []manifest.Image{img(2, "GOOD", "X", true), img(3, "TRYING", "X", false)},
+			wantKeep: []int{2, 3},
+		},
+		{
 			name:       "FAILED removed before older good images",
 			retain:     2,
 			images:     []manifest.Image{img(4, "FAILED", "A", false), img(1, "GOOD", "A", false), img(3, "GOOD", "A", false), img(2, "FAILED", "A", false)},

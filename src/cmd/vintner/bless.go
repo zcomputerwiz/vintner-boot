@@ -29,6 +29,7 @@ func cmdBless(args []string) {
 	stateDir := fs.String("state-dir", "", "manifest directory (default <boot-storage>/vintner/state)")
 	efivarsDir := fs.String("efivars", "/sys/firmware/efi/efivars", "efivars directory")
 	secureBootDir := fs.String("secureboot-dir", "/etc/vintner/secureboot", "directory holding machine keys and certificates")
+	rootDir := fs.String("root", "/", "the root of the running system, whose /lib/modules the images' module trees are compared with")
 	espDir := fs.String("esp", "", "ESP directory to scan for side-loaded files (default: mount the manifest's esp.partuuid read-only on demand)")
 	recoverySlot := fs.String("recovery", "", "run from the recovery image of slot a or b: re-arm recovery A (WO-0010 1.1), touch nothing else")
 
@@ -260,6 +261,7 @@ func cmdBless(args []string) {
 		}
 	}
 	reports = append(reports, state.CheckHealth(m, v, *efivarsDir, *secureBootDir, isUEFI)...)
+	reports = append(reports, publish.StaleReports(m, *rootDir)...)
 
 	for _, r := range reports {
 		fmt.Println(r)

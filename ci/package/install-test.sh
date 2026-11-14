@@ -103,7 +103,7 @@ check "A-plymouthd-conf-untouched" "plymouthd.conf is still plymouth's, byte for
 
 # Files, masks, owner.
 check "files" "/usr/sbin/vintner, both hooks, the Plymouth hook, the unit" \
-	sudo bash -c "cd '$D' && test -x usr/sbin/vintner && test -x etc/kernel/postinst.d/zz-vintner && test -x etc/initramfs/post-update.d/zz-vintner && test -x usr/share/initramfs-tools/hooks/plymouth-vintner && test -f usr/lib/systemd/system/vintner-bless.service"
+	sudo bash -c "cd '$D' && test -x usr/sbin/vintner && test -x etc/kernel/postinst.d/zz-vintner && test -x etc/initramfs/post-update.d/zz-vintner && test -x etc/kernel/header_postinst.d/zz-vintner && test -x usr/lib/vintner/dkms-post-transaction && test -f etc/dkms/framework.conf.d/vintner-publish.conf && test -x usr/share/initramfs-tools/hooks/plymouth-vintner && test -f usr/lib/systemd/system/vintner-bless.service"
 check "stub-installed" "installing vintner-core brings the systemd-stub that vintner publish needs" \
 	sudo test -s "$D/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
 check "install-conf" "/etc/kernel/install.conf is layout=other and owned by vintner-core" \
@@ -132,7 +132,7 @@ check "remove-keeps-conffiles" "remove leaves the conffiles (hooks, install.conf
 	sudo test -f "$D/etc/kernel/install.conf"
 in_chroot "$D" dpkg --purge vintner-core > "$OUT/a-purge.log" 2>&1 || true
 check "purge-conffiles" "purge removes the hooks and install.conf" \
-	bash -c "sudo test ! -e '$D/etc/kernel/install.conf' && sudo test ! -e '$D/etc/kernel/postinst.d/zz-vintner' && sudo test ! -e '$D/etc/initramfs/post-update.d/zz-vintner'"
+	bash -c "sudo test ! -e '$D/etc/kernel/install.conf' && sudo test ! -e '$D/etc/kernel/postinst.d/zz-vintner' && sudo test ! -e '$D/etc/initramfs/post-update.d/zz-vintner' && sudo test ! -e '$D/etc/kernel/header_postinst.d/zz-vintner' && sudo test ! -e '$D/etc/dkms/framework.conf.d/vintner-publish.conf'"
 check "purge-leaves-plymouth" "plymouth and its conffile are intact after the purge" \
 	bash -c "sudo test -f '$D/etc/plymouth/plymouthd.conf' && sudo chroot '$D' dpkg-query -W -f '\${Status}' plymouth | grep -q 'install ok installed'"
 sudo umount "$D/proc"

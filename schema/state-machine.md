@@ -47,7 +47,7 @@ Staging names: generation `g` stages its UKI as `/vintner/staging/vintner-os-<g>
 Garbage collection runs after a successful publish and never touches recovery images. It removes one image at a time in this order: BIOS `grubenv`, then the image's files (made durable), then its manifest record. A power cut leaves the record in place until the files are gone, so the next publish selects the same image again and finishes the job; no file is left without a record. It keeps:
 
 1. the newest `GOOD` image that is not `stale`;
-2. the newest `GOOD` image whose ABI differs from that of image 1, so that a module tree changed in place under one ABI cannot remove every fallback (architecture §6.1);
+2. the newest `GOOD` image whose ABI differs from that of image 1, so that a module tree changed in place under one ABI cannot remove every fallback (architecture §6.1). When no `GOOD` image is fresh, image 1 does not exist, and the ABI of the newest `GOOD` image (stale or not) stands in for it;
 3. every `TRYING` image;
 4. further images, newest first, until `retain` images remain.
 

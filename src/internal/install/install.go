@@ -335,6 +335,9 @@ func (d *deployer) stage(ctx context.Context) error {
 	if err := d.initSecureBoot(); err != nil {
 		return err
 	}
+	if err := d.writeDKMSDropIn(); err != nil {
+		return err
+	}
 
 	// Boot storage first, then the ESP's own files.
 	if err := d.bootStorage(ctx, recVersion); err != nil {

@@ -1,6 +1,6 @@
 # Secure Boot design (WP-008, phase 4)
 
-Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Tier A is implemented (WO-0009c): `publish.Publish` signs with the machine key; `vintner install --secure-boot A` (WO-0010 5.1) creates the key, signs the loader and the recovery images, and refuses to take booting over until the certificate is in `db` (`docs/accepted-platforms.md`). Tier B is implemented as §8 describes (WO-0010 5.2): `vintner install --secure-boot B`, `vintner secureboot request`, and the publisher signs as in tier A; `ci/mok-chain` proves its chain on hand-made disks and `ci/secure-boot-b` the installed system. Tier C is not: the publisher refuses it (`src/internal/publish/publish.go`).
+Status: design for review. It refines architecture §8 and `docs/security-threat-model.md`, and decides what the first implementation slice builds. Tier A is implemented (WO-0009c): `publish.Publish` signs with the machine key; `vintner install --secure-boot A` (WO-0010 5.1) creates the key, signs the loader and the recovery images, and refuses to take booting over until the certificate is in `db` (`docs/accepted-platforms.md`). Tier B is implemented as §8 describes (WO-0010 5.2): `vintner install --secure-boot B`, `vintner secureboot request`, and the publisher signs as in tier A; `ci/mok-chain` proves its chain on hand-made disks and `ci/secure-boot-b` the installed system. Tier C is not: the publisher refuses it (`src/internal/publish/publish.go`). Out-of-tree modules under Secure Boot are §9 (WO-0010 5.3).
 
 ## 1. Scope of the first slice
 
@@ -169,7 +169,7 @@ A product that cannot accept this window uses the two-step order where the stock
 
 ### 8.7 Out-of-tree modules (5.3)
 
-Whether the kernel accepts the MOK list for module signatures, the DKMS drop-in and the tier A statement are item 5.3. They are not part of this section and nothing here has tested them.
+Section 9.
 
 ### 8.8 Order of work
 
@@ -187,3 +187,67 @@ Both were decided by the owner on 2026-11-14, as proposed.
 
 1. **Take over with the request pending (decided), or only after the certificate is enrolled.** The first is one restart and one console step, with the window of §8.4. The second never leaves a machine that cannot boot, and costs a second restart through the stock loader.
 2. **vintner writes the request itself (decided), or calls `mokutil`.** `mokutil` would be a new dependency of `vintner-core` and uses a salted password hash by default; the plain form above is what MokManager accepted in E1.
+
+## 9. Out-of-tree kernel modules (WO-0010 5.3)
+
+Status: implemented. What the kernel trusts was measured on Debian 13's `6.12.111+deb13-cloud-amd64` in QEMU with Secure Boot enforced ([`ci/secure-boot-b`](../ci/secure-boot-b/README.md) T4 to T6); the rest is unit-tested.
+
+### 9.1 What the kernel trusts
+
+With Secure Boot on the kernel is locked down (`lockdown=integrity`) and `module.sig_enforce` reads `Y` although `CONFIG_MODULE_SIG_FORCE` is not set. An unsigned module fails with "Loading of unsigned module is rejected", a module signed with a key the kernel does not hold with "Loading of module with unavailable key is rejected" (T4 controls).
+
+| | Tier B | Tier A |
+|---|---|---|
+| How the machine certificate reaches the kernel | shim passes `MokListRT`; the kernel puts it in `.machine` (`CONFIG_INTEGRITY_MACHINE_KEYRING=y`), linked into `.secondary_trusted_keys` | the kernel loads `db` into `.platform` (`CONFIG_INTEGRITY_PLATFORM_KEYRING=y`); `.machine` is empty |
+| Module check | finds the key in the secondary keyring | no key there, so it falls back to `.platform` and finds it |
+| A module signed with the machine key | loads (T4, T5) | loads (T6) |
+
+**The work order assumed that tier A cannot load DKMS modules ("no shim, so no MOK list"). That is false on this kernel**: the platform keyring, which holds `db`, is accepted for module signatures. So vintner install and vintner status do not say that modules cannot load in tier A; they say that signed modules load in both tiers.
+
+- `CONFIG_INTEGRITY_CA_MACHINE_KEYRING` is not set, so the machine certificate (RSA 2048, CA:FALSE, `digitalSignature`, code-signing EKU) is accepted as it is. If a later Debian kernel sets it, only CA certificates would reach `.machine` in tier B, and this has to be tested again.
+- Measured on one kernel flavour (cloud), on OVMF. The `.platform` fallback is kernel behaviour, not a documented interface; `ci/secure-boot-b` T6 is what notices a change.
+- Modules signed by anyone else, and unsigned ones, never load with Secure Boot on. A vendor that signs its own modules needs its key enrolled as a MOK (tier B) by the product.
+
+### 9.2 DKMS signs with the machine key
+
+`vintner install --secure-boot A|B` writes [`/etc/dkms/framework.conf.d/vintner-secureboot.conf`](../src/internal/secureboot/mok.go) (`DKMSDropInContent`):
+
+```text
+mok_signing_key=/etc/vintner/secureboot/key.pem
+mok_certificate=/etc/vintner/secureboot/cert.der
+```
+
+- The values are single-quoted, because DKMS sources the file as shell. DKMS reads the key where it lies and copies nothing, so the key stays off the ESP and boot storage (R11). The installer's test checks that no copy of it exists there.
+- DKMS 3.2.2 (Debian 13) reads `framework.conf.d/*.conf`, takes the certificate as PEM or DER, signs with the kernel's `scripts/sign-file` (SHA-256) and signs before it compresses the module (`.ko.xz`). Modules land in `/lib/modules/<abi>/updates/dkms`.
+- **DKMS makes a key pair of its own when either file is missing.** The drop-in is therefore written only after the key exists, and `vintner status` reports `out_of_tree: blocked` when the files are gone, the key does not belong to the certificate, or the certificate is not the manifest's (and `unknown` for a user who cannot read the key: it is root's).
+- Key scope: a DKMS build runs a vendor's build scripts as root, with the signing key readable, and the module key is the boot key. A vendor script could sign anything the machine trusts. Threat model T3 already has root reading the key; a separate module key is a later option, not done here.
+- Tier none has no machine key: with Secure Boot on, `vintner status` says modules are blocked.
+
+### 9.3 A rebuild publishes a generation
+
+A published image holds the kernel and initramfs, but the modules come from `/lib/modules/<abi>` on the root, so a DKMS build, rebuild or removal changes what an image runs with. Each image records the tree it was published with (`module_tree`: the kernel's hash, `modules.dep`'s and `dkms_sha256`, see [`schema/manifest.md`](../schema/manifest.md)).
+
+- **`vintner publish` compares the tree.** Step 6 used to call a publish "unchanged" when the kernel, command line and initramfs matched, so a module change published nothing and only flagged the image `stale`. It now also compares `modules.dep` and the DKMS files:
+  - the newest image of the kernel is `GOOD` (or `TRYING` after it was good once): **a new generation is published**, a counted trial of the new tree. The earlier image is then `stale`. The output says `module tree changed (dkms, modules.dep) since generation N was published: publishing a new generation` (a real DKMS install changes `modules.dep` too);
+  - the newest image is a `TRYING` one that never booted good: nothing falls back to it, so its record takes the new tree instead of a trial of a trial for each DKMS call of one package transaction;
+  - an image with no recorded tree (generation 1 of an installation) differs only when DKMS modules exist, so that installing makes no needless successor;
+  - a second publish with nothing changed is `unchanged` again.
+- **Who calls publish.**
+  - A new kernel: Debian's `/etc/kernel/postinst.d` runs `dkms`, then `initramfs-tools`, then vintner's `zz-vintner`, so the modules are built first. Nothing new is needed.
+  - `dkms install`, `remove`, `unbuild` and `uninstall`, which is what a `*-dkms` package's scripts run: vintner-core ships [`/etc/dkms/framework.conf.d/vintner-publish.conf`](../integration/dkms/vintner-publish.conf), whose `post_transaction` runs `/usr/lib/vintner/dkms-post-transaction <kernelver>`. It is silent during a kernel package's `prerm` and `postrm` (a new image for a kernel on its way out is noise), and a failing publish is reported without failing DKMS. **It publishes only for the newest installed kernel**: a new generation sorts newest and so boots first, DKMS visits every kernel that has headers, and an admin can run `dkms install -k <old>`, so a module change must not make an older kernel the default. The health report names the image left out of date, and `vintner publish --kernel <old>` publishes it when that is wanted.
+  - Installing linux-headers: DKMS builds with `dkms autoinstall`, and **dkms 3.2.2 does not run `post_transaction` after `autoinstall`** (its `autoinstall` declares `installed_modules` local, and the caller tests the global one). vintner-core therefore ships `/etc/kernel/header_postinst.d/zz-vintner`, which `linux-run-hooks` runs after DKMS's own hook in that directory and which runs the same script.
+  - Not covered: a module that DKMS builds on its own at boot. The health report is what shows it.
+  - A small window: an image that booted but is not blessed yet still counts as unproven, so a DKMS build in that window changes its record in place, and the bless that follows marks it `GOOD` although no boot began with the new tree. Bless runs when `boot-complete.target` is reached, seconds into the boot.
+- **The health report names it.** `vintner bless` and `vintner status` compare the newest image of each kernel with the tree on disk and report `generation N is out of date: the module tree of <abi> changed since it was published (dkms); vintner publish --kernel <abi> ...`, before any publish has recomputed the manifest's `stale` flag.
+- **Garbage collection.** When no `GOOD` image is fresh, the newest `GOOD` image still names the kernel whose fallback matters, so a `GOOD` image of another kernel is kept (`state.Keep`, [`schema/state-machine.md`](../schema/state-machine.md)).
+- **What a new generation does not give.** It gives a counted trial boot of the new tree, and a record of the tree the image runs with. The earlier image of the same kernel loads the same `/lib/modules/<abi>`, so it is no fallback from a module that breaks the boot: the real fallbacks are a different kernel and recovery (architecture §6.1).
+
+### 9.4 What `vintner status` says
+
+`modules.out_of_tree` is `allowed` when Secure Boot is on, the tier is A or B and DKMS is configured to sign with this installation's machine key; `requires_signature` is then `true` and `reason` says so. It is `blocked` when the drop-in is missing or wrong, and in tier none. With Secure Boot off it follows the kernel's `sig_enforce` as before. The check is of vintner's side; the kernel's side is the measurement in 9.1.
+
+### 9.5 Not tested
+
+- A real kernel install with a pending DKMS module (the order in `/etc/kernel/postinst.d` was read, not run), and a real vendor driver (`nvidia-kernel-dkms` has steps of its own).
+- Other kernel flavours, a Debian kernel newer than 6.12.111, real firmware (WO-0010 6.1), and the generic `amd64` image without `pahole` (DKMS then needs the `dwarves` package).
+- The boot-time DKMS service, and a changed `dkms` that fixes `autoinstall`: `post_transaction` would then run twice, which is harmless (the second publish is `unchanged`).

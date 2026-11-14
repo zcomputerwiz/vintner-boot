@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Run by DKMS after an install or removal (post_transaction in
+# /etc/dkms/framework.conf.d/vintner-publish.conf) and by the headers hook
+# /etc/kernel/header_postinst.d/zz-vintner, with the kernel version.
+# DKMS has already changed /lib/modules/<version>/updates/dkms and run depmod;
+# publish compares that tree with the one the newest image recorded.
+#
+# DKMS's own work is done, so a failure here must not fail it: it is reported, and
+# the health report shows the image as out of date until a publish succeeds.
+kernel=$1
+[ -n "$kernel" ] || exit 0
+
+# dkms runs inside a kernel package's prerm when that kernel is being removed:
+# a new image for a kernel on its way out is noise.
+case "${DPKG_MAINTSCRIPT_PACKAGE:-}:${DPKG_MAINTSCRIPT_NAME:-}" in
+linux-image-*:prerm | linux-image-*:postrm) exit 0 ;;
+esac
+
+# A new generation sorts newest and so boots first. DKMS visits every kernel that
+# has headers, and an admin can run dkms for an old one: only the newest installed
+# kernel is published automatically, so that a module change never makes an older
+# kernel the default. The health report names an image left out of date, and
+# vintner publish --kernel <version> publishes it when that is what is wanted.
+newest=$(for f in /boot/vmlinuz-*; do [ -e "$f" ] && echo "${f#/boot/vmlinuz-}"; done | sort -V | tail -n 1)
+if [ -n "$newest" ] && [ "$kernel" != "$newest" ]; then
+	echo "vintner: not publishing for kernel $kernel: it is not the newest installed kernel ($newest)" >&2
+	exit 0
+fi
+
+/usr/sbin/vintner publish --kernel "$kernel" ||
+	echo "vintner: publishing for kernel $kernel failed; run: vintner publish --kernel $kernel" >&2
+exit 0

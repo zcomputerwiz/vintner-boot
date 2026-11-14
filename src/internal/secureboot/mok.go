@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"unicode/utf16"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
@@ -156,6 +157,30 @@ func MOKRequested(efivarDir string, der []byte) (bool, error) {
 		return false, err
 	}
 	return len(der) > 0 && bytes.Contains(data, der), nil
+}
+
+// DKMSDropIn is the DKMS configuration that vintner install writes in Secure Boot
+// tiers A and B: DKMS signs out-of-tree modules with the machine key, which the
+// kernel trusts (docs/secure-boot.md §9).
+const DKMSDropIn = "/etc/dkms/framework.conf.d/vintner-secureboot.conf"
+
+// DKMSDropInContent is the drop-in for a machine key kept at keyPath and certPath
+// (paths as the installed system sees them). DKMS reads the key where it lies and
+// never copies it, so it stays off the ESP and boot storage (R11). DKMS makes a
+// key of its own when either file is missing, so the files must exist.
+func DKMSDropInContent(keyPath, certPath string) string {
+	return "# Written by vintner install (Secure Boot tiers A and B). DKMS signs out-of-tree\n" +
+		"# kernel modules with the machine key, which Debian's kernel trusts: through\n" +
+		"# shim's MOK list in tier B and through the firmware's db in tier A. The key\n" +
+		"# is read where it lies. See docs/secure-boot.md.\n" +
+		"mok_signing_key=" + shellQuote(keyPath) + "\n" +
+		"mok_certificate=" + shellQuote(certPath) + "\n"
+}
+
+// shellQuote quotes s for a shell that sources the drop-in: single quotes, with
+// each embedded single quote written as quote, backslash, quote, quote.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // DefaultMOKVarDir is where Linux shows the MOK lists that shim passes in a
