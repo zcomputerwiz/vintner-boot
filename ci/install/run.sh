@@ -160,6 +160,15 @@ sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C \
 sudo mkdir -p "$MNT/root/vp"
 sudo chroot "$MNT" dpkg-deb -x /root/vintner-platform.deb /root/vp
 
+# Plymouth and plymouth-themes (which ship two-step.so, the plugin of vintner-bgrt: without it the
+# initramfs hook skips Plymouth), which vintner-core only Recommends. plymouthd.conf is Debian's (every line a
+# comment), and its initramfs hook builds an initramfs that carries it. `vintner install`
+# must select the boot screen and build the initramfs again (WO-0010 D-E, 2.3).
+echo "=== installing plymouth ==="
+sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C \
+	apt-get install -y --no-install-recommends plymouth plymouth-themes > "$OUT/plymouth.log" 2>&1 \
+	|| { tail -n 30 "$OUT/plymouth.log" >&2; exit 1; }
+
 echo "=== vintner install ==="
 INSTALL_RC=0
 sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
@@ -171,6 +180,24 @@ else
 	record "I1-install" FAIL "vintner install exited $INSTALL_RC, see install.log"
 	exit 1
 fi
+
+# The boot screen is selected, and the initramfs that generation 1 starts carries the selection.
+ABI=$(sudo chroot "$MNT" sh -c 'ls /boot | sed -n "s/^vmlinuz-//p" | sort -V | tail -n 1')
+sudo chroot "$MNT" sh -c "rm -rf /tmp/ird && unmkinitramfs /boot/initrd.img-$ABI /tmp/ird"
+IRD_CONF=$(sudo find "$MNT/tmp/ird" -path '*etc/plymouth/plymouthd.conf' | head -n 1)
+IRD_THEME=$(sudo find "$MNT/tmp/ird" -path '*usr/share/plymouth/themes/vintner-bgrt/vintner-bgrt.plymouth' | head -n 1)
+sel=$(sudo grep -E '^(Theme|ShowDelay|DeviceTimeout)=' "$MNT/etc/plymouth/plymouthd.conf" | tr '\n' ' ')
+irdsel=""
+[ -n "$IRD_CONF" ] && irdsel=$(sudo grep -E '^(Theme|ShowDelay|DeviceTimeout)=' "$IRD_CONF" | tr '\n' ' ')
+want='Theme=vintner-bgrt ShowDelay=0 DeviceTimeout=8 '
+sorted() { printf '%s' "$1" | tr ' ' '\n' | sort | tr '\n' ' '; }
+if [ "$(sorted "$sel")" = "$(sorted "$want")" ] && [ "$(sorted "$irdsel")" = "$(sorted "$want")" ] && [ -n "$IRD_THEME" ] \
+	&& grep -q 'plymouthd.conf changed: the initramfs is built again' "$OUT/install.log"; then
+	record "I8-plymouth-theme" PASS "plymouthd.conf selects vintner-bgrt; initrd.img-$ABI holds the same settings and the theme; install said it built the initramfs again"
+else
+	record "I8-plymouth-theme" FAIL "target: '$sel'; initramfs (${IRD_CONF:-no plymouthd.conf}): '$irdsel'; theme in initramfs: '${IRD_THEME:-none}'; see install.log"
+fi
+sudo rm -rf "$MNT/tmp/ird"
 
 # The stock loader is gone, and vintner-platform now installs.
 if sudo chroot "$MNT" dpkg-query -W -f='${Status}' grub-pc 2>/dev/null | grep -q 'install ok installed'; then

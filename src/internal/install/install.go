@@ -78,6 +78,12 @@ type Options struct {
 	// by " (backup)". Empty means "Recovery Console".
 	RecoveryTitle string
 
+	// PlymouthTheme is the boot screen (WO-0010 D-E): Theme, ShowDelay=0 and
+	// DeviceTimeout=8 are set in the target's /etc/plymouth/plymouthd.conf.
+	// Empty means DefaultPlymouthTheme, skipped with a note when the target has
+	// no such theme; PlymouthNone leaves the file alone.
+	PlymouthTheme string
+
 	// SecureBootTier is "none" (the default), "A" or "B": the installer then
 	// creates the machine key in SecureBootDir, signs the loader and the recovery
 	// images, and records the tier in the manifest (WO-0010 5.1). Tier B also
@@ -198,6 +204,10 @@ func (p *Deployment) Result() *Result {
 // Manifest is the manifest Stage wrote.
 func (p *Deployment) Manifest() *manifest.Manifest { return p.d.m }
 
+// PlymouthChanged says Stage edited the target's plymouthd.conf: the initramfs
+// carries that file, so it has to be built again.
+func (p *Deployment) PlymouthChanged() bool { return p.d.plymouthChanged }
+
 // Changed lists what has been changed so far, for a failure report that comes
 // from outside this package.
 func (p *Deployment) Changed() []string { return p.d.changed }
@@ -236,6 +246,7 @@ type deployer struct {
 	keepKey            bool   // tier B: the key set in SecureBootDir is used, not made
 	signedLoader       []byte // the loader signed with the machine key (tiers A and B)
 	mokPassword        string // tier B: the password of the request that was written
+	plymouthChanged    bool   // plymouthd.conf was edited, so the target's initramfs is out of date
 
 	uefi, bios bool
 	bs         string // PARTUUID of boot storage
@@ -336,6 +347,9 @@ func (d *deployer) stage(ctx context.Context) error {
 		return err
 	}
 	if err := d.writeDKMSDropIn(); err != nil {
+		return err
+	}
+	if err := d.setPlymouth(); err != nil {
 		return err
 	}
 

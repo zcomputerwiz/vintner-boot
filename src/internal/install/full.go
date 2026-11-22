@@ -37,6 +37,9 @@ type FullOptions struct {
 	Options
 	KernelABI   string // default: the newest kernel in <target>/boot
 	CmdlineFile string // default: <target>/etc/kernel/cmdline
+	// rebuildInitramfs forces the update-initramfs of UpdateInitramfs even when the
+	// modification times say it is fresh (install edited a file the initramfs carries).
+	rebuildInitramfs bool
 	// UpdateInitramfs runs update-initramfs -u -k <abi> in the target when the
 	// initramfs is older than its inputs, instead of refusing (WO-0010 3.5).
 	UpdateInitramfs bool
@@ -72,6 +75,12 @@ func Install(ctx context.Context, f FullOptions) (*Result, error) {
 		if abi, err = NewestKernel(f.TargetDir); err != nil {
 			return fail("kernel", err)
 		}
+	}
+	if dep.PlymouthChanged() {
+		// The edit above is vintner's own, and the initramfs carries plymouthd.conf:
+		// it is rebuilt without being asked, or the screen would not change.
+		fmt.Fprintln(f.Log, "plymouthd.conf changed: the initramfs is built again")
+		f.UpdateInitramfs, f.rebuildInitramfs = true, true
 	}
 	if err := checkInitramfsFresh(ctx, f, abi); err != nil {
 		return fail("initramfs", err)

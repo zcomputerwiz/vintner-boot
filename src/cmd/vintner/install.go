@@ -52,6 +52,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	recA := fs.String("recovery-cmdline-a", "", "extra kernel options for recovery A, for example a serial console")
 	recB := fs.String("recovery-cmdline-b", "", "extra kernel options for recovery B")
 	recTitle := fs.String("recovery-title", "", "the product's name for the recovery image in the boot menus (default \"Recovery Console\"; recovery B adds \" (backup)\")")
+	plymouthTheme := fs.String("plymouth-theme", "", "the boot screen: Theme, ShowDelay=0 and DeviceTimeout=8 in the target's /etc/plymouth/plymouthd.conf (default "+install.DefaultPlymouthTheme+", left alone with a note when the target has no such theme; \"none\" leaves the file alone)")
 	sbTier := fs.String("secure-boot", "none", "Secure Boot tier: none; A (a machine key in the firmware's db, no shim); or B (the machine key in shim's MOK list, confirmed once at the console in MokManager). A and B create the key, sign the loader and the recovery images")
 	sbDir := fs.String("secure-boot-dir", "", "where the machine key is kept (default <target>/etc/vintner/secureboot)")
 	sbEnrolled := fs.Bool("secure-boot-enrolled", false, "the machine certificate is in the firmware's db (tier A) or shim's MOK list (tier B); use when the installer cannot read the firmware's variables")
@@ -132,7 +133,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	opts := install.FullOptions{KernelABI: *kernel, CmdlineFile: *cmdlineFile, UpdateInitramfs: *updateInitramfs, Options: install.Options{
 		Firmware: *firmware, Layout: l, Payload: pl,
 		TargetDir: *target, ESPDir: *espDir, BootStorageDir: *bsDir,
-		EFIVarDir: *efivars, NoEFIVars: *efivars == "none", RecoveryExtraA: *recA, RecoveryExtraB: *recB, RecoveryTitle: *recTitle,
+		EFIVarDir: *efivars, NoEFIVars: *efivars == "none", RecoveryExtraA: *recA, RecoveryExtraB: *recB, RecoveryTitle: *recTitle, PlymouthTheme: *plymouthTheme,
 		SecureBootTier: *sbTier, SecureBootDir: *sbDir, SecureBootEnrolled: *sbEnrolled, MOKPassword: mokPassword,
 		Log: stdout,
 	}}
