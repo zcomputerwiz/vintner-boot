@@ -200,7 +200,8 @@ fi
 sudo rm -rf "$MNT/tmp/ird"
 
 # The stock loader is gone, and vintner-platform now installs.
-if sudo chroot "$MNT" dpkg-query -W -f='${Status}' grub-pc 2>/dev/null | grep -q 'install ok installed'; then
+grub_status=$(sudo chroot "$MNT" dpkg-query -W -f='${Status}' grub-pc 2>/dev/null || true)
+if grep -q 'install ok installed' <<<"$grub_status"; then
 	record "I6-stock-loader-removed" FAIL "grub-pc is still installed"
 elif [ -e "$MNT/boot/efi/EFI/debian" ]; then
 	record "I6-stock-loader-removed" FAIL "EFI/debian is still on the ESP"
@@ -269,21 +270,22 @@ for fw in bios uefi; do
 	log=$OUT/boot-$fw.log
 	clean=$(tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g')
 	if [ "$fw" = bios ]; then
-		first=$(printf '%s\n' "$clean" | sed -n 's/.*vintner: trying \([^ ]*\).*/\1/p' | head -n 1)
+		first=$(sed -n 's/.*vintner: trying \([^ ]*\).*/\1/p' <<<"$clean" | head -n 1 || true)
 		if [ "$first" = os-1 ]; then
 			record "I2-bios-boots-generation-1" PASS "GRUB tried os-1 first"
 		else
 			record "I2-bios-boots-generation-1" FAIL "GRUB tried '${first:-nothing}' first, see boot-bios.log"
 		fi
 	else
-		entry=$(printf '%s\n' "$clean" | sed -n 's/^LOADER_ENTRY_SELECTED: \(.*\)$/\1/p' | head -n 1)
+		entry=$(sed -n 's/^LOADER_ENTRY_SELECTED: \(.*\)$/\1/p' <<<"$clean" | head -n 1 || true)
 		case "$entry" in
 			vintner-os-1*) record "I4-uefi-boots-generation-1" PASS "systemd-boot selected $entry" ;;
 			*) record "I4-uefi-boots-generation-1" FAIL "systemd-boot selected '${entry:-nothing}', see boot-uefi.log" ;;
 		esac
 	fi
-	cmdline=$(printf '%s\n' "$clean" | sed -n 's/^CMDLINE: \(.*\)$/\1/p' | head -n 1)
-	if printf '%s' "$cmdline" | grep -q 'vintner.bootstorage=PARTUUID=' && printf '%s\n' "$clean" | grep -q '^BLESS_ACTIVE: active$'; then
+	cmdline=$(sed -n 's/^CMDLINE: \(.*\)$/\1/p' <<<"$clean" | head -n 1 || true)
+	# Here-strings, not pipes: grep -q ends early, and under pipefail the printf feeding it then fails (SIGPIPE).
+	if grep -q 'vintner.bootstorage=PARTUUID=' <<<"$cmdline" && grep -q '^BLESS_ACTIVE: active$' <<<"$clean"; then
 		st=$(image_state "$fw")
 		n=3; [ "$fw" = uefi ] && n=5
 		if [ "$st" = GOOD ]; then
