@@ -26,7 +26,7 @@ What `debian/` builds and why (WO-0010 2.1 to 2.4). The packages build with `dpk
 No Debian package ships this file (trixie Contents index), so `vintner-core` owns it. It is a conffile: an edit by the administrator survives upgrades and is kept on `remove`; `purge` deletes it.
 
 ## /etc/plymouth/plymouthd.conf is not shipped (D-E)
-Debian's `plymouth` ships this file, and as a conffile (`dpkg-deb -e` of `plymouth_24.004.60-5`: it is in `conffiles`; its content is all comments). `vintner-core` used to ship its own, which made the two packages fight over one path. It no longer does. `vintner install --plymouth-theme` (WO-0010 3.2) will set `Theme`, `ShowDelay=0` and `DeviceTimeout=8` as an administrator edit.
+Debian's `plymouth` ships this file, and as a conffile (`dpkg-deb -e` of `plymouth_24.004.60-5`: it is in `conffiles`; its content is all comments). `vintner-core` used to ship its own, which made the two packages fight over one path. It no longer does. `vintner install --plymouth-theme` (WO-0010 2.3) sets `Theme`, `ShowDelay=0` and `DeviceTimeout=8` as an administrator edit (`docs/accepted-platforms.md`, "The boot screen").
 
 What an upgrade of `plymouth` does to such an edit:
 - reinstalling the same version keeps the edit and asks nothing (tested in `ci/package/install-test.sh`);
@@ -80,4 +80,4 @@ Where the packages come from:
 - **CI:** the `build-debs` job of `qemu-tests.yml` builds them in a `debian:trixie` container once and hands them to every row as the artifact `vintner-debs`, through `VINTNER_DEBS`.
 - **Locally:** `ci/local/run-all.sh` runs `ci/package/build-debs.sh` once before the qemu rows and sets `VINTNER_DEBS`. A row run by hand builds them itself into `ci/out/vintner-debs` when they are missing or were built from another tree (`SOURCE_TREE`); that needs a Debian 13 host with the build dependencies, otherwise it stops and says so.
 
-Still by hand: `ci/integration/uefi-bless` and `ci/integration/bios-bless` (they do not use `vintner-base.sh`), and `/etc/plymouth/plymouthd.conf` in `ci/graphics` until `vintner install --plymouth-theme` exists (WO-0010 3.2).
+Still by hand: `ci/integration/uefi-bless` and `ci/integration/bios-bless` (they do not use `vintner-base.sh`), and `/etc/plymouth/plymouthd.conf` in `ci/graphics`, which does not run `vintner install` (`ci/install` row I8 covers `--plymouth-theme`).

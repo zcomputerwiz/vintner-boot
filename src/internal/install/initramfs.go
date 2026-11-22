@@ -15,6 +15,7 @@ import (
 // hooks, scripts and configuration of initramfs-tools.
 var initramfsInputs = []string{
 	"etc/initramfs-tools",
+	"etc/plymouth", // plymouthd.conf: the initramfs carries the theme it names
 	"usr/share/initramfs-tools",
 	"usr/lib/initramfs-tools",
 }
@@ -78,8 +79,11 @@ func checkInitramfsFresh(ctx context.Context, f FullOptions, abi string) error {
 	if err != nil {
 		return err
 	}
-	if stale == "" {
+	if stale == "" && !f.rebuildInitramfs {
 		return nil
+	}
+	if stale == "" {
+		stale = "plymouthd.conf was changed, and the initramfs carries it"
 	}
 	if !f.UpdateInitramfs {
 		return fmt.Errorf("the initramfs is stale: %s; run update-initramfs -u -k %s in the target, or run vintner install with --update-initramfs", stale, abi)

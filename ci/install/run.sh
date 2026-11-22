@@ -160,6 +160,15 @@ sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C \
 sudo mkdir -p "$MNT/root/vp"
 sudo chroot "$MNT" dpkg-deb -x /root/vintner-platform.deb /root/vp
 
+# Plymouth and plymouth-themes (which ship two-step.so, the plugin of vintner-bgrt: without it the
+# initramfs hook skips Plymouth), which vintner-core only Recommends. plymouthd.conf is Debian's (every line a
+# comment), and its initramfs hook builds an initramfs that carries it. `vintner install`
+# must select the boot screen and build the initramfs again (WO-0010 D-E, 2.3).
+echo "=== installing plymouth ==="
+sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C \
+	apt-get install -y --no-install-recommends plymouth plymouth-themes > "$OUT/plymouth.log" 2>&1 \
+	|| { tail -n 30 "$OUT/plymouth.log" >&2; exit 1; }
+
 echo "=== vintner install ==="
 INSTALL_RC=0
 sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
@@ -172,8 +181,27 @@ else
 	exit 1
 fi
 
+# The boot screen is selected, and the initramfs that generation 1 starts carries the selection.
+ABI=$(sudo chroot "$MNT" sh -c 'ls /boot | sed -n "s/^vmlinuz-//p" | sort -V | tail -n 1')
+sudo chroot "$MNT" sh -c "rm -rf /tmp/ird && unmkinitramfs /boot/initrd.img-$ABI /tmp/ird"
+IRD_CONF=$(sudo find "$MNT/tmp/ird" -path '*etc/plymouth/plymouthd.conf' | head -n 1)
+IRD_THEME=$(sudo find "$MNT/tmp/ird" -path '*usr/share/plymouth/themes/vintner-bgrt/vintner-bgrt.plymouth' | head -n 1)
+sel=$(sudo grep -E '^(Theme|ShowDelay|DeviceTimeout)=' "$MNT/etc/plymouth/plymouthd.conf" | tr '\n' ' ')
+irdsel=""
+[ -n "$IRD_CONF" ] && irdsel=$(sudo grep -E '^(Theme|ShowDelay|DeviceTimeout)=' "$IRD_CONF" | tr '\n' ' ')
+want='Theme=vintner-bgrt ShowDelay=0 DeviceTimeout=8 '
+sorted() { printf '%s' "$1" | tr ' ' '\n' | sort | tr '\n' ' '; }
+if [ "$(sorted "$sel")" = "$(sorted "$want")" ] && [ "$(sorted "$irdsel")" = "$(sorted "$want")" ] && [ -n "$IRD_THEME" ] \
+	&& grep -q 'plymouthd.conf changed: the initramfs is built again' "$OUT/install.log"; then
+	record "I8-plymouth-theme" PASS "plymouthd.conf selects vintner-bgrt; initrd.img-$ABI holds the same settings and the theme; install said it built the initramfs again"
+else
+	record "I8-plymouth-theme" FAIL "target: '$sel'; initramfs (${IRD_CONF:-no plymouthd.conf}): '$irdsel'; theme in initramfs: '${IRD_THEME:-none}'; see install.log"
+fi
+sudo rm -rf "$MNT/tmp/ird"
+
 # The stock loader is gone, and vintner-platform now installs.
-if sudo chroot "$MNT" dpkg-query -W -f='${Status}' grub-pc 2>/dev/null | grep -q 'install ok installed'; then
+grub_status=$(sudo chroot "$MNT" dpkg-query -W -f='${Status}' grub-pc 2>/dev/null || true)
+if grep -q 'install ok installed' <<<"$grub_status"; then
 	record "I6-stock-loader-removed" FAIL "grub-pc is still installed"
 elif [ -e "$MNT/boot/efi/EFI/debian" ]; then
 	record "I6-stock-loader-removed" FAIL "EFI/debian is still on the ESP"
@@ -242,21 +270,22 @@ for fw in bios uefi; do
 	log=$OUT/boot-$fw.log
 	clean=$(tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g')
 	if [ "$fw" = bios ]; then
-		first=$(printf '%s\n' "$clean" | sed -n 's/.*vintner: trying \([^ ]*\).*/\1/p' | head -n 1)
+		first=$(sed -n 's/.*vintner: trying \([^ ]*\).*/\1/p' <<<"$clean" | head -n 1 || true)
 		if [ "$first" = os-1 ]; then
 			record "I2-bios-boots-generation-1" PASS "GRUB tried os-1 first"
 		else
 			record "I2-bios-boots-generation-1" FAIL "GRUB tried '${first:-nothing}' first, see boot-bios.log"
 		fi
 	else
-		entry=$(printf '%s\n' "$clean" | sed -n 's/^LOADER_ENTRY_SELECTED: \(.*\)$/\1/p' | head -n 1)
+		entry=$(sed -n 's/^LOADER_ENTRY_SELECTED: \(.*\)$/\1/p' <<<"$clean" | head -n 1 || true)
 		case "$entry" in
 			vintner-os-1*) record "I4-uefi-boots-generation-1" PASS "systemd-boot selected $entry" ;;
 			*) record "I4-uefi-boots-generation-1" FAIL "systemd-boot selected '${entry:-nothing}', see boot-uefi.log" ;;
 		esac
 	fi
-	cmdline=$(printf '%s\n' "$clean" | sed -n 's/^CMDLINE: \(.*\)$/\1/p' | head -n 1)
-	if printf '%s' "$cmdline" | grep -q 'vintner.bootstorage=PARTUUID=' && printf '%s\n' "$clean" | grep -q '^BLESS_ACTIVE: active$'; then
+	cmdline=$(sed -n 's/^CMDLINE: \(.*\)$/\1/p' <<<"$clean" | head -n 1 || true)
+	# Here-strings, not pipes: grep -q ends early, and under pipefail the printf feeding it then fails (SIGPIPE).
+	if grep -q 'vintner.bootstorage=PARTUUID=' <<<"$cmdline" && grep -q '^BLESS_ACTIVE: active$' <<<"$clean"; then
 		st=$(image_state "$fw")
 		n=3; [ "$fw" = uefi ] && n=5
 		if [ "$st" = GOOD ]; then
