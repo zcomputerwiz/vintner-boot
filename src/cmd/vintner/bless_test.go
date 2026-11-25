@@ -891,6 +891,65 @@ func TestBlessUEFIArmsStagedBIOSSide(t *testing.T) {
 	}
 }
 
+func TestBlessDoesNotBlessIncompleteStagedImage(t *testing.T) {
+	uki := []byte("os2-uki")
+	m := newTestManifest("both", []manifest.Image{{
+		Generation: 2,
+		State:      "STAGED",
+		Kernel:     manifest.Kernel{ABI: "6.12.0-1"},
+		Created:    "2026-10-16T00:00:00Z",
+		Cmdline:    "console=ttyS0",
+		UEFI:       &manifest.UEFIFile{Entry: "vintner-os-2", SHA256: calcSHA256(uki), Size: len(uki)},
+		BIOS: &manifest.BIOSFiles{Dir: "/vintner/bios/os-2", Files: manifest.BIOSFilesMap{
+			Vmlinuz: strings.Repeat("0", 64), InitrdImg: strings.Repeat("0", 64), SlotCfg: strings.Repeat("0", 64)}},
+	}})
+	// As TestBlessUEFIArmsStagedBIOSSide, but the BIOS slot was never written.
+	m.NextGeneration = 3
+	h := strings.Repeat("0", 64)
+	m.Recovery = []manifest.Recovery{{
+		Slot: "a", Version: "1",
+		UEFI: &manifest.UEFIFile{Entry: "vintner-recovery-a", SHA256: h, Size: 100},
+		BIOS: &manifest.BIOSFiles{Dir: "/vintner/bios/recovery-a", Files: manifest.BIOSFilesMap{Vmlinuz: h, InitrdImg: h, SlotCfg: h}},
+	}}
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	bootStorage, efivarsDir := setupTestEnv(t, true, m)
+	stateDir := filepath.Join(bootStorage, "vintner", "state")
+	efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+	if err := os.WriteFile(filepath.Join(efiDir, "vintner-os-2+2-1.efi"), uki, 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(bootStorage, "grub"), 0755)
+	envPath := filepath.Join(bootStorage, "grub", "grubenv")
+	if err := os.WriteFile(envPath, bytes.Repeat([]byte{'#'}, 1024), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := grubenv.Write(envPath, &grubenv.Env{}); err != nil {
+		t.Fatal(err)
+	}
+	efivar.SetString(efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo, 0, "\\EFI\\Linux\\vintner-os-2+2-1.efi")
+
+	oldOsExit := osExit
+	defer func() { osExit = oldOsExit }()
+	exitCode := 0
+	osExit = func(code int) {
+		exitCode = code
+		panic(fmt.Sprintf("exit %d", code))
+	}
+	func() {
+		defer func() { recover() }()
+		cmdBless([]string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+	}()
+
+	if exitCode == 0 {
+		t.Error("expected non-zero exit")
+	}
+	if state := getManifestGen(t, stateDir, 2).State; state != "STAGED" {
+		t.Errorf("state = %s, want STAGED", state)
+	}
+}
+
 func TestBlessHealthReporting(t *testing.T) {
 	// Setup test directory and keys
 	sbDir := t.TempDir()

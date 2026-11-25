@@ -1355,7 +1355,7 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 			testpoint.Hit("gc-grubenv-written")
 		}
 
-		// 2. remove its BIOS directory and its UKI (found by stem with bls.Find)
+		// 2. remove its BIOS directory and UKIs
 		if isBIOS {
 			biosSlotDir := filepath.Join(bootStorageDir, "vintner", "bios", fmt.Sprintf("os-%d", remGen))
 			if err := os.RemoveAll(biosSlotDir); err != nil {
@@ -1365,20 +1365,24 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 		if isUEFI {
 			efiDir := filepath.Join(bootStorageDir, "EFI", "Linux")
 			stem := fmt.Sprintf("vintner-os-%d", remGen)
-			if ukiFile, err := bls.Find(efiDir, stem); err == nil {
-				if err := os.Remove(filepath.Join(efiDir, ukiFile)); err != nil {
-					return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, ukiFile, err)
-				}
-			}
 			// Its variants go with it, found by name rather than by record: a
 			// record interrupted before it listed them must not leave files.
-			if dirEntries, err := os.ReadDir(efiDir); err == nil {
+			dirEntries, err := os.ReadDir(efiDir)
+			if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("gc generation %d: read %s: %w", remGen, efiDir, err)
+			}
+			if err == nil {
 				for _, de := range dirEntries {
-					if pe, ok := bls.Parse(de.Name()); ok && !pe.Counted {
-						if vg, _, isVar := bls.IsVintnerVariant(pe.Stem); isVar && vg == remGen {
-							if err := os.Remove(filepath.Join(efiDir, de.Name())); err != nil {
-								return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, de.Name(), err)
-							}
+					pe, ok := bls.Parse(de.Name())
+					if !ok {
+						continue
+					}
+					vg, _, isVar := bls.IsVintnerVariant(pe.Stem)
+					// Every file of the generation goes, not only one: a torn rename on FAT
+					// can leave two counted names, and both would stay bootable untracked.
+					if pe.Stem == stem || (!pe.Counted && isVar && vg == remGen) {
+						if err := os.Remove(filepath.Join(efiDir, de.Name())); err != nil {
+							return nil, fmt.Errorf("gc generation %d: remove %s: %w", remGen, de.Name(), err)
 						}
 					}
 				}

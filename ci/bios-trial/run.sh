@@ -288,7 +288,9 @@ variant_scenario() { # name grubenv-vars...: boots the variant of os-2 from the 
 	set_env "VINTNER_ORDER=2 1" "$@" VINTNER_T_1=xxx VINTNER_T_RA=xxx
 	slot_cfg_variant "$BS" os-2 os-2
 	before=$(get_env && sha256sum < "$OUT/env")
-	boot qmp < <(variant_keys down ret)
+	# The menu opens on the generation the timeout would boot: os-2, or os-1 when os-2
+	# is bad. Home goes to the first entry (os-2) either way; the variant is next.
+	boot qmp < <(variant_keys home down ret)
 	expect "grubenv sha256 after a variant boot" "$(get_env && sha256sum < "$OUT/env")" "$before"
 	end "os-2-safe"
 }
