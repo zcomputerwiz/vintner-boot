@@ -51,4 +51,6 @@ Garbage collection runs after a successful publish and never touches recovery im
 3. every `TRYING` image;
 4. further images, newest first, until `retain` images remain.
 
+It also never removes the running image: the generation named by the BIOS loader's `vintner.image=os-<g>` token or by systemd-boot's `LoaderEntrySelected` (a variant counts as its generation). On its last try reconciliation marks it `FAILED` before bless runs, and bless still needs its files and record. It is kept outside the `retain` budget.
+
 `FAILED` images go first, then the oldest. Before removing an image it drops that image's kernel package from the `APT::NeverAutoRemove` list (architecture §6 step 8). If the rules above would keep more than `retain` images, it keeps them all and reports the image budget as exceeded.

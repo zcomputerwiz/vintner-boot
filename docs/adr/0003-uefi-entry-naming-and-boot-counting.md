@@ -68,7 +68,7 @@ Finding 6 conflicts with §6 step 7 ("repeated failure of all ordinary entries s
 
 **Option B: re-arm (accepted).** Every ordinary image and recovery A keeps a counter for life:
 
-- After `boot-complete.target`, a vintner bless service renames the booted entry back to `+<N>-0`, where N is the configured number of tries. It finds the entry through the `LoaderBootCountPath` EFI variable that systemd-boot sets for counted entries. It also records GOOD in the manifest. The GOOD and TRYING states live in the manifest, not in the file name.
+- After `boot-complete.target`, a vintner bless service renames the booted entry back to `+<N>-0`, where N is the configured number of tries. It finds the entry through the `LoaderBootCountPath` EFI variable that systemd-boot sets for counted entries. When that is unset (the file had lost its counter, or the loader's rename failed), it uses `LoaderEntrySelected` instead, so the entry gets its counter back. It also records GOOD in the manifest. The GOOD and TRYING states live in the manifest, not in the file name.
 - Upstream `systemd-bless-boot.service` is masked.
 - The recovery image re-arms recovery A once its own early checks pass.
 - Any ordinary image that fails N consecutive boots becomes bad and sorts below recovery. When every ordinary image has failed, recovery A boots without user input, as R05 and §6 step 7 require.
