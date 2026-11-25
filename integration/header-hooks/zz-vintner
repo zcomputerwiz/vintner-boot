@@ -5,5 +5,7 @@
 # kernel version). DKMS's own hook in this directory ran first and built the
 # modules for that kernel with "dkms autoinstall", which does not run the
 # post_transaction hook (dkms 3.2.2), so publish here, by the same script. It
-# never fails the headers package.
+# never fails the headers package. It is a conffile, so it stays after vintner-core is
+# removed (not purged); it then does nothing.
+[ -x /usr/lib/vintner/dkms-post-transaction ] || exit 0
 exec /usr/lib/vintner/dkms-post-transaction "$1"
