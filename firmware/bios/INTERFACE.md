@@ -12,7 +12,7 @@ This is the contract between the static [`grub.cfg`](grub.cfg), the publisher an
 
   The list lives in [`core-modules.txt`](core-modules.txt), which every image builder reads; `ci/lint/grub-modules.sh` fails if `grub.cfg` uses a module outside it.
 
-- `grub.cfg` sets up the serial terminal only if the `serial` command succeeds, and clears the screen if it does not, so a machine without a serial port shows no error (WO-0010 1.4; checked by `ci/bios-trial/noserial.py`).
+- `grub.cfg` keeps the screen empty until the kernel's boot splash (WO-0010 1.4, R10; checked by `ci/bios-trial/noserial.py`, rows S1 and S2). It clears the screen first, which removes `Welcome to GRUB!` and, on a machine without a serial port, the error of the failed `serial` command. With a serial port, keys come from both terminals but output goes to the serial console only, so the `vintner: trying <dir>` lines are there and not on the screen; without one they are not printed. The menu and the `cannot boot` and `no bootable image` lines put the screen back as an output.
 
 - The early configuration embedded in `core.img` is the only per-machine part:
 
