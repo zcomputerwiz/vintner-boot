@@ -30,6 +30,27 @@ const (
 	espUUID   = "b558256e-e822-4787-9bd2-c4c47dfb54d9"
 )
 
+func TestWriteFileSyncReplacesTargetAtomically(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "loader.efi")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileSync(path, []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new" {
+		t.Errorf("target = %q, want new", got)
+	}
+	if _, err := os.Stat(path + ".vintner-tmp"); !os.IsNotExist(err) {
+		t.Errorf("temporary file remains: %v", err)
+	}
+}
+
 type fakeUKI struct {
 	reqs   []publish.UKIRequest
 	osrels []string // the .osrel of each request, read while it exists

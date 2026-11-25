@@ -45,4 +45,4 @@ Flags for tests and the recovery image: `--boot-storage`, `--state-dir`, `--esp`
 
 ## Tests
 
-`TestLoaderConfShipped` holds that setting 0 leaves the shipped `loader.conf` as it is and another number changes only its timeout line. `ci/selection-policy` S22 and S23 show systemd-boot showing the menu with `timeout 4` and no key, and not with `timeout 0`. `ci/bios-trial` B27 to B29 show GRUB doing the same from `VINTNER_TIMEOUT`, and a pending request winning over it.
+`TestLoaderConfShipped` holds that setting 0 leaves the shipped `loader.conf` as it is and another number changes only its timeout line. `ci/selection-policy` S22 and S23 show systemd-boot showing the menu with `timeout 4` and no key, and not with `timeout 0`. `ci/bios-trial` B27 to B29 show GRUB doing the same from `VINTNER_TIMEOUT`, and a pending request winning over it. B30 to B32 show that the timeout then boots the newest generation that is not bad, or recovery A, or recovery B, as the hidden boot would.

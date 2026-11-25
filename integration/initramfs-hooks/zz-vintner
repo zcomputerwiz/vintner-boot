@@ -1,2 +1,15 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Installed as /etc/initramfs/post-update.d/zz-vintner: an initramfs was built for
+# kernel $1. It is a conffile, so it stays after vintner-core is removed (not
+# purged); it then does nothing instead of failing every update-initramfs.
+[ -x /usr/sbin/vintner ] || exit 0
+# Only the newest installed kernel is published. "update-initramfs -u -k all" builds
+# them newest first, and each publish puts its generation first in the boot order,
+# so publishing every one would leave the oldest kernel as the one that boots.
+newest=$(for f in /boot/vmlinuz-*; do [ -e "$f" ] && echo "${f#/boot/vmlinuz-}"; done | sort -V | tail -n 1)
+if [ -n "$newest" ] && [ "$1" != "$newest" ]; then
+	echo "vintner: not publishing for kernel $1: it is not the newest installed kernel ($newest)" >&2
+	exit 0
+fi
 exec vintner publish --kernel "$1"

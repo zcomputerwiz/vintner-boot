@@ -452,10 +452,18 @@ func (d *deployer) mkdir(base string, rel ...string) error {
 }
 
 func writeFileSync(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	// Write beside the target so a power cut cannot leave it truncated.
+	tmp := path + ".vintner-tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
+	removeTmp := true
+	defer func() {
+		if removeTmp {
+			os.Remove(tmp)
+		}
+	}()
 	if _, err := f.Write(data); err != nil {
 		f.Close()
 		return err
@@ -467,6 +475,10 @@ func writeFileSync(path string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	removeTmp = false
 	// The new directory entry must be durable too, or the synced data is unreachable.
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {

@@ -182,6 +182,18 @@ func cmdBless(args []string) {
 					return
 				}
 			}
+			stillStaged := false
+			for _, reconciled := range m.Images {
+				if reconciled.Generation == bootedGen && reconciled.State == "STAGED" {
+					stillStaged = true
+					break
+				}
+			}
+			if stillStaged {
+				fmt.Fprintf(os.Stderr, "vintner bless: generation %d publication is incomplete\n", bootedGen)
+				osExit(1)
+				return
+			}
 			break
 		}
 	}

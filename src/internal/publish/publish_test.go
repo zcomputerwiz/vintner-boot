@@ -887,6 +887,53 @@ func TestPublishStaleAndGarbageCollection(t *testing.T) {
 	}
 }
 
+func TestGarbageCollectionRemovesDuplicateCountedUKIs(t *testing.T) {
+	rootDir, bootStorageDir, m := setupTestEnv(t, "uefi")
+	stateDir := filepath.Join(bootStorageDir, "vintner", "state")
+	// Retain 2 keeps the two GOOD images of different kernels; generation 1 (FAILED) goes.
+	m.Retain = 2
+	m.Images[0].State = "FAILED"
+	uefi := func(g int) *manifest.UEFIFile {
+		return &manifest.UEFIFile{Entry: fmt.Sprintf("vintner-os-%d", g), SHA256: strings.Repeat("0", 64), Size: 1}
+	}
+	m.Images[0].UEFI = uefi(1)
+	m.Images = append(m.Images,
+		manifest.Image{Generation: 2, State: "GOOD", Kernel: manifest.Kernel{ABI: "abi-2"}, Created: "2026-10-16T00:00:00Z", Cmdline: m.Images[0].Cmdline, UEFI: uefi(2)},
+		manifest.Image{Generation: 3, State: "GOOD", Kernel: manifest.Kernel{ABI: "abi-3"}, Created: "2026-10-17T00:00:00Z", Cmdline: m.Images[0].Cmdline, UEFI: uefi(3)})
+	m.NextGeneration = 4
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.Save(stateDir, m); err != nil {
+		t.Fatal(err)
+	}
+	efiDir := filepath.Join(bootStorageDir, "EFI", "Linux")
+	names := []string{"vintner-os-1+3-0.efi", "vintner-os-1+2-1.efi"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(efiDir, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := finishPublish(io.Discard, io.Discard, m, stateDir, bootStorageDir, rootDir, 3, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		if _, err := os.Stat(filepath.Join(efiDir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s was not removed", name)
+		}
+	}
+	got, err := manifest.Load(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, img := range got.Images {
+		if img.Generation == 1 {
+			t.Fatal("generation 1 record was not removed")
+		}
+	}
+}
+
 func TestNotVintnerSystem(t *testing.T) {
 	tmpDir := t.TempDir()
 	opts := Options{

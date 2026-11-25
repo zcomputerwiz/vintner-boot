@@ -288,7 +288,9 @@ variant_scenario() { # name grubenv-vars...: boots the variant of os-2 from the 
 	set_env "VINTNER_ORDER=2 1" "$@" VINTNER_T_1=xxx VINTNER_T_RA=xxx
 	slot_cfg_variant "$BS" os-2 os-2
 	before=$(get_env && sha256sum < "$OUT/env")
-	boot qmp < <(variant_keys down ret)
+	# The menu opens on the generation the timeout would boot: os-2, or os-1 when os-2
+	# is bad. Home goes to the first entry (os-2) either way; the variant is next.
+	boot qmp < <(variant_keys home down ret)
 	expect "grubenv sha256 after a variant boot" "$(get_env && sha256sum < "$OUT/env")" "$before"
 	end "os-2-safe"
 }
@@ -396,6 +398,26 @@ set_env "VINTNER_ORDER=2 1" VINTNER_TIMEOUT=3 VINTNER_NEXT=recovery VINTNER_T_2=
 boot
 expect "menu" "$(menu_shown "$OUT/B29-next-boot-beats-menu-timeout-boot1.log")" "not shown"
 end "ra"
+# The menu's timeout boots what the hidden boot would: the newest generation that is not
+# bad, then recovery A, then recovery B. A bad newest image must not boot on every start.
+begin B30-menu-timeout-skips-bad
+set_env "VINTNER_ORDER=2 1" VINTNER_TIMEOUT=1 VINTNER_T_2=0 VINTNER_T_1=xxx VINTNER_T_RA=xxx
+boot
+expect "menu" "$(menu_shown "$OUT/B30-menu-timeout-skips-bad-boot1.log")" shown
+expect grubenv "$(vars)" "VINTNER_BOOTED=1;$O;VINTNER_TIMEOUT=1;VINTNER_T_1=xx;VINTNER_T_2=0;VINTNER_T_RA=xxx"
+end "os-1"
+begin B31-menu-timeout-all-bad
+set_env "VINTNER_ORDER=2 1" VINTNER_TIMEOUT=1 VINTNER_T_2=0 VINTNER_T_1=0 VINTNER_T_RA=xxx
+boot
+expect "menu" "$(menu_shown "$OUT/B31-menu-timeout-all-bad-boot1.log")" shown
+expect grubenv "$(vars)" "VINTNER_BOOTED=RA;$O;VINTNER_TIMEOUT=1;VINTNER_T_1=0;VINTNER_T_2=0;VINTNER_T_RA=xx"
+end "ra"
+begin B32-next-menu-recovery-a-bad
+set_env "VINTNER_ORDER=2 1" VINTNER_NEXT=menu:1 VINTNER_T_2=0 VINTNER_T_1=0 VINTNER_T_RA=0
+boot
+expect "menu" "$(menu_shown "$OUT/B32-next-menu-recovery-a-bad-boot1.log")" shown
+expect grubenv "$(vars)" "$O;VINTNER_T_1=0;VINTNER_T_2=0;VINTNER_T_RA=0"
+end "rb"
 
 # WO-0010 4.5: every image GRUB boots gets "vintner.image=<dir>" on its command line, so
 # "vintner status" can tell which image booted after the bless service has cleared

@@ -1,2 +1,7 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Installed as /etc/kernel/postinst.d/zz-vintner. It is a conffile, so it stays after
+# vintner-core is removed (not purged); it then does nothing instead of failing every
+# kernel package.
+[ -x /usr/sbin/vintner ] || exit 0
 exec vintner publish --kernel "$1"
