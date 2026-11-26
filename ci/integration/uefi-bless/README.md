@@ -37,10 +37,11 @@ ci/integration/uefi-bless/run.sh
    - Builds UKI `vintner-os-1+3-0.efi` with trixie `ukify` using guest kernel `vmlinuz` and `initrd.img`, with cmdline `root=UUID=<uuid> ro console=ttyS0,115200 vintner.bootstorage=PARTUUID=<uuid>`.
    - Places UKI at `/EFI/Linux/vintner-os-1+3-0.efi` on boot storage.
    - Generates initial manifests (`manifest-a` seq 1 `TRYING`, `manifest-b` seq 2 `TRYING`) using a throwaway Go program calling `manifest.Save`.
-6. **Executes three VM boots:**
+6. **Executes four VM boots:**
    - **Boot 1 (bless enabled):** systemd-boot decrements UKI to `+2-1`. On boot, `vintner-bless.service` mounts boot storage, validates state, re-arms UKI to `+3-0`, and writes `manifest-a` (seq 3 `GOOD`). Checks A1–A6 evaluate.
    - **Boot 2 (bless masked):** `vintner-bless.service` is masked by linking to `/dev/null`. systemd-boot decrements UKI from `+3-0` to `+2-1`. Bless does not run; UKI remains `+2-1`. Check A7 evaluates.
    - **Boot 3 (missing bootstorage parameter):** `vintner-bless.service` is unmasked, and the UKI is rebuilt without `vintner.bootstorage=`. systemd-boot decrements UKI from `+2-1` to `+1-2`. `vintner bless` fails with a descriptive error naming the missing parameter. UKI is not re-armed (`+1-2`), and manifest remains unchanged (`seq 3`). Check A8 evaluates.
+   - **Boot 4 (entry without a counter):** the boot 1 UKI, with `vintner.bootstorage=`, is put on boot storage as `vintner-os-1.efi` (no counter) and `vintner-bless.service` is enabled. systemd-boot boots it without setting `LoaderBootCountPath`. `vintner bless` finds the entry through `LoaderEntrySelected`, renames it to `vintner-os-1+3-0.efi` and writes the manifest again (seq above 3, `GOOD`). Check A9 evaluates. Without the fallback (`LoaderEntrySelected`) bless fails with "LoaderBootCountPath not found" and the file stays `vintner-os-1.efi`; the row was run that way to see A9 FAIL.
 
 ## Package versions
 
@@ -60,3 +61,4 @@ ci/integration/uefi-bless/run.sh
 | A6 | `sudo vintner reconcile --dry-run` | Exit 0, no report lines, unmounted afterwards | PASS | `vintner reconcile --dry-run exited 0 with no action or report lines` |
 | A7 | Second boot with `vintner-bless.service` masked | `vintner-os-1+2-1.efi` (boot counted, not rearmed) | PASS | `Files in ::/EFI/Linux: vintner-os-1+2-1.efi (decremented by systemd-boot to +2-1, not rearmed)` |
 | A8 | Third boot with unmasked bless but missing `vintner.bootstorage=` | Bless fails naming parameter; file +1-2; manifest unchanged | PASS | `Bless failed naming missing parameter; file decremented to +1-2; manifest unchanged` |
+| A9 | Fourth boot with the entry's file name carrying no counter | No `LoaderBootCountPath`; bless re-arms `vintner-os-1+3-0.efi` and records `GOOD` | PASS | `loader set no LoaderBootCountPath; bless re-armed the entry as vintner-os-1+3-0.efi and recorded GOOD (manifest seq after boot 3 was 3)` |
