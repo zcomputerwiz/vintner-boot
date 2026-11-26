@@ -349,3 +349,78 @@ func TestStatusRefusals(t *testing.T) {
 		t.Errorf("exit %d, want %d", code, statusUsage)
 	}
 }
+
+// A fall back (WO-0010 4.9): a newer generation used up its tries, so the loader
+// went back to an older one. That older generation was GOOD, so failed_attempts
+// is 0 and the product's "did not start successfully" screen has nothing to go
+// on; fell_back is what it reads. The fixture's generations are 3 (TRYING, two
+// tries left), 2 (GOOD) and 1 (FAILED).
+func TestStatusFellBack(t *testing.T) {
+	type want struct {
+		fell     *bool
+		from     *int
+		attempts *int
+	}
+	yes, no := true, false
+	cases := []struct {
+		name     string
+		spent3   bool   // generation 3 has used all its tries
+		selected string // the boot: an image name; UEFI entry file or BIOS vintner.image
+		variant  string
+		want     want
+	}{
+		{"older boots, newer spent", true, "os-2", "", want{&yes, ip(3), ip(3)}},
+		{"older variant boots, newer spent", true, "os-2", "safe", want{&yes, ip(3), ip(3)}},
+		{"older boots, newer still has tries", false, "os-2", "", want{&no, nil, nil}},
+		{"newest boots, spent", true, "os-3", "", want{&no, nil, nil}},
+		{"newest boots", false, "os-3", "", want{&no, nil, nil}},
+		// Generation 1 is FAILED, and 2 and 3 are not: 3 has tries left, so 1 booted by choice.
+		{"oldest boots, newer have tries", false, "os-1", "", want{&no, nil, nil}},
+		{"recovery boots", true, "recovery-a", "", want{nil, nil, nil}},
+	}
+	for _, fw := range []string{"uefi", "bios"} {
+		for _, c := range cases {
+			t.Run(fw+"/"+c.name, func(t *testing.T) {
+				bs, ev := nextBootEnv(t, fw)
+				cmdline := "ro vintner.image=" + c.selected
+				if fw == "uefi" {
+					efi := filepath.Join(bs, "EFI", "Linux")
+					if c.spent3 {
+						if err := os.Rename(filepath.Join(efi, "vintner-os-3+2-1.efi"), filepath.Join(efi, "vintner-os-3+0-3.efi")); err != nil {
+							t.Fatal(err)
+						}
+					}
+					entry := "vintner-" + c.selected + ".efi"
+					if c.variant != "" {
+						entry = "vintner_variant-" + c.selected + "-" + c.variant + ".efi"
+					}
+					setLoader(t, ev, "LoaderEntrySelected", entry)
+				} else {
+					envPath := filepath.Join(bs, "grub", "grubenv")
+					env, err := grubenv.Read(envPath)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if c.spent3 {
+						env.Set("VINTNER_T_3", "0")
+					}
+					if c.selected == "recovery-a" {
+						env.Set("VINTNER_T_RA", "xx")
+					}
+					if c.variant != "" {
+						cmdline += " vintner.variant=" + c.variant
+					}
+					if err := grubenv.Write(envPath, env); err != nil {
+						t.Fatal(err)
+					}
+				}
+				b := runStatusJSON(t, bs, ev, cmdline).Booted
+				if (b.FellBack == nil) != (c.want.fell == nil) || (b.FellBack != nil && *b.FellBack != *c.want.fell) ||
+					!eqp(b.FellBackFrom, c.want.from) || !eqp(b.FellBackAttempts, c.want.attempts) {
+					t.Errorf("fell_back %v from %v attempts %v, want %v %v %v (booted %+v)",
+						b.FellBack, b.FellBackFrom, b.FellBackAttempts, c.want.fell, c.want.from, c.want.attempts, b)
+				}
+			})
+		}
+	}
+}

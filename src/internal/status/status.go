@@ -120,6 +120,20 @@ type Booted struct {
 	// IsNewestGood tells whether this boot is the newest GOOD generation: false
 	// after a fallback to an older one. Null unless Kind is generation.
 	IsNewestGood *bool `json:"is_newest_good"`
+	// FellBack tells whether a newer generation than this one used up its tries
+	// without booting good, so that the loader went back to this one. A product
+	// shows its "did not start successfully" screen for it: FailedAttempts is 0
+	// here, because this generation was good. It stays true until a newer
+	// generation than the failed one is published, and vintner keeps no record of
+	// whether the product has shown the screen. Null unless Kind is generation or
+	// variant.
+	FellBack *bool `json:"fell_back"`
+	// FellBackFrom is the newest generation that failed (it is newer than this one),
+	// null unless FellBack.
+	FellBackFrom *int `json:"fell_back_from"`
+	// FellBackAttempts is how many tries that generation used, null unless
+	// FellBack or when its counter cannot be read.
+	FellBackAttempts *int `json:"fell_back_attempts"`
 }
 
 // Inputs is what the status reads besides the manifest and boot storage.
@@ -213,11 +227,43 @@ func Build(in Inputs) *Report {
 		is := r.NewestGood != nil && *r.NewestGood == *r.Booted.Generation
 		r.Booted.IsNewestGood = &is
 	}
+	if (r.Booted.Kind == KindGeneration || r.Booted.Kind == KindVariant) && r.Booted.Generation != nil {
+		fellBack(r)
+	}
 
 	r.Health = append([]string{}, in.Reports...)
 	r.Health = append(r.Health, state.CheckHealth(m, in.View, in.EfivarsDir, in.SecureBootDir, in.IsUEFI)...)
 	r.Healthy = len(r.Health) == 0
 	return r
+}
+
+// fellBack sets the fall-back fields of r.Booted, which is a generation or a
+// variant of one. A newer generation failed when it is not GOOD and has used all
+// its tries (its counter reads 0), or the manifest already marks it FAILED (reconciliation
+// does that, and `vintner bless` runs it). A
+// newer generation that is still TRYING with tries left has not failed: it is
+// just not what booted, as when the user picks an older entry from the menu.
+func fellBack(r *Report) {
+	fb := false
+	r.Booted.FellBack = &fb
+	booted := *r.Booted.Generation
+	for _, g := range r.Generations { // newest first
+		if g.Generation <= booted {
+			break
+		}
+		spent := g.TriesLeft != nil && *g.TriesLeft == 0
+		if g.State == "GOOD" || !(spent || g.State == "FAILED") {
+			continue
+		}
+		fb = true
+		from := g.Generation
+		r.Booted.FellBackFrom = &from
+		if g.TriesLeft != nil {
+			used := r.Tries - *g.TriesLeft
+			r.Booted.FellBackAttempts = &used
+		}
+		return
+	}
 }
 
 func day(created string) string {

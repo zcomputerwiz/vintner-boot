@@ -148,6 +148,9 @@ func printStatus(w io.Writer, r *status.Report) {
 	if b.FailedAttempts != nil {
 		fmt.Fprintf(w, ", %d earlier boots failed", *b.FailedAttempts)
 	}
+	if b.FellBack != nil && *b.FellBack && b.FellBackFrom != nil {
+		fmt.Fprintf(w, ", fell back from generation %d", *b.FellBackFrom)
+	}
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "out-of-tree modules: %s", r.Modules.OutOfTree)
 	if r.Modules.Reason != "" {
