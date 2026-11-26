@@ -95,6 +95,16 @@ def cmd_verify_prep(args):
     print("verify-prep PASS: disk has exactly one image os-1 GOOD and empty staging")
 
 # --- 2. run-boot ------------------------------------------------------------
+def read_raw(path):
+    """The serial log so far. A read can fail while QEMU is writing the file (EIO/ENODATA
+    on a Windows-backed mount), which means nothing new to see yet, not a failed boot."""
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return b""
+
+
 def cmd_run_boot(args):
     log_path = args.log
     # Truncate log file
@@ -154,15 +164,14 @@ def cmd_run_boot(args):
                     kill()
                     how_ended = f"killed after {args.timeout}s timeout"
                 else:
-                    with open(log_path, "rb") as f:
-                        if b"Command line:" in f.read():
-                            time.sleep(1.0)
-                            rc = proc.poll()
-                            if rc is not None:
-                                how_ended = f"exited before kill ({exited(rc)})"
-                            else:
-                                kill()
-                                how_ended = B4_KILLED
+                    if b"Command line:" in read_raw(log_path):
+                        time.sleep(1.0)
+                        rc = proc.poll()
+                        if rc is not None:
+                            how_ended = f"exited before kill ({exited(rc)})"
+                        else:
+                            kill()
+                            how_ended = B4_KILLED
                     time.sleep(0.05)
         elif args.stop_on:
             # A hung guest only waits for the timeout once it has printed this line:
@@ -177,8 +186,7 @@ def cmd_run_boot(args):
                     kill()
                     how_ended = f"killed after {args.timeout}s timeout"
                 else:
-                    with open(log_path, "rb") as f:
-                        seen = pattern.search(f.read())
+                    seen = pattern.search(read_raw(log_path))
                     if seen:
                         time.sleep(3.0)
                         rc = proc.poll()
