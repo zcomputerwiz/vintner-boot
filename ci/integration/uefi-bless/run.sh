@@ -254,6 +254,23 @@ case "$PHASE" in
 		sync
 		poweroff -f
 		;;
+	boot4)
+		echo "=== CHECK A9 ===" > /dev/ttyS0
+		systemctl status vintner-bless.service > "$LOGDIR/a9.txt" 2>&1 || true
+		journalctl -u vintner-bless.service -o cat > "$LOGDIR/a9-journal.txt" 2>&1 || true
+		cat "$LOGDIR/a9.txt" > /dev/ttyS0
+		cat "$LOGDIR/a9-journal.txt" > /dev/ttyS0
+		# The loader sets LoaderBootCountPath only for an entry whose file name has a counter.
+		if [ -e /sys/firmware/efi/efivars/LoaderBootCountPath-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f ]; then
+			echo "boot4-bootcountpath: set" > /dev/ttyS0
+		else
+			echo "boot4-bootcountpath: unset" > /dev/ttyS0
+		fi
+
+		echo "=== VINTNER-BOOT4-DONE ===" > /dev/ttyS0
+		sync
+		poweroff -f
+		;;
 esac
 EOF
 sudo chmod 0755 "$MNT/usr/local/bin/vintner-guest-checks.sh"
@@ -646,6 +663,66 @@ if [ "${A8_EVID%%|*}" = "PASS" ]; then
 fi
 A8_EVID="${A8_EVID#*|}"
 
+# --- 13. Run Boot 4 ----------------------------------------------------------
+# An entry whose file name has no counter (the loader lost it, or its rename
+# failed) is booted by systemd-boot without setting LoaderBootCountPath. Bless
+# must find it through LoaderEntrySelected, give it its counter back and record
+# GOOD; it used to exit 0 and leave the entry uncounted for good.
+echo "=== Preparing for Boot 4 (uncounted entry, proper command line) ==="
+LOOP=$(sudo losetup -P -f --show "$DISK")
+ROOT_DEV=$(lsblk -rn -o PATH,PARTUUID "$LOOP" | awk -v u="$ROOT_PARTUUID" '$2==u{print $1}')
+[ -n "$ROOT_DEV" ] || ROOT_DEV="${LOOP}p1"
+sudo mount "$ROOT_DEV" "$MNT"
+echo "boot4" | sudo tee "$MNT/etc/vintner-test-phase" >/dev/null
+sudo umount "$MNT"
+sudo losetup -d "$LOOP"
+LOOP=""
+
+# The boot 1 image (it has vintner.bootstorage=), under a name with no counter.
+mdel -i "$DISK@@$BS_OFFSET" ::/EFI/Linux/vintner-os-1+1-2.efi
+mcopy -o -i "$DISK@@$BS_OFFSET" "$OUT/vintner-os-1+3-0.efi" ::/EFI/Linux/vintner-os-1.efi
+
+echo "=== Starting Boot 4 (entry without a counter) ==="
+run_qemu "boot4"
+
+echo "Evaluating Boot 4..."
+FILES_B4=$(mdir -b -i "$DISK@@$BS_OFFSET" ::/EFI/Linux | sed 's|.*/||' | tr '\n' ' ' | sed 's/ $//')
+mkdir -p "$OUT/inspect_b4"
+mtype -i "$DISK@@$BS_OFFSET" ::/vintner/state/manifest-a > "$OUT/inspect_b4/manifest-a"
+mtype -i "$DISK@@$BS_OFFSET" ::/vintner/state/manifest-b > "$OUT/inspect_b4/manifest-b"
+
+A9_STATUS="FAIL"
+A9_EVID=$(python3 - "$OUT" "$FILES_B4" <<'EOF'
+import json, sys
+out = sys.argv[1]
+files_b4 = sys.argv[2].split()
+log = open(f"{out}/boot4.log", errors="replace").read()
+unset = "boot4-bootcountpath: unset" in log
+rearmed = files_b4 == ["vintner-os-1+3-0.efi"]
+try:
+    # the manifest is a pair; the one with the higher seq is current
+    ms = []
+    for n in ("manifest-a", "manifest-b"):
+        try:
+            ms.append(json.loads(open(f"{out}/inspect_b4/{n}").readline()))
+        except Exception:
+            pass
+    cur = max(ms, key=lambda m: m["seq"])
+    # boot 3's bless failed with the manifest at seq 3: a higher seq is boot 4's own write
+    good = cur["images"][0]["state"] == "GOOD" and cur["seq"] > 3
+except Exception:
+    good = False
+if unset and rearmed and good:
+    print("PASS|loader set no LoaderBootCountPath; bless re-armed the entry as vintner-os-1+3-0.efi and recorded GOOD (manifest seq after boot 3 was 3)")
+else:
+    print(f"FAIL|bootcountpath_unset={unset}, files={files_b4}, good={good}")
+EOF
+)
+if [ "${A9_EVID%%|*}" = "PASS" ]; then
+	A9_STATUS="PASS"
+fi
+A9_EVID="${A9_EVID#*|}"
+
 # --- 13. Print Results Table ------------------------------------------------
 echo "=== Test Summary Table ==="
 {
@@ -658,6 +735,7 @@ echo "=== Test Summary Table ==="
 	printf "A6\tsudo vintner reconcile --dry-run\tExit 0, no report lines, unmounted afterwards\t%s\t%s\n" "$A6_STATUS" "$A6_EVID"
 	printf "A7\tSecond boot with vintner-bless.service masked\tvintner-os-1+2-1.efi (boot counted, not rearmed)\t%s\t%s\n" "$A7_STATUS" "$A7_EVID"
 	printf "A8\tThird boot with unmasked bless but missing vintner.bootstorage=\tBless fails naming parameter; file +1-2; manifest unchanged\t%s\t%s\n" "$A8_STATUS" "$A8_EVID"
+	printf "A9\tFourth boot with the entry's file name carrying no counter\tNo LoaderBootCountPath; bless re-arms vintner-os-1+3-0.efi and records GOOD\t%s\t%s\n" "$A9_STATUS" "$A9_EVID"
 } > "$RESULTS"
 
 cat "$RESULTS"

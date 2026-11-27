@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/state"
@@ -915,7 +916,7 @@ func TestGarbageCollectionRemovesDuplicateCountedUKIs(t *testing.T) {
 		}
 	}
 
-	if _, err := finishPublish(io.Discard, io.Discard, m, stateDir, bootStorageDir, rootDir, 3, false); err != nil {
+	if _, err := finishPublish(io.Discard, io.Discard, m, stateDir, bootStorageDir, rootDir, 3, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range names {
@@ -931,6 +932,63 @@ func TestGarbageCollectionRemovesDuplicateCountedUKIs(t *testing.T) {
 		if img.Generation == 1 {
 			t.Fatal("generation 1 record was not removed")
 		}
+	}
+}
+
+// The running image survives GC even when reconciliation marked it FAILED (its
+// last try, before bless): bless must still find its record and file.
+func TestGarbageCollectionKeepsRunningImage(t *testing.T) {
+	rootDir, bootStorageDir, m := setupTestEnv(t, "uefi")
+	stateDir := filepath.Join(bootStorageDir, "vintner", "state")
+	m.Retain = 2
+	m.Images[0].State = "FAILED"
+	uefi := func(g int) *manifest.UEFIFile {
+		return &manifest.UEFIFile{Entry: fmt.Sprintf("vintner-os-%d", g), SHA256: strings.Repeat("0", 64), Size: 1}
+	}
+	m.Images[0].UEFI = uefi(1)
+	m.Images = append(m.Images,
+		manifest.Image{Generation: 2, State: "GOOD", Kernel: manifest.Kernel{ABI: "abi-2"}, Created: "2026-10-16T00:00:00Z", Cmdline: m.Images[0].Cmdline, UEFI: uefi(2)},
+		manifest.Image{Generation: 3, State: "GOOD", Kernel: manifest.Kernel{ABI: "abi-3"}, Created: "2026-10-17T00:00:00Z", Cmdline: m.Images[0].Cmdline, UEFI: uefi(3)})
+	m.NextGeneration = 4
+	if err := m.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.Save(stateDir, m); err != nil {
+		t.Fatal(err)
+	}
+	ukiPath := filepath.Join(bootStorageDir, "EFI", "Linux", "vintner-os-1+0-3.efi")
+	if err := os.WriteFile(ukiPath, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	efivarsDir := t.TempDir()
+	if err := efivar.SetString(efivarsDir, "LoaderEntrySelected", efivar.LoaderInfo, 0, "vintner-os-1.efi"); err != nil {
+		t.Fatal(err)
+	}
+	running := runningGeneration("root=UUID=1 vintner.bootstorage=PARTUUID=2", efivarsDir)
+	if running != 1 {
+		t.Fatalf("runningGeneration from LoaderEntrySelected = %d, want 1", running)
+	}
+	if g := runningGeneration("quiet vintner.image=os-7", efivarsDir); g != 7 {
+		t.Fatalf("runningGeneration from vintner.image= = %d, want 7", g)
+	}
+
+	if _, err := finishPublish(io.Discard, io.Discard, m, stateDir, bootStorageDir, rootDir, 3, running, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(ukiPath); err != nil {
+		t.Errorf("running image's UKI was removed: %v", err)
+	}
+	got, err := manifest.Load(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, img := range got.Images {
+		found = found || img.Generation == 1
+	}
+	if !found {
+		t.Error("running generation 1 record was removed")
 	}
 }
 

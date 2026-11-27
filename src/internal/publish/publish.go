@@ -21,6 +21,7 @@ import (
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bls"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/bootstorage"
+	"github.com/zcomputerwiz/vintner-boot/src/internal/efivar"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/grubenv"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/kcmdline"
 	"github.com/zcomputerwiz/vintner-boot/src/internal/manifest"
@@ -171,7 +172,10 @@ type Options struct {
 	// InitialCmdline is the command line of the first image. It is used only when
 	// the manifest has no image yet (vintner install); otherwise the newest
 	// image's command line is carried forward.
-	InitialCmdline   string
+	InitialCmdline string
+	// EfivarsDir is where LoaderEntrySelected names the running UEFI image;
+	// default efivar.DefaultDir.
+	EfivarsDir       string
 	SecureBootDir    string
 	Verifier         secureboot.Verifier
 	PackageQuery     PackageQuery
@@ -541,6 +545,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 		fmt.Fprintln(stdout, "vintner publish: not a vintner system (no vintner.bootstorage=)")
 		return &Result{Unchanged: true}, nil
 	}
+	running := runningGeneration(bootCmdline, opts.EfivarsDir)
 
 	initrdPath := filepath.Join(rootDir, "boot", "initrd.img-"+abi)
 	if _, err := os.Stat(initrdPath); err != nil {
@@ -786,7 +791,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 					case diff == "":
 						fmt.Fprintln(stdout, "unchanged")
 						// Jump to Step 12
-						return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, true)
+						return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, running, true)
 					case newestSameABI.State == "TRYING" && newestSameABI.FirstGood == nil:
 						// It has not booted good yet, so it is still the newest trial and
 						// nothing falls back to it: record the tree it will run with
@@ -798,7 +803,7 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 							return nil, fmt.Errorf("save manifest module tree: %w", err)
 						}
 						fmt.Fprintf(stdout, "vintner publish: module tree changed (%s); generation %d has not booted good yet, so its record now has the current tree\n", diff, newestSameABI.Generation)
-						return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, true)
+						return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, newestSameABI.Generation, running, true)
 					default:
 						fmt.Fprintf(stdout, "vintner publish: module tree changed (%s) since generation %d was published: publishing a new generation\n", diff, newestSameABI.Generation)
 					}
@@ -1295,10 +1300,39 @@ func Publish(ctx context.Context, opts Options) (*Result, error) {
 	fmt.Fprintf(stdout, "vintner publish: published generation %d\n", g)
 
 	// 12 to 14.
-	return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, g, false)
+	return finishPublish(stdout, stderr, m, stateDir, bootStorageDir, rootDir, g, running, false)
 }
 
-func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, bootStorageDir, rootDir string, currentGen int, unchanged bool) (*Result, error) {
+// runningGeneration is the generation whose image (or a variant of it) this
+// system booted, or 0 when that is unknown or not a generation. BIOS: the
+// loader's vintner.image=os-<g> token. UEFI: systemd-boot's LoaderEntrySelected.
+func runningGeneration(cmdline, efivarsDir string) int {
+	for _, f := range strings.Fields(cmdline) {
+		if v, ok := strings.CutPrefix(f, "vintner.image=os-"); ok {
+			if g, err := strconv.Atoi(v); err == nil && g > 0 {
+				return g
+			}
+			return 0
+		}
+	}
+	if efivarsDir == "" {
+		efivarsDir = efivar.DefaultDir
+	}
+	_, sel, err := efivar.GetString(efivarsDir, "LoaderEntrySelected", efivar.LoaderInfo)
+	if err != nil {
+		return 0
+	}
+	stem := strings.TrimSuffix(strings.ToLower(sel), ".efi")
+	if g, ok := bls.IsVintnerOrdinary(stem); ok {
+		return g
+	}
+	if g, _, ok := bls.IsVintnerVariant(stem); ok {
+		return g
+	}
+	return 0
+}
+
+func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, bootStorageDir, rootDir string, currentGen, running int, unchanged bool) (*Result, error) {
 	// 12. Stale flags.
 	flagsChanged := false
 	for i := range m.Images {
@@ -1321,6 +1355,16 @@ func finishPublish(stdout, stderr io.Writer, m *manifest.Manifest, stateDir, boo
 
 	// 13. Garbage collection.
 	keep, remove, overBudget := state.Keep(m)
+	// The running image is never removed: on its last try reconciliation marks it
+	// FAILED before bless runs, and bless must still find its files and record.
+	for i, g := range remove {
+		if g == running {
+			remove = append(remove[:i:i], remove[i+1:]...)
+			keep = append(keep, g)
+			fmt.Fprintf(stderr, "vintner publish: keeping generation %d: it is running\n", g)
+			break
+		}
+	}
 	if overBudget {
 		fmt.Fprintln(stderr, "vintner publish: image budget exceeded")
 	}

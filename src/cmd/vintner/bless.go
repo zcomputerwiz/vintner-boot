@@ -94,18 +94,33 @@ func cmdBless(args []string) {
 	}
 
 	if isUEFI {
-		_, val, err := efivar.GetString(*efivarsDir, "LoaderBootCountPath", efivar.LoaderInfo)
-		if err != nil {
+		varName := "LoaderBootCountPath"
+		_, val, err := efivar.GetString(*efivarsDir, varName, efivar.LoaderInfo)
+		if errors.Is(err, efivar.ErrNotFound) {
+			// systemd-boot sets LoaderBootCountPath only when it renamed the entry. A
+			// vintner entry booted without it was not counted (its file lost its
+			// counter, or the rename failed): find it by LoaderEntrySelected and
+			// re-arm it all the same, so that a good boot is not lost and the file
+			// gets its counter back.
+			varName = "LoaderEntrySelected"
+			_, val, err = efivar.GetString(*efivarsDir, varName, efivar.LoaderInfo)
 			if errors.Is(err, efivar.ErrNotFound) {
-				fmt.Fprintln(os.Stderr, "vintner bless: LoaderBootCountPath not found, entry was not counted")
+				fmt.Fprintln(os.Stderr, "vintner bless: neither LoaderBootCountPath nor LoaderEntrySelected is set: not booted by systemd-boot, nothing to bless")
 				osExit(0)
+				return
 			}
-			fmt.Fprintf(os.Stderr, "vintner bless: failed to read LoaderBootCountPath: %v\n", err)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "vintner bless: failed to read %s: %v\n", varName, err)
 			osExit(1)
+			return
 		}
 
-		// e.g. \EFI\Linux\vintner-os-42+2-1.efi
+		// e.g. \EFI\Linux\vintner-os-42+2-1.efi, or vintner-os-42.efi for LoaderEntrySelected
 		filename := val[strings.LastIndexAny(val, `\/`)+1:]
+		if !strings.HasSuffix(strings.ToLower(filename), ".efi") {
+			filename += ".efi"
+		}
 
 		parsed, ok := bls.Parse(filename)
 		if !ok {
@@ -119,6 +134,12 @@ func cmdBless(args []string) {
 		}
 
 		gen, ok := bls.IsVintnerOrdinary(stem)
+		if !ok && varName == "LoaderEntrySelected" {
+			// An uncounted entry vintner does not own (a foreign UKI): nothing to bless.
+			fmt.Fprintf(os.Stderr, "vintner bless: booted %s, not a vintner entry: nothing to bless\n", stem)
+			osExit(0)
+			return
+		}
 		if !ok {
 			fmt.Fprintf(os.Stderr, "vintner bless: not a vintner ordinary entry: %s\n", stem)
 			osExit(1)

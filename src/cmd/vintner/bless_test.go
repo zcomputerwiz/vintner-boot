@@ -117,6 +117,31 @@ func TestBlessUEFIOrdinary(t *testing.T) {
 	}
 }
 
+// An uncounted boot (no LoaderBootCountPath) of a vintner entry is still
+// blessed, found through LoaderEntrySelected, and the file gets its counter back.
+func TestBlessUEFIUncountedEntry(t *testing.T) {
+	m := loadExampleManifest(t)
+	bootStorage, efivarsDir := setupTestEnv(t, true, &m)
+	stateDir := filepath.Join(bootStorage, "vintner", "state")
+	efiDir := filepath.Join(bootStorage, "EFI", "Linux")
+	if err := os.WriteFile(filepath.Join(efiDir, "vintner-os-3.efi"), []byte("dummy"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := efivar.SetString(efivarsDir, "LoaderEntrySelected", efivar.LoaderInfo, 0, "vintner-os-3.efi"); err != nil {
+		t.Fatal(err)
+	}
+
+	cmdBless([]string{"--boot-storage", bootStorage, "--efivars", efivarsDir})
+
+	entries, _ := os.ReadDir(efiDir)
+	if len(entries) != 1 || entries[0].Name() != "vintner-os-3+3-0.efi" {
+		t.Errorf("EFI file not re-armed: %v", entries)
+	}
+	if img := getManifestGen(t, stateDir, 3); img.State != "GOOD" {
+		t.Errorf("expected state GOOD, got %s", img.State)
+	}
+}
+
 func TestBlessUEFIRecovery(t *testing.T) {
 	mPath := "../../../schema/examples/manifest-uefi.json"
 	data, err := os.ReadFile(mPath)
