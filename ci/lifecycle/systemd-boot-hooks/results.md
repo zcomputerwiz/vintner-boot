@@ -50,3 +50,18 @@ Installing Debian 13's `systemd-boot` package takes over the ESP and NVRAM, what
 Masking `systemd-boot-update.service` and setting kernel-install `layout=other` do not prevent any of this. `vintner-platform` therefore `Conflicts` with `systemd-boot` (architecture §5).
 
 Steps 2-7 (reboot, kernel install and removal, initramfs update, reinstall, reconfigure) did not run, because the reboot timed out under TCG. Rerun them with KVM before relying on hook behaviour.
+
+## Steps 2-7: why they were not re-run (WO-0010 6.2)
+
+These steps ran `systemd-boot`'s own hooks on a system with `layout=other`. They do not apply to a product system, and what they would have shown is covered by `ci/lifecycle/packages/` on the installed product (installed by `vintner install`, with KVM; results in that directory's README):
+
+| Step here | What it did | Why it no longer applies, and what covers it |
+|---|---|---|
+| 2 | reboot | Every `packages/` operation boots the disk afterwards, on both firmwares. |
+| 3 | install a second kernel | `packages/` K1 (`linux-image-amd64`) and K3: no loader file, boot storage file or NVRAM variable changed, and the next boot reached vintner os-1. |
+| 4 | `update-initramfs -u -k all` | `packages/` K2, same result. |
+| 5 | remove the second kernel | `packages/` K3 (install then purge the new kernel), same result. |
+| 6 | reinstall `systemd-boot` | `vintner-platform` `Conflicts` with `systemd-boot`, so apt does not install it beside the product. `packages/` X1 records what installing it anyway does (replaces `\EFI\BOOT\BOOTX64.EFI`, installs shim, adds two `BootOrder` entries; the next UEFI boot still reached vintner os-1). |
+| 7 | `dpkg-reconfigure systemd-boot` | Same reason; the package has no conffile script that the product relies on. |
+
+Configurations c2 and c3 (`layout=other`, `systemd-boot-update.service` masked) are therefore only of historical interest: step 1 is the finding that led to the `Conflicts`. This directory is kept as the record of that finding and is not run by CI.

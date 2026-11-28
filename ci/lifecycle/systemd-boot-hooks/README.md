@@ -9,4 +9,4 @@ Images are downloaded from Debian cloud images repository.
 Tested on Debian 13 genericcloud amd64. Packages used: systemd-boot, initramfs-tools, linux-image-amd64.
 
 ## Conclusion
-See "Finding" in [`results.md`](results.md). Even with `layout=other` and `systemd-boot-update.service` masked (C2, C3), installing the `systemd-boot` package writes to the ESP and NVRAM from its postinst. `vintner-platform` therefore lists `systemd-boot` as a `Conflicts` (architecture §5), and steps 2-7, which only exercise that package's hooks, were not re-run.
+See "Finding" in [`results.md`](results.md). Even with `layout=other` and `systemd-boot-update.service` masked (C2, C3), installing the `systemd-boot` package writes to the ESP and NVRAM from its postinst. `vintner-platform` therefore lists `systemd-boot` as a `Conflicts` (architecture §5), and steps 2-7, which only exercise that package's hooks, were not re-run: results.md ("Steps 2-7") records why they no longer apply and which `ci/lifecycle/packages/` operations cover the same ground.
