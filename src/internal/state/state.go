@@ -697,3 +697,17 @@ func (v *View) AddESP(root string) error {
 	sort.Strings(v.SideLoaded)
 	return nil
 }
+
+// MachineIDReport compares the machine ID of the running system with the one
+// the manifest recorded at install (threat model T12: a cloned or swapped disk).
+// Two disks that carry the same root UUID make the root selection ambiguous, so
+// the booted system may not be the one this boot storage was installed for. The
+// report is empty when they agree, and when the running machine ID is not an
+// ID yet (a first boot has not made one): there is nothing to compare.
+func MachineIDReport(m *manifest.Manifest, running string) string {
+	running = strings.TrimSpace(running)
+	if len(running) != 32 || running == m.MachineID {
+		return ""
+	}
+	return fmt.Sprintf("machine ID mismatch: the running system is %s, the manifest was installed for %s (the root may belong to another disk)", running, m.MachineID)
+}

@@ -714,3 +714,24 @@ func TestCheckHealth_BootOrder(t *testing.T) {
 		t.Errorf("reordered: %q", got)
 	}
 }
+
+func TestMachineIDReport(t *testing.T) {
+	m := &manifest.Manifest{MachineID: "3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f"}
+	for _, tc := range []struct {
+		name, running string
+		report        bool
+	}{
+		{"same", "3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f\n", false},
+		{"another disk", "00000000000000000000000000000001\n", true},
+		{"not an ID yet", "uninitialized\n", false},
+		{"empty", "", false},
+	} {
+		got := MachineIDReport(m, tc.running)
+		if (got != "") != tc.report {
+			t.Errorf("%s: report %q, want a report: %v", tc.name, got, tc.report)
+		}
+	}
+	if got := MachineIDReport(m, "00000000000000000000000000000001"); !strings.Contains(got, "machine ID mismatch") {
+		t.Errorf("report %q does not say what it is", got)
+	}
+}

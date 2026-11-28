@@ -1149,11 +1149,21 @@ func TestBlessHealthReporting_SelectionPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A root that belongs to another disk (threat model T12): its machine ID is not the manifest's.
+	rootDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rootDir, "etc"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootDir, "etc", "machine-id"), []byte("00000000000000000000000000000001\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	// Run bless and check stdout reports
 	out := blessOutput(t, []string{
 		"--boot-storage", bootStorage,
 		"--efivars", efivarsDir,
 		"--esp", espDir,
+		"--root", rootDir,
 	})
 
 	if !hasLine(out, "LoaderEntryDefault is set: debian-6.12.efi") {
@@ -1173,6 +1183,9 @@ func TestBlessHealthReporting_SelectionPolicy(t *testing.T) {
 	}
 	if !hasLine(out, "side-loaded file: loader/addons/side.addon.efi") {
 		t.Errorf("expected side-loaded file report in output, got: %q", out)
+	}
+	if !hasLine(out, "machine ID mismatch: the running system is 00000000000000000000000000000001, the manifest was installed for 3c9a0f4e6d2b4a8c9e1f2a3b4c5d6e7f (the root may belong to another disk)") {
+		t.Errorf("expected machine ID mismatch report in output, got: %q", out)
 	}
 }
 

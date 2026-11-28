@@ -114,7 +114,11 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
 - **Mitigation:**
   - vintner ships no addons, credentials or extensions.
   - The health service reports any file in `\loader\addons\`, `\loader\credentials\` or any `*.extra.d` directory on the ESP or boot storage.
-- **Verify:** how systemd in a Debian 13 initrd handles unencrypted credentials and unsigned extension images from these paths under Secure Boot. Also verify whether a Debian-signed or Microsoft-signed addon exists that could change a vintner command line. If unencrypted credentials are imported and trusted, the publisher needs a build or configuration option to disable them.
+- **Verified (WO-0010 6.5; Debian 13, systemd 257.13, a UKI started by systemd-boot, Secure Boot off):**
+  - A plain `.cred` file, a `.confext.raw` and an `.addon.efi` were planted on the ESP and on boot storage (`\loader\credentials\`, `\loader\addons\`, `\loader\extensions\`, and `.extra.d` directories named for the UKI as installed, as renamed by boot counting, and without the counter). After the boot, `/run/credentials` held only journald's own, `systemd-creds --system list` said "No credentials passed to system.", `systemd-sysext status` and `systemd-confext status` showed no extension, and there was no `/.extra`. `vintner bless` reported every planted file as side-loaded.
+  - The likely reason is that Debian's initramfs-tools initrd is not a systemd initrd: nothing in it imports `/.extra`, and the initramfs is discarded at switch-root. The run did not prove that the stub loaded the files, so this is an observation about what reaches the running system, not a proof that the stub ignores them.
+  - Not tested: Secure Boot enforced (an unsigned addon is refused by the stub on its own account, per systemd-stub(7); an addon signed by a key the firmware trusts can append to the command line, and this row cannot tell whether such an addon exists for the Debian or Microsoft keys), and a systemd-based initrd.
+  - Decision: no build or configuration option is added now, because nothing imports the credentials in the supported initrd. A product that moves to a systemd initrd (dracut, mkosi) must re-run this check, since that initrd does import credentials and extensions from the stub; the health report for side-loaded files stays the control.
 
 ### T7: package scripts reinstall or reconfigure a boot loader
 
@@ -173,7 +177,7 @@ This document lists what vintner-boot protects, from whom, and where v1 delibera
 - **Serves:** R09; architecture §5.
 - **Mitigation:** The command line names the root by PARTUUID, which a clone duplicates.
 - **Residual risk:** Two disks with the same PARTUUID make the selection ambiguous.
-- **Verify, during WP-002:** an initramfs check that compares the mounted root with an identity recorded in the manifest (for example the machine ID), and refuses to continue on a mismatch.
+- **Resolved (WO-0010 6.5):** detection, not refusal. The initramfs cannot compare identities: boot storage, where the manifest lives, is not mounted there, and a refusal would turn a clone into an unbootable machine. `vintner bless` (the health service) compares the running system's `/etc/machine-id` with the manifest's `machine_id` and reports "machine ID mismatch: the running system is X, the manifest was installed for Y". It stays silent when the machine ID is not an ID yet (a first boot). The `root-luks`, `root-lvm` and `root-md` rows check that a healthy boot reports no mismatch (`R-<firmware>-<phase>-machine-id`); `TestBlessHealthReporting_SelectionPolicy` checks that a mismatch is reported.
 
 ### T13: hostile filesystem content parsed during recovery or publication
 
@@ -200,6 +204,5 @@ All three were accepted as recommended on 2026-10-14.
 
 ## 8. Follow-up
 
-- Resolve the T6 and T12 **verify** items before the publisher (WP-005) is written.
 - Add the health-service reports named in T2, T5, T6 and T8 to the WP-002 state and reporting definitions.
 - Update T10 when the `grubenv` experiments report back.
