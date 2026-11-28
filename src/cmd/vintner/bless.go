@@ -295,6 +295,12 @@ func cmdBless(args []string) {
 	}
 	reports = append(reports, state.CheckHealth(m, v, *efivarsDir, *secureBootDir, isUEFI)...)
 	reports = append(reports, publish.StaleReports(m, *rootDir)...)
+	// Threat model T12: the running root should be the one the manifest was installed for.
+	if id, rerr := os.ReadFile(filepath.Join(*rootDir, "etc", "machine-id")); rerr == nil {
+		if r := state.MachineIDReport(m, string(id)); r != "" {
+			reports = append(reports, r)
+		}
+	}
 
 	for _, r := range reports {
 		fmt.Println(r)

@@ -233,6 +233,7 @@ src=$(findmnt -no SOURCE /)
 echo "ROOT_SOURCE: $src"
 echo "ROOT_TYPE: $(lsblk -no TYPE "$src" 2>/dev/null | head -n 1)"
 echo "BLESS_ACTIVE: $(systemctl is-active vintner-bless.service)"
+echo "MACHINE_ID_REPORTS: $(journalctl -b -u vintner-bless.service 2>/dev/null | grep -c 'machine ID mismatch' || true)"
 if [ ! -e /var/lib/vintner-rs-phase ]; then
 	echo "PHASE: a"
 	touch /var/lib/vintner-rs-phase
@@ -421,6 +422,9 @@ for fw in bios uefi; do
 		else
 			record "R-$fw-$phase-blessed" FAIL "vintner-bless.service was not active; see boot-$fw-$phase.log"
 		fi
+		# T12: the booted root is the one the manifest was installed for, so bless reports no machine ID mismatch.
+		mid=$(sed -n 's/^MACHINE_ID_REPORTS: \(.*\)$/\1/p' <<<"$clean" | head -n 1 || true)
+		if [ "$mid" = 0 ]; then record "R-$fw-$phase-machine-id" PASS "bless reported no machine ID mismatch"; else record "R-$fw-$phase-machine-id" FAIL "reports '${mid:-none}'; see boot-$fw-$phase.log"; fi
 	done
 done
 
