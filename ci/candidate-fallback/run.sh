@@ -334,9 +334,9 @@ echo "=== versions.txt ==="
 cat "$VERSIONS"
 
 # Every expected row must be present with its status: a check that never ran is a FAIL.
-EXPECTED="H1:G0:PASS H8:all:PASS C1:B5:PASS"
+EXPECTED="H1:G0:PASS H9:G0:PASS H8:all:PASS C1:B5:PASS"
 for c in B1 B2 B3 B4 B5; do
-	for h in H2 H3 H4 H5 H6; do
+	for h in H2 H3 H4 H5 H6 H9; do
 		EXPECTED="$EXPECTED $h:$c:PASS"
 	done
 	EXPECTED="$EXPECTED H7:$c:OBSERVED"
