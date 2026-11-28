@@ -40,6 +40,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	espDir := fs.String("esp", "", "the mounted ESP (default <target>/boot/efi)")
 	bsDir := fs.String("boot-storage", "", "the mounted boot storage (default: mount it by PARTUUID at "+bootstorage.MountPoint+")")
 	rootUUID := fs.String("root-partuuid", "", "PARTUUID of the root partition (default: the one partition of the x86-64 root type)")
+	rootFSUUID := fs.String("root-fs-uuid", "", "UUID of the ext4 filesystem inside the root partition, when that partition is a LUKS volume, an LVM physical volume or an md RAID member (the initramfs opens it; vintner install cannot)")
 	bsUUID := fs.String("boot-storage-partuuid", "", "PARTUUID of boot storage (default: the one partition of the XBOOTLDR type)")
 	espUUID := fs.String("esp-partuuid", "", "PARTUUID of the EFI System Partition (default: the one partition of the ESP type)")
 	payloadDir := fs.String("payload-dir", payload.DefaultDir, "directory of the vintner-platform payloads")
@@ -84,7 +85,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 
 	l, findings := layout.Check(layout.Request{
 		Firmware: *firmware, Disk: f, DiskSize: size,
-		RootPartUUID: *rootUUID, BootStoragePartUUID: *bsUUID, ESPPartUUID: *espUUID,
+		RootPartUUID: *rootUUID, RootFSUUID: *rootFSUUID, BootStoragePartUUID: *bsUUID, ESPPartUUID: *espUUID,
 	})
 	ok := true
 	if l.Table != nil {
@@ -99,7 +100,11 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "BIOS boot:    partition %d, %d KiB\n", p.Number, p.Size(ss)>>10)
 		}
 		if p := l.Root; p != nil {
-			fmt.Fprintf(stdout, "root:         partition %d, PARTUUID %s, filesystem UUID %s\n", p.Number, p.UUID, l.RootUUID)
+			inside := ""
+			if l.RootContainer != "" {
+				inside = " (inside a " + l.RootContainer + " container)"
+			}
+			fmt.Fprintf(stdout, "root:         partition %d, PARTUUID %s, filesystem UUID %s%s\n", p.Number, p.UUID, l.RootUUID, inside)
 		}
 	}
 	for _, fd := range findings {

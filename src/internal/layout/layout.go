@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/zcomputerwiz/vintner-boot/src/internal/fsid"
@@ -30,7 +31,12 @@ type Request struct {
 	DiskSize int64
 	// RootPartUUID, BootStoragePartUUID and ESPPartUUID name the partitions
 	// when the disk is ambiguous. Empty means: the one partition of that type.
-	RootPartUUID        string
+	RootPartUUID string
+	// RootFSUUID is the UUID of the ext4 filesystem inside the root partition when that
+	// partition is a LUKS volume, an LVM physical volume or an md member: the layout
+	// check cannot open a container, so the caller says what is inside. Empty for
+	// a plain ext4 root, whose UUID is read from the disk.
+	RootFSUUID          string
 	BootStoragePartUUID string
 	ESPPartUUID         string
 }
@@ -46,14 +52,15 @@ func (f Finding) String() string { return f.Rule + ": " + f.Text }
 // Layout is what was found. Fields are nil or empty when the rule that needs
 // them failed.
 type Layout struct {
-	Table       *gpt.Table
-	Root        *gpt.Partition
-	RootUUID    string // the root filesystem UUID
-	BootStorage *gpt.Partition
-	BootFS      *fsid.FAT
-	ESP         *gpt.Partition
-	ESPFS       *fsid.FAT
-	BIOSBoot    *gpt.Partition
+	Table         *gpt.Table
+	Root          *gpt.Partition
+	RootUUID      string // the root filesystem UUID
+	RootContainer string // "", or what the root partition holds around its filesystem: fsid.ContainerLUKS, ContainerLVM or ContainerMD
+	BootStorage   *gpt.Partition
+	BootFS        *fsid.FAT
+	ESP           *gpt.Partition
+	ESPFS         *fsid.FAT
+	BIOSBoot      *gpt.Partition
 }
 
 // Check returns the layout and every rule it breaks. No findings means the
@@ -168,12 +175,40 @@ func Check(req Request) (*Layout, []Finding) {
 		if l.BootStorage != nil && p.UUID == l.BootStorage.UUID {
 			add("L7", "the root and boot storage are the same partition")
 		}
-		u, err := fsid.ReadExtUUID(req.Disk, p.Offset(ss))
-		if err != nil {
-			add("L7", "the root (partition %d) is not an ext4 filesystem on a plain partition (%v)", p.Number, err)
-		} else {
-			l.RootUUID = u
-		}
+		l.checkRoot(req, p, ss, add)
 	}
 	return l, fs
+}
+
+var uuidText = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// checkRoot settles what the root filesystem is (rule L7). A plain ext4
+// partition is read for its UUID. A LUKS volume, an LVM physical volume or an
+// md member holds a filesystem that cannot be read without opening it, so the
+// caller names its UUID (Request.RootFSUUID) and the boot path finds it with
+// root=UUID= once the initramfs has opened the container.
+func (l *Layout) checkRoot(req Request, p *gpt.Partition, ss int, add func(rule, format string, a ...any)) {
+	off := p.Offset(ss)
+	u, err := fsid.ReadExtUUID(req.Disk, off)
+	if err == nil {
+		l.RootUUID = u
+		if req.RootFSUUID != "" && !strings.EqualFold(req.RootFSUUID, u) {
+			add("L7", "--root-fs-uuid %s is not the UUID of the ext4 filesystem on the root partition (%s)", req.RootFSUUID, u)
+		}
+		return
+	}
+	kind, cerr := fsid.Container(req.Disk, off, p.Size(ss))
+	if cerr != nil || kind == "" {
+		add("L7", "the root (partition %d) is not an ext4 filesystem on a plain partition, a LUKS volume, an LVM physical volume or an md RAID member (%v)", p.Number, err)
+		return
+	}
+	l.RootContainer = kind
+	switch {
+	case req.RootFSUUID == "":
+		add("L7", "the root (partition %d) holds a %s container, which cannot be read without opening it: name the UUID of the ext4 filesystem inside with --root-fs-uuid", p.Number, kind)
+	case !uuidText.MatchString(req.RootFSUUID):
+		add("L7", "--root-fs-uuid %q is not a UUID", req.RootFSUUID)
+	default:
+		l.RootUUID = strings.ToLower(req.RootFSUUID)
+	}
 }

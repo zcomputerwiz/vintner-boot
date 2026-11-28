@@ -222,3 +222,68 @@ func TestBIOSNeedsFiveHundredTwelveByteSectors(t *testing.T) {
 		}
 	}
 }
+
+const rootInnerUUID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+
+// containerRoot is good() with the root partition holding a container
+// (what is written at its start or 4 KiB in) in place of an ext4 filesystem.
+func containerRoot(sig []byte, at int64) *gpttest.Disk {
+	d := good()
+	d.WriteAt(make([]byte, 2048), rootFirst*512+1024) // wipe the ext4 superblock
+	d.WriteAt(sig, rootFirst*512+at)
+	return d
+}
+
+func TestContainerRoots(t *testing.T) {
+	luks := []byte("LUKS\xba\xbe\x00\x02")
+	md := []byte{0xfc, 0x4e, 0x2b, 0xa9}
+	lvm := append(append([]byte("LABELONE"), make([]byte, 16)...), []byte("LVM2 001")...)
+	for _, c := range []struct {
+		name string
+		sig  []byte
+		at   int64
+		kind string
+	}{{"LUKS", luks, 0, "LUKS"}, {"LVM", lvm, 512, "LVM"}, {"md", md, 4096, "md"}} {
+		// Without the filesystem UUID the container is refused, and the finding says what to do.
+		_, fs := check("both", containerRoot(c.sig, c.at), nil)
+		if rules(fs) != "L7" || !strings.Contains(fs[0].Text, "--root-fs-uuid") || !strings.Contains(fs[0].Text, c.kind) {
+			t.Errorf("%s without --root-fs-uuid: %v", c.name, fs)
+		}
+		// With it the layout is accepted and records the inner UUID, lower case.
+		l, fs := check("both", containerRoot(c.sig, c.at), func(r *Request) { r.RootFSUUID = strings.ToUpper(rootInnerUUID) })
+		if len(fs) != 0 {
+			t.Fatalf("%s with --root-fs-uuid: %v", c.name, fs)
+		}
+		if l.RootUUID != rootInnerUUID || l.RootContainer != c.kind || l.Root.UUID != uRoot {
+			t.Errorf("%s: RootUUID %q container %q root partition %q", c.name, l.RootUUID, l.RootContainer, l.Root.UUID)
+		}
+		// A malformed UUID is refused.
+		_, fs = check("both", containerRoot(c.sig, c.at), func(r *Request) { r.RootFSUUID = "not-a-uuid" })
+		if rules(fs) != "L7" {
+			t.Errorf("%s with a malformed UUID: %v", c.name, fs)
+		}
+	}
+}
+
+func TestRootFSUUIDDoesNotOverrideAPlainRoot(t *testing.T) {
+	// The ext4 UUID on the disk is what counts: naming another one for a plain partition is an error,
+	// and naming the right one changes nothing.
+	_, fs := check("both", good(), func(r *Request) { r.RootFSUUID = rootInnerUUID })
+	if rules(fs) != "L7" {
+		t.Errorf("a UUID that does not match the ext4 root: %v", fs)
+	}
+	l, fs := check("both", good(), func(r *Request) { r.RootFSUUID = "4E9F54F3-865B-43FA-8F1C-9E644D3A2B11" })
+	if len(fs) != 0 || l.RootContainer != "" || l.RootUUID != "4e9f54f3-865b-43fa-8f1c-9e644d3a2b11" {
+		t.Errorf("the matching UUID: %v %+v", fs, l)
+	}
+}
+
+func TestUnknownRootContentIsStillRefused(t *testing.T) {
+	// Btrfs, XFS and blank partitions are not containers, whatever UUID the caller names.
+	d := good()
+	d.WriteAt(make([]byte, 2048), rootFirst*512+1024)
+	_, fs := check("both", d, func(r *Request) { r.RootFSUUID = rootInnerUUID })
+	if rules(fs) != "L7" {
+		t.Errorf("blank root with --root-fs-uuid: %v", fs)
+	}
+}

@@ -37,7 +37,7 @@ A line that is accepted but not tested says so. Nothing here is accepted on the 
 | Root | Accepted | Tested by |
 |---|---|---|
 | ext4 on a plain partition | yes | all rows |
-| ext4 on md RAID, LVM or LUKS | recovery assembles and opens it read-only. As the installed root it is **designed, not tested**: the publisher only records `root=`, and the initramfs has to unlock it; the installer does not create such a layout | `recovery-smoke` (recovery side only) |
+| ext4 inside LUKS, LVM or md RAID | yes, when `vintner install` is told the UUID of the ext4 inside with `--root-fs-uuid` (it reads only the partition table and the first sectors, so it cannot open the container). The target's initramfs must open the container (`cryptsetup-initramfs`, `lvm2` or `mdadm` installed and configured, a keyfile for LUKS since nothing types a passphrase), and the kernel command line is `root=UUID=<the ext4 inside>`. The installer refuses when it finds a container and no `--root-fs-uuid` | `root-luks`, `root-lvm`, `root-md`: install, boot generation 1 under BIOS and UEFI, publish generation 2 from the guest, boot and bless it. `recovery-smoke` covers recovery opening such roots |
 | Btrfs, XFS, ZFS | **not accepted** | none |
 
 **Boot storage is always a plain, unencrypted FAT32 partition on one disk**, whatever the root is. `grubenv` and the boot counters live there, never on the root, so a LUKS, LVM or md root changes nothing about them. The loader (firmware, systemd-boot, GRUB's `core.img`) cannot unlock anything.
@@ -77,7 +77,7 @@ These checks belong to 3.2; this file is the list they implement.
 | L4 | boot storage is under 1 GiB |
 | L5 | UEFI or both, and there is no single ESP (or `--esp-partuuid`), or it is not FAT or under 2 MiB |
 | L6 | BIOS or both, and there is no BIOS Boot Partition of at least 1 MiB, or the disk has 4096-byte sectors (the GRUB embedding is written in 512-byte sectors) |
-| L7 | the root is not on this disk, is the boot storage, is not ext4 on a plain partition, or is ambiguous (name it with `--root-partuuid`) |
+| L7 | the root is not on this disk, is the boot storage, is neither ext4 on a plain partition nor a LUKS, LVM or md container with `--root-fs-uuid` naming the ext4 inside (a container without it, a UUID that is not the ext4 UUID of a plain root, and Btrfs, XFS or blank roots are refused), or is ambiguous (name it with `--root-partuuid`; for an md array, either member) |
 
 It also verifies the payload directory (`/usr/lib/vintner/payloads`, or `--payload-dir`) against its `MANIFEST`: a file that differs, is missing or is not listed, or a file a deployment needs that is absent, refuses. It reads the partition table, the FAT boot sectors and the ext4 superblock itself, so it needs no mounts. Without `--check` it installs.
 

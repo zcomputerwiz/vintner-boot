@@ -71,6 +71,15 @@ jobs:
           - name: install
             run: ci/install/run.sh
             out: ci/out/install
+          - name: root-luks
+            run: ci/root-storage/run.sh luks
+            out: ci/out/root-storage-luks
+          - name: root-lvm
+            run: ci/root-storage/run.sh lvm
+            out: ci/out/root-storage-lvm
+          - name: root-md
+            run: ci/root-storage/run.sh md
+            out: ci/out/root-storage-md
           - name: secure-boot-uefi
             run: recovery/build.sh && ci/secure-boot/run.sh uefi
             out: ci/out/secure-boot/uefi
@@ -93,7 +102,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-x86 qemu-utils ovmf mtools fdisk e2fsprogs kmod cpio xz-utils \
             python3-pefile python3-virt-firmware sbsigntool cloud-image-utils binutils systemd-boot-efi systemd-ukify \
-            debootstrap debian-archive-keyring dosfstools
+            debootstrap debian-archive-keyring dosfstools cryptsetup lvm2 mdadm
 
       - name: Set up Go
         if: matrix.name == 'uefi-bless' || matrix.name == 'bios-bless' || matrix.name == 'lifecycle-uefi' || matrix.name == 'lifecycle-bios' || matrix.name == 'fallback-uefi' || matrix.name == 'fallback-bios' || matrix.name == 'publish-uefi' || matrix.name == 'publish-bios' || matrix.name == 'candidate-uefi' || matrix.name == 'candidate-bios' || matrix.name == 'interrupt-uefi' || matrix.name == 'interrupt-bios' || matrix.name == 'graphics-uefi' || matrix.name == 'graphics-bios' || matrix.name == 'secure-boot-uefi' || matrix.name == 'secure-boot-b'
