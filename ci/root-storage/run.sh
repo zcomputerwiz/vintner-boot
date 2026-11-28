@@ -75,9 +75,10 @@ unmount_all() {
 		sleep 1
 		sudo udevadm settle 2>/dev/null || true # the host's udev probes a new block device and can hold it for a moment
 		for m in sys dev/pts dev proc boot/efi mnt/bs; do
-			mountpoint -q "$MNT/$m" && umount_retry "$MNT/$m"
+			# a target can be mounted more than once (the chroot setup stacks sysfs): unmount until it is gone
+			for _ in 1 2 3 4; do mountpoint -q "$MNT/$m" || break; umount_retry "$MNT/$m"; done
 		done
-		mountpoint -q "$MNT" && umount_retry "$MNT"
+		mountpoint -q "$MNT" && { umount_retry "$MNT" || sudo umount -R -l "$MNT"; }
 	fi
 	close_container
 	if [ -n "$LOOP" ]; then
@@ -107,6 +108,8 @@ close_container() {
 }
 trap unmount_all EXIT
 
+# udisks (on a CI runner) opens the md array's sysfs files and holds the chroot's mounts busy.
+sudo systemctl stop udisks2.service 2>/dev/null || true
 # A run that died earlier may have left its own mappings behind.
 close_container
 
