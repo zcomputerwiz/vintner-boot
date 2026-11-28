@@ -259,10 +259,12 @@ sudo chroot "$MNT" env DEBIAN_FRONTEND=noninteractive LC_ALL=C \
 sudo mkdir -p "$MNT/root/vp"
 sudo chroot "$MNT" dpkg-deb -x /root/vintner-platform.deb /root/vp
 
+# --efivars none: the chroot sees the runner's own /sys, and the target's boot entry is not the host's
+# to write (the disk boots under OVMF through the removable path, as in ci/install).
 echo "=== vintner install --root-fs-uuid ==="
 INSTALL_RC=0
 sudo chroot "$MNT" /usr/sbin/vintner install --disk "$LOOP" --firmware both --target / --esp /boot/efi --boot-storage /mnt/bs \
-	--root-fs-uuid "$INNER_UUID" --payload-dir /root/vp/usr/lib/vintner/payloads > "$OUT/install.log" 2>&1 || INSTALL_RC=$?
+	--root-fs-uuid "$INNER_UUID" --efivars none --payload-dir /root/vp/usr/lib/vintner/payloads > "$OUT/install.log" 2>&1 || INSTALL_RC=$?
 cat "$OUT/install.log"
 if [ "$INSTALL_RC" -eq 0 ] && grep -q '^installed:' "$OUT/install.log"; then
 	record "R1-install" PASS "vintner install exited 0 on a $LAYOUT root and reported the installation"
