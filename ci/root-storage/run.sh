@@ -361,7 +361,7 @@ for fw in bios uefi; do
 		phase_seen=$(sed -n 's/^PHASE: \(.*\)$/\1/p' <<<"$clean" | head -n 1 || true)
 
 		# Here-strings, not pipes: grep -q ends early, and under pipefail the printf feeding it then fails (SIGPIPE).
-		if [ "$first" = "os-$want_gen" ] || [ "${first#os-$want_gen}" != "$first" ]; then
+		if [[ "$first" == "os-$want_gen"* ]]; then
 			if grep -q "root=UUID=$INNER_UUID" <<<"$cmdline" && [ "$rtype" = "$WANT_TYPE" ] && [ "$phase_seen" = "$phase" ]; then
 				record "$n-boots" PASS "$fw started os-$want_gen with root=UUID=<the ext4 inside the $LAYOUT container>, the root is a $rtype device"
 			else
