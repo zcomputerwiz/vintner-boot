@@ -362,6 +362,9 @@ else
 	echo "LOADER_ENTRY_SELECTED: none (bios)"
 fi
 
+# The status a product reads (docs/status.md), on one line: the fell_back fields are checked from it.
+echo "STATUS_JSON: $(/usr/sbin/vintner status --json 2>&1 | tr -d '\n')"
+
 BLESS_STATUS=$(systemctl is-active vintner-bless.service 2>&1 || true)
 echo "BLESS_ACTIVE: $BLESS_STATUS"
 

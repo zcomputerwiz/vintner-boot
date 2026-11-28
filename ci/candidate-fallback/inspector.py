@@ -438,6 +438,33 @@ def check_h4(case, cs, fw, labels):
           f"console line: {m.group(0)}" if m else "no console line equal to '[<uptime>] vintner[<pid>]: generation 2: TRYING -> FAILED' in boot4 log"]
     return ok, ev
 
+def boot_status(cs, b):
+    """The vintner status --json the guest printed in its report on boot b, or None."""
+    bt = cs["boots"].get(b) or {}
+    text = clean_ansi(bt["log"]).replace("\r", "") if bt.get("log") else ""
+    m = re.search(r"^STATUS_JSON: (\{.*\})\s*$", text, re.M)
+    try:
+        return json.loads(m.group(1)) if m else None
+    except ValueError:
+        return None
+
+def check_h9(case, cs, fw, labels):
+    # What a product sees (WO-0010 4.9): G0 never falls back; in B1 to B5 generation 2 spent
+    # its 3 tries, so boots 4 to 6 (generation 1) report fell_back from 2 after 3 attempts.
+    ok, ev = True, []
+    for b in (4, 5, 6) if case != "G0" else (1, 2, 3, 4, 5, 6):
+        st = boot_status(cs, b)
+        booted = (st or {}).get("booted") or {}
+        if st is None:
+            ok = False
+            ev.append(f"boot{b}: no STATUS_JSON line")
+            continue
+        want = (False, None, None) if case == "G0" else (True, 2, 3)
+        got = (booted.get("fell_back"), booted.get("fell_back_from"), booted.get("fell_back_attempts"))
+        ok &= got == want
+        ev.append(f"boot{b} fell_back={got[0]} from={got[1]} attempts={got[2]}")
+    return ok, ev
+
 def check_h5(case, cs, fw, labels):
     rd4 = boot_read(cs, 4)
     if rd4 is None:
@@ -552,8 +579,8 @@ def evaluate(state):
         cs = state["cases"].get(case) or {"boots": {}}
         all_labels[case] = labels = boot_labels(cs, fw)
         op_errs = op_check(cs, fw)
-        checks = [("H1", check_h1)] if case == "G0" else \
-            [("H2", check_h2), ("H3", check_h3), ("H4", check_h4), ("H5", check_h5), ("H6", check_h6), ("H7", check_h7)]
+        checks = [("H1", check_h1), ("H9", check_h9)] if case == "G0" else \
+            [("H2", check_h2), ("H3", check_h3), ("H4", check_h4), ("H9", check_h9), ("H5", check_h5), ("H6", check_h6), ("H7", check_h7)]
         for cid, fn in checks:
             ok, ev = fn(case, cs, fw, labels)
             if op_errs:
