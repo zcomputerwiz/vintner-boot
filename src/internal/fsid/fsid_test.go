@@ -90,3 +90,43 @@ func TestReadExtUUID(t *testing.T) {
 		t.Errorf("blank: %v", err)
 	}
 }
+
+func TestContainer(t *testing.T) {
+	const size = 1 << 24
+	put := func(d *gpttest.Disk, at int64, b []byte) { d.WriteAt(b, at) }
+	mdSB := []byte{0xfc, 0x4e, 0x2b, 0xa9} // the md magic 0xa92b4efc, little endian
+	lvmLabel := append([]byte("LABELONE"), make([]byte, 16)...)
+	lvmLabel = append(lvmLabel, []byte("LVM2 001")...)
+	for _, c := range []struct {
+		name string
+		mk   func(d *gpttest.Disk)
+		want string
+	}{
+		{"blank", func(d *gpttest.Disk) {}, ""},
+		{"LUKS", func(d *gpttest.Disk) { put(d, 0, []byte("LUKS\xba\xbe\x00\x02")) }, ContainerLUKS},
+		{"LVM label in the second sector", func(d *gpttest.Disk) { put(d, 512, lvmLabel) }, ContainerLVM},
+		{"LABELONE without the LVM2 type is not LVM", func(d *gpttest.Disk) { put(d, 512, []byte("LABELONE")) }, ""},
+		{"md 1.2", func(d *gpttest.Disk) { put(d, 4096, mdSB) }, ContainerMD},
+		{"md 1.1", func(d *gpttest.Disk) { put(d, 0, mdSB) }, ContainerMD},
+		{"md 1.0", func(d *gpttest.Disk) { put(d, (size-8192)&^4095, mdSB) }, ContainerMD},
+		{"md 0.90", func(d *gpttest.Disk) { put(d, (size&^0xFFFF)-0x10000, mdSB) }, ContainerMD},
+		{"ext4 is not a container", func(d *gpttest.Disk) {
+			sb := make([]byte, 1024)
+			binary.LittleEndian.PutUint16(sb[56:], 0xEF53)
+			put(d, 1024, sb)
+		}, ""},
+	} {
+		d := gpttest.New(size)
+		c.mk(d)
+		got, err := Container(d, 0, size)
+		if err != nil || got != c.want {
+			t.Errorf("%s: got %q, %v; want %q", c.name, got, err, c.want)
+		}
+	}
+	// The same signatures a partition into the disk, not at its start.
+	d := gpttest.New(size)
+	d.WriteAt([]byte("LUKS\xba\xbe\x00\x02"), 1<<20)
+	if got, _ := Container(d, 1<<20, size-(1<<20)); got != ContainerLUKS {
+		t.Errorf("LUKS at an offset: got %q", got)
+	}
+}

@@ -94,3 +94,48 @@ func ReadExtUUID(r io.ReaderAt, off int64) (string, error) {
 	u := sb[104:120]
 	return fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16]), nil
 }
+
+// Container kinds that Container reports.
+const (
+	ContainerLUKS = "LUKS"
+	ContainerLVM  = "LVM"
+	ContainerMD   = "md"
+)
+
+const mdMagic = 0xa92b4efc
+
+// Container says whether the partition that starts at off and is size bytes long
+// holds a block-device container that has to be opened before a filesystem
+// shows: a LUKS volume, an LVM physical volume or a member of a Linux md array.
+// It returns "" when there is none, and it reads the signatures only: the
+// filesystem inside is out of reach without opening the container.
+//
+// The md superblock formats are 0.90 (64 KiB before the end), 1.0 (8 KiB before
+// the end), 1.1 (at the start) and 1.2 (4 KiB from the start).
+func Container(r io.ReaderAt, off, size int64) (string, error) {
+	head := make([]byte, 2048)
+	if _, err := r.ReadAt(head, off); err != nil {
+		return "", fmt.Errorf("fsid: read the start of the partition: %w", err)
+	}
+	if string(head[0:6]) == "LUKS\xba\xbe" {
+		return ContainerLUKS, nil
+	}
+	for s := 0; s < 4; s++ { // the label sits in one of the first four sectors; LVM writes it in the second
+		if sec := head[s*512 : s*512+512]; string(sec[0:8]) == "LABELONE" && string(sec[24:32]) == "LVM2 001" {
+			return ContainerLVM, nil
+		}
+	}
+	for _, at := range []int64{0, 4096, (size - 8192) &^ 4095, (size &^ 0xFFFF) - 0x10000} {
+		if at < 0 || at+4 > size {
+			continue
+		}
+		var m [4]byte
+		if _, err := r.ReadAt(m[:], off+at); err != nil {
+			continue
+		}
+		if binary.LittleEndian.Uint32(m[:]) == mdMagic {
+			return ContainerMD, nil
+		}
+	}
+	return "", nil
+}
