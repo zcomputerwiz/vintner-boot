@@ -49,6 +49,21 @@ record() { # row PASS|FAIL evidence
 	[ "$2" = PASS ] || FAILS=$((FAILS + 1))
 }
 
+# umount_retry TARGET: a mount can stay busy for a moment after its last user has gone, so
+# it is tried a few times; when it stays busy, what is mounted under the lane's root and who
+# has it open is printed (the log is the only evidence a CI runner leaves) and it is detached lazily.
+umount_retry() {
+	local t=$1
+	for _ in 1 2 3 4 5 6; do
+		sudo umount "$t" 2>/dev/null && return 0
+		sleep 2
+	done
+	echo "umount: $t is still busy after 12 seconds" >&2
+	findmnt -R "$MNT" >&2 || true
+	sudo lsof +D "$t" 2>/dev/null | head -n 20 >&2 || true
+	sudo umount -l "$t"
+}
+
 unmount_all() {
 	if [ -d "$MNT" ]; then
 		# Processes left in the chroot keep its mounts busy: stop them first.
@@ -58,10 +73,11 @@ unmount_all() {
 			if [ "$(sudo readlink "$p/root" 2>/dev/null)" = "$real" ]; then sudo kill "${p#/proc/}" 2>/dev/null || true; fi
 		done
 		sleep 1
+		sudo udevadm settle 2>/dev/null || true # the host's udev probes a new block device and can hold it for a moment
 		for m in sys dev/pts dev proc boot/efi mnt/bs; do
-			mountpoint -q "$MNT/$m" && { sudo umount "$MNT/$m" || sudo umount -l "$MNT/$m"; }
+			mountpoint -q "$MNT/$m" && umount_retry "$MNT/$m"
 		done
-		mountpoint -q "$MNT" && sudo umount "$MNT"
+		mountpoint -q "$MNT" && umount_retry "$MNT"
 	fi
 	close_container
 	if [ -n "$LOOP" ]; then
@@ -70,13 +86,22 @@ unmount_all() {
 	fi
 }
 
+# retry_quietly COMMAND...: runs it up to 6 times, 2 seconds apart (udev may still be probing the device).
+retry_quietly() {
+	for _ in 1 2 3 4 5 6; do
+		"$@" >/dev/null 2>&1 && return 0
+		sleep 2
+	done
+	return 0
+}
+
 # close_container: closes the LUKS volume, deactivates the volume group or stops the
 # array, whichever this lane opened. Safe to call when nothing is open.
 close_container() {
 	case "$LAYOUT" in
-		luks) [ -e "/dev/mapper/$MAP" ] && { sudo cryptsetup close "$MAP" || true; } ;;
-		lvm) sudo lvm vgs "$VG" >/dev/null 2>&1 && { sudo lvm vgchange -an "$VG" >/dev/null || true; } ;;
-		md) [ -e "$MDDEV" ] && { sudo mdadm --stop "$MDDEV" >/dev/null 2>&1 || true; } ;;
+		luks) [ -e "/dev/mapper/$MAP" ] && retry_quietly sudo cryptsetup close "$MAP" ;;
+		lvm) sudo lvm vgs "$VG" >/dev/null 2>&1 && retry_quietly sudo lvm vgchange -an "$VG" ;;
+		md) [ -e "$MDDEV" ] && retry_quietly sudo mdadm --stop "$MDDEV" ;;
 	esac
 	return 0
 }
